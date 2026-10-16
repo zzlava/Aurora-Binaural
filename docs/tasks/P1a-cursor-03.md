@@ -23,3 +23,9 @@
 - `cargo fmt --check`、`cargo clippy -- -D warnings`、`cargo test` 全部通过；在 Mac 上用 criterion 测一次实时倍数。
 - 只修改 `core/`、`qa/p1/cursor/`，以及 `data/` 下的 pack（如需要；必须走 LFS）。不要修改 `prototypes/`、`presets/`、`qa/tools/`。
 - 在 `agent/cursor/P1a-02` 上提交，不要推送。如果要用 `git lfs migrate`，必须加 `--exclude-ref=refs/remotes/origin/main`。
+
+## 续做说明（2026-10-17 07:25）
+
+第一次运行在 07:11 因派单器被关闭而中止。中止前的改动已经由派单器以 WIP 形式提交到 `agent/cursor/P1a-02`，请在此基础上继续，计时重新开始，上限仍为 120 分钟。
+
+注意：你新建了 `core/aurora-dsp/src/bed.rs`。Ambisonics 床属于 P1b，不在本任务范围内。如果它不是路线 B 必需的，请移除或停用，并在报告中说明。
