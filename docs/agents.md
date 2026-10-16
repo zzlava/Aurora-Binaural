@@ -51,3 +51,9 @@
   3. 只有出现"hit your usage limit"这类整体用尽的提示，或者后备模型也不可用时，才在同一个克隆 `.agents/cursor/`、同一个分支上运行 `codex exec --dangerously-bypass-approvals-and-sandbox`。
 - Codex 的提交信息标注 `Agent: Codex (for Cursor)`；目录所有权不变。
 - 待验证：Mac 上 codex 的路径、版本、登录状态，以及 `exec` 子命令的参数，要在派单器重启后由 doctor 确认。确认之前，这条后备路径视为未验证。
+
+## 虚拟机侧查看 Git 状态的注意事项
+
+主仓库和代理克隆都执行过 `git lfs install --local`，虚拟机里没有 git-lfs，直接运行 `git status` 会报 filter-process 错误。只读查看时使用：
+`git -c filter.lfs.process= -c filter.lfs.required=false -c filter.lfs.clean=cat -c filter.lfs.smudge=cat status`
+这样查看时，wav、sofa 文件显示的 `M` 是假阳性（虚拟机看到的是真实内容，而 Git 里存的是 LFS 指针）。虚拟机里不要 add 这类文件。

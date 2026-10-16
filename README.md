@@ -16,7 +16,7 @@ P0-0（仓库与协作准备）进行中。尚无可运行代码。
 | 目录 | 负责方 |
 |---|---|
 | `core/` `prototypes/` `presets/` | Cursor |
-| `cli/` `api/` `worker/` `web/` `deploy/` | Antigravity |
+| `src/` `tests/app/` `web/` `deploy/`（P2 前为 `cli/` `api/` `worker/`） | Antigravity |
 | `qa/` `docs/` 与 Git 操作 | Claude |
 | `data/` | Cursor 提交数据，Claude 核验来源、授权与哈希 |
 
