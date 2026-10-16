@@ -4,8 +4,8 @@
 
 | 编号 | 事项 | 背景 | Claude 的建议 | 状态 |
 |---|---|---|---|---|
-| U1 | 重启派单器 | "Cursor 额度用尽才交给 Codex"规则、Grok 后备模型、doctor 检查 codex，都要重启派单器后才生效 | 等两个代理当前的任务结束后再重启 | 待处理 |
-| U2 | P0 听感试听：确认路线 B 的听感、选 HRTF 和默认强度 | 技术验收已通过（qa/p0/ACCEPTANCE-cursor-03.md）；试听页面：`qa/p0/listening/index.html` | 候选：路线 B（默认）／C（包围、环绕预设）；关注空间感是否足够（客观上展宽偏小） | **v2 样片已就绪**：打开 `qa/p0/listening/index.html`（v3 均衡；验收见 qa/p0/ACCEPTANCE-cursor-05.md。客观上 KU100 的音色好于 SADIE，默认强度建议 0.4 左右） |
+| U1 | ~~重启派单器~~（已完成，2026-10-17 07:20） | "Cursor 额度用尽才交给 Codex"规则、Grok 后备模型、doctor 检查 codex，都要重启派单器后才生效 | 等两个代理当前的任务结束后再重启 | 待处理 |
+| U2 | 空间感校准：确定想要的空间感类型和强度 | v3 听感未通过（qa/p0/LISTENING-01.md）；校准页面：`qa/p0/calibration/index.html` | 听完把打分结果给 Claude | **待试听** |
 | U3 | 默认 HRTF 的许可证 | KU100 L2702 是 CC BY-SA 3.0（衍生滤波器也要按相同许可证共享）；SADIE II 是 Apache-2.0 | 如果计划商用或闭源分发，倾向默认用 SADIE II（前提是听感差别不大） | 待处理 |
 | U4 | 更强的 Cursor 模型是否购买额度 | 本周额度只覆盖 Grok 系列 | 目前 Grok 的效果尚可，暂不需要 | 可选 |
 | U5 | Antigravity 额度用尽（约 7 天后重置） | 2026-10-17 01:26，P4 GUI 任务因 429 配额失败，没有产生任何改动 | 应用层暂停；Cursor 的额度优先用于算法（P0 门槛）。可选：升级 Antigravity，或授权 Codex／Cursor 接手 GUI | 待处理 |
