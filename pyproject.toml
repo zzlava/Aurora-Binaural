@@ -9,6 +9,7 @@ description = "Aurora Binaural application layer (CLI, API, Worker, GUI) and cod
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=2.0.0",
     "pydantic>=2.9.0,<3.0.0",
 ]
 
@@ -23,16 +24,13 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["cli/aurora_binaural", "api", "worker"]
-
-[tool.hatch.build.targets.wheel.sources]
-"cli/aurora_binaural" = "aurora_binaural"
+packages = ["src/aurora_binaural"]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-src = ["cli", "api", "worker"]
-include = ["pyproject.toml", "cli/**/*.py", "api/**/*.py", "worker/**/*.py"]
+src = ["src", "tests/app"]
+include = ["pyproject.toml", "src/**/*.py", "tests/app/**/*.py"]
 extend-exclude = ["core", "prototypes"]
 
 [tool.ruff.lint]
@@ -42,10 +40,10 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = ["cli"]
-files = ["cli", "api", "worker"]
+mypy_path = ["src"]
+files = ["src", "tests/app"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
-testpaths = ["cli/tests"]
+testpaths = ["tests/app"]
 addopts = "-q"

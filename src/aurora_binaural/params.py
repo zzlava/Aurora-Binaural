@@ -219,7 +219,7 @@ class TimingSpec(BaseModel):
         description="Reverb tail strategy: 'trim' keeps exact input sample length with a short fade-out; 'preserve' appends tail_samples.",
     )
     fade_out_ms: Annotated[float, Field(ge=0.0, le=500.0)] = Field(
-        default=5.0,
+        default=10.0,
         description="Short fade-out duration in milliseconds applied at the end when tail='trim' to prevent clicks.",
     )
 
