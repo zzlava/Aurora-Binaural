@@ -58,6 +58,7 @@ class AuroraWorker:
         recovered = self.store.recover_expired_leases(now=now)
         if recovered:
             log_stderr(f"[{self.worker_id}] Reclaimed {len(recovered)} expired job lease(s): {recovered}")
+        self.store.cleanup_attempt_directories(self.config.tmp_dir)
         cleaned_jobs, cleaned_assets = self.store.cleanup_expired_resources(now=now)
         return recovered, cleaned_jobs, cleaned_assets
 
@@ -311,7 +312,7 @@ class AuroraWorker:
                         last_hb = now_mono
 
                     if now_mono - last_cleanup >= self.config.cleanup_interval_sec:
-                        self.store.cleanup_expired_resources()
+                        self.recover_and_cleanup()
                         last_cleanup = now_mono
 
                     done = {f for f in active_futures if f.done()}

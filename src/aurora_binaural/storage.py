@@ -13,6 +13,8 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import re
+import shutil
 import sqlite3
 import threading
 import time
@@ -1146,3 +1148,34 @@ class TaskStore:
                 cleaned_assets.append(aid)
 
         return cleaned_jobs, cleaned_assets
+
+
+    def cleanup_attempt_directories(self, tmp_dir: Path) -> list[str]:
+        """Reclaim fenced/terminal attempts, including empty SIGKILL leftovers.
+
+        Recover leases first. A directory for the current running attempt is always
+        protected, even at the expiration boundary; recovery must fence it before
+        deletion. The write transaction serializes this check with claim/renewal.
+        Only our exact directory namespace is considered; never follow symlinks.
+        """
+        cleaned: list[str] = []
+        pattern = re.compile(r"attempt_(job_[0-9a-f]{16})_([1-9][0-9]*)_(lease_[0-9a-f]{32})")
+        for path in tmp_dir.glob("attempt_*"):
+            match = pattern.fullmatch(path.name)
+            if match is None or path.is_symlink() or not path.is_dir():
+                continue
+            job_id, attempt, lease_id = match.groups()
+            with self._immediate_tx() as conn:
+                row = conn.execute(
+                    "SELECT status, attempts, lease_id FROM jobs WHERE job_id = ?;", (job_id,)
+                ).fetchone()
+                if row is None:
+                    continue
+                if row["status"] == "running" and row["attempts"] == int(attempt) and row["lease_id"] == lease_id:
+                    continue
+                try:
+                    shutil.rmtree(path)
+                except OSError:
+                    continue  # Retry on the next cleanup cycle.
+                cleaned.append(path.name)
+        return cleaned
