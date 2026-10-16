@@ -84,7 +84,7 @@ do_agent(){ # agent task branch
   dir="$ROOT/.agents/$ag"
   [ -d "$dir/.git" ] || { echo "缺少代理克隆：$dir"; return 10; }
   cur="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
-  [ "$cur" = "$branch" ] || { echo "分支不一致：克隆当前为 $cur，任务要求 $branch"; return 11; }
+  [ "$cur" = "$branch" ] || { echo "分支不一致：克隆当前为 ${cur}，任务要求 $branch"; return 11; }
   prompt="$(cat "$ROOT/$task")"
   cd "$dir" || return 12
   case "$ag" in
@@ -151,7 +151,7 @@ cleanup(){
 }
 trap cleanup INT TERM
 
-log "Aurora 派单器已启动：$ROOT（pid $$）。Ctrl-C 停止。"
+log "Aurora 派单器已启动：${ROOT}（pid $$）。Ctrl-C 停止。"
 command -v caffeinate >/dev/null && { caffeinate -i -w $$ & }
 while :; do
   for f in "$Q"/*.job; do
