@@ -10,6 +10,8 @@ if not names:
 attrs = subprocess.run(G + ["check-attr", "-z", "filter", "--stdin"], input=b"\0".join(names) + b"\0", capture_output=True, check=True).stdout.split(b"\0")
 lfs = [attrs[i] for i in range(0, len(attrs) - 2, 3) if attrs[i + 2] == b"lfs"]
 bad = 0
+if not lfs:
+    print("guard: checked 0 LFS paths, ok"); sys.exit(0)
 idx = dict()
 for line in subprocess.run(G + ["ls-files", "-s", "-z", "--"] + [n.decode() for n in lfs], capture_output=True, check=True).stdout.split(b"\0"):
     if line:
