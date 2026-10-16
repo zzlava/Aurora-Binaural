@@ -1,3 +1,5 @@
+> ⚠️ **作废（2026-10-17）**：这些样片经过了逐文件的音色匹配后处理，不能代表引擎本身，详见 `qa/p0/ACCEPTANCE-cursor-03.md` 的勘误。等 P0-cursor-04 完成后重新生成。
+
 # P0 听感试听
 
 1. 在 Finder 中打开 `qa/p0/listening/index.html`（用 Safari 或 Chrome），戴上耳机。
