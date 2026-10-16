@@ -1,0 +1,135 @@
+[
+  {
+    "step": "ensure_assets",
+    "exit_code": 0
+  },
+  {
+    "step": "hrtf_meta_thk",
+    "exit_code": 0
+  },
+  {
+    "step": "hrtf_meta_sadie",
+    "exit_code": 0
+  },
+  {
+    "step": "direction_diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "frontal_diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "direction_frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "frontal_frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "direction_sadie",
+    "exit_code": 0
+  },
+  {
+    "step": "frontal_sadie",
+    "exit_code": 0
+  },
+  {
+    "step": "block_consistency_render",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeA_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeA_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeB_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeB_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeC_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeC_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeA_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeA_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeB_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeB_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeC_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeC_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeA_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeA_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeB_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeB_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeC_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeC_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeA_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeB_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeC_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeB_str0.4_hrtf-sadie2_d1_eq-diffuse",
+    "exit_code": 0
+  },
+  {
+    "step": "write_metrics",
+    "exit_code": 0,
+    "path": "~/Desktop/leo/Aurora Binaural/.agents/cursor/qa/p0/cursor/metrics.json"
+  }
+]
