@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from aurora_binaural.params import AuroraParams, TailPolicy, TimingMode
+from aurora_binaural.params import AuroraParams, PresetSpec, TailPolicy, TimingMode
 
 
 class AudioProbeInfo(BaseModel):
@@ -66,7 +66,7 @@ class HrtfDataInfo(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(default="none (P0 passthrough stub)", description="HRTF dataset identifier.")
+    name: str = Field(default="none (P2 passthrough stub)", description="HRTF dataset identifier.")
     version: str = Field(default="0.0.0-stub", description="HRTF dataset version.")
     sha256: str | None = Field(default=None, description="SHA-256 hash of the .sofa file.")
     license: str | None = Field(default=None, description="Dataset license identifier.")
@@ -78,10 +78,10 @@ class EngineMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="aurora-stub-core", description="Engine implementation name.")
-    version: str = Field(default="0.1.0-p0-stub", description="Engine version string.")
+    version: str = Field(default="0.2.0-p2-stub", description="Engine version string.")
     git_commit: str = Field(description="Git commit SHA of the repository.")
-    is_stub: bool = Field(default=True, description="True when running P0 passthrough stub core.")
-    block_size_frames: int = Field(default=256, gt=0, description="Block size in frames used during block processing.")
+    is_stub: bool = Field(default=True, description="True when running passthrough stub core.")
+    block_size_frames: int = Field(default=1024, gt=0, description="Block size in frames used during block processing.")
     internal_sample_rate: int = Field(default=48000, gt=0, description="Engine processing sample rate in Hz.")
     hrtf: HrtfDataInfo = Field(default_factory=HrtfDataInfo, description="HRTF dataset metadata.")
 
@@ -133,7 +133,7 @@ class TimelineVerification(BaseModel):
     )
     sync_warning: str | None = Field(
         default=None,
-        description="Warning message advising WAV 48kHz/24bit if sync tolerance is exceeded.",
+        description="Warning message advising WAV 48kHz/24bit if sync tolerance is exceeded or FFmpeg < 7.",
     )
 
 
@@ -157,3 +157,29 @@ class ConversionReport(BaseModel):
     expires_at: str | None = Field(
         default=None, description="ISO-8601 UTC expiration timestamp for remote job artifacts."
     )
+
+
+class CompareReport(BaseModel):
+    """Report returned by `aurora compare` for BS.1770 equal-loudness A/B comparison (Section 9 & 12)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ok: Literal[True] = True
+    input: str = Field(description="Source audio file path.")
+    output_dir: str = Field(description="Directory containing the loudness-matched dry and effect files.")
+    dry_output: str = Field(description="Path to loudness-matched dry reference file.")
+    effect_output: str = Field(description="Path to loudness-matched spatial effect file.")
+    preset: PresetSpec = Field(description="Spatial preset used for the effect file.")
+    strength: float = Field(ge=0.0, le=1.0, description="Effective spatial strength.")
+    target_lufs: float | None = Field(description="Target integrated loudness in LUFS (None if silent).")
+    dry_gain_db: float = Field(description="Gain in dB applied to the dry reference stream.")
+    effect_gain_db: float = Field(description="Gain in dB applied to the spatial effect stream.")
+    loudness_diff_lu: float = Field(
+        ge=0.0,
+        description="Absolute BS.1770 integrated loudness difference |effect - dry| in LU after matching.",
+    )
+    dry_loudness_before: LoudnessMetrics
+    dry_loudness_after: LoudnessMetrics
+    effect_loudness_before_match: LoudnessMetrics
+    effect_loudness_after: LoudnessMetrics
+    report: ConversionReport

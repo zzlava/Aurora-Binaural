@@ -1,31 +1,31 @@
-"""Command-line interface (`aurora`) for Aurora Binaural (docs/plan.md Section 9).
+"""Command-line interface (`aurora`) for Aurora Binaural (docs/plan.md Section 9 & P2-antigravity-01).
 
 Key invariants:
 - stdout emits strictly structured JSON.
 - stderr receives all diagnostic, progress, and warning logs.
 - Exit codes strictly follow Section 9:
   - 0: Success
-  - 2: Parameter error
+  - 2: Parameter error (including `aurora gui` before P4)
   - 3: Input problem
-  - 4: Processing failure
+  - 4: Processing failure (including strict FFmpeg < 7 rejection for M4A)
   - 5: Remote error
-  - 130: Canceled
+  - 130: Canceled (SIGINT / Ctrl-C, with temporary file cleanup)
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
-import urllib.error
-import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
 from pydantic import ValidationError
 
+from aurora_binaural.cli.remote import RemoteAuroraClient
 from aurora_binaural.exit_codes import (
     AuroraError,
     ExitCode,
@@ -33,9 +33,14 @@ from aurora_binaural.exit_codes import (
     OperationCanceledError,
     ParameterValidationError,
     ProcessingError,
-    RemoteServiceError,
 )
-from aurora_binaural.media import decode_to_f32le, log_stderr, measure_loudness_f32le, probe_audio
+from aurora_binaural.media import (
+    check_m4a_ffmpeg_support,
+    get_ffmpeg_version,
+    log_stderr,
+    measure_loudness_file,
+    probe_audio,
+)
 from aurora_binaural.params import (
     PRESET_CATALOG,
     AuroraParams,
@@ -49,7 +54,7 @@ from aurora_binaural.params import (
     get_params_json_schema,
     write_params_json_schema,
 )
-from aurora_binaural.pipeline import convert_audio
+from aurora_binaural.pipeline import compare_audio, convert_audio
 from aurora_binaural.timeline import (
     run_timeline_verification_suite,
     write_timeline_verification_json,
@@ -57,9 +62,7 @@ from aurora_binaural.timeline import (
 
 
 class _AuroraArgumentParser(argparse.ArgumentParser):
-    """Custom ArgumentParser that routes parse errors through ParameterValidationError (ExitCode 2)
-    and routes help text to stderr if needed so stdout remains strictly JSON-parseable.
-    """
+    """Custom ArgumentParser that routes parse errors through ParameterValidationError (ExitCode 2)."""
 
     def error(self, message: str) -> NoReturn:
         raise ParameterValidationError(
@@ -132,29 +135,62 @@ def _infer_output_format(output_path: Path, explicit_format: str | None) -> Outp
     return OutputFormat.WAV
 
 
-def _handle_remote_request(server_url: str, endpoint: str) -> dict[str, Any]:
-    """Perform a minimal health/status request against a remote server or raise RemoteServiceError (Exit 5)."""
-    if not server_url.startswith(("http://", "https://")):
-        raise ParameterValidationError(
-            f"Invalid --server URL '{server_url}': must start with http:// or https://",
-            error_code="INVALID_SERVER_URL",
-        )
-    api_key = _load_api_key_from_env_or_config()
-    url = server_url.rstrip("/") + "/" + endpoint.lstrip("/")
-    headers: dict[str, str] = {"Accept": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    req = urllib.request.Request(url, headers=headers, method="GET")
+def _build_aurora_params_from_args(
+    *,
+    preset: str,
+    preset_version: str = "1",
+    strength: float | None = None,
+    seed: int = 20261016,
+    fmt: OutputFormat = OutputFormat.WAV,
+    sample_rate: int = 48000,
+    bit_depth: int | None = 24,
+    bitrate: int | None = None,
+    timing_mode: str = "preserve",
+    tail: str = "trim",
+    fade_out_ms: float = 10.0,
+) -> AuroraParams:
+    """Construct and validate `AuroraParams` from CLI arguments, raising `ParameterValidationError` on failure."""
     try:
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            return json.loads(body) if body else {"ok": True}
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        raise RemoteServiceError(
-            f"Failed to communicate with remote Aurora server '{server_url}': {exc}",
-            error_code="REMOTE_UNREACHABLE",
-            details={"server": server_url, "endpoint": endpoint},
+        preset_spec = PresetSpec(
+            id=PresetId(preset),
+            version=preset_version,
+        )
+        eff_bit_depth = bit_depth if fmt == OutputFormat.WAV else None
+        eff_bitrate = bitrate if fmt != OutputFormat.WAV else None
+        if fmt == OutputFormat.WAV and bitrate is not None:
+            raise ParameterValidationError(
+                "--bitrate cannot be used with uncompressed WAV output.",
+                error_code="INVALID_OUTPUT_PARAMETERS",
+            )
+
+        output_spec = OutputSpec(
+            format=fmt,
+            sample_rate=sample_rate,
+            bit_depth=eff_bit_depth,
+            bitrate_kbps=eff_bitrate,
+        )
+        timing_spec = TimingSpec(
+            mode=TimingMode(timing_mode),
+            tail=TailPolicy(tail),
+            fade_out_ms=fade_out_ms,
+        )
+        return AuroraParams(
+            preset=preset_spec,
+            strength=strength,
+            seed=seed,
+            output=output_spec,
+            timing=timing_spec,
+        )
+    except ValidationError as exc:
+        raise ParameterValidationError(
+            f"Parameter validation failed: {exc}",
+            error_code="INVALID_PARAMETERS",
+            details={"errors": json.loads(exc.json())},
+        ) from exc
+    except ValueError as exc:
+        raise ParameterValidationError(
+            f"Invalid parameter value: {exc}",
+            error_code="INVALID_PARAMETERS",
         ) from exc
 
 
@@ -179,14 +215,21 @@ def _cmd_presets(_args: argparse.Namespace) -> int:
 def _cmd_inspect(args: argparse.Namespace) -> int:
     input_path = Path(args.input)
     log_stderr(f"Inspecting audio file: {input_path}")
-    pcm_bytes, sr, ch = decode_to_f32le(input_path)
-    probe_info = probe_audio(input_path, predecoded=(pcm_bytes, sr, ch))
-    loudness = measure_loudness_f32le(pcm_bytes, sr, ch)
-    payload = {
+    involves_m4a = input_path.suffix.lower() in (".m4a", ".aac", ".mp4")
+    m4a_warning = check_m4a_ffmpeg_support(involves_m4a=involves_m4a, strict=args.strict_ffmpeg)
+
+    probe_info = probe_audio(input_path)
+    if probe_info.codec == "aac" and not involves_m4a:
+        m4a_warning = check_m4a_ffmpeg_support(involves_m4a=True, strict=args.strict_ffmpeg)
+
+    loudness = measure_loudness_file(input_path)
+    payload: dict[str, Any] = {
         "ok": True,
         "audio": probe_info.model_dump(mode="json"),
         "loudness": loudness.model_dump(mode="json"),
     }
+    if m4a_warning is not None:
+        payload["sync_warning"] = m4a_warning
     _emit_json_stdout(payload)
     return int(ExitCode.OK)
 
@@ -215,63 +258,37 @@ def _cmd_timeline_verify(args: argparse.Namespace) -> int:
 
 
 def _cmd_convert(args: argparse.Namespace) -> int:
-    if args.server:
-        # Verify remote server reachability; raise ExitCode.REMOTE_ERROR (5) if unreachable
-        _handle_remote_request(args.server, "/health")
-        raise RemoteServiceError(
-            "Remote job submission is scheduled for P2/P3 implementation.",
-            error_code="REMOTE_NOT_IMPLEMENTED_IN_P0",
-            details={"server": args.server},
-        )
-
     input_path = Path(args.input)
     output_path = Path(args.output)
     report_path = Path(args.report) if args.report else None
 
     fmt = _infer_output_format(output_path, args.format)
+    params = _build_aurora_params_from_args(
+        preset=args.preset,
+        preset_version=args.preset_version,
+        strength=args.strength,
+        seed=args.seed,
+        fmt=fmt,
+        sample_rate=args.sample_rate,
+        bit_depth=args.bit_depth,
+        bitrate=args.bitrate,
+        timing_mode=args.timing_mode,
+        tail=args.tail,
+        fade_out_ms=args.fade_out_ms,
+    )
 
-    try:
-        preset_spec = PresetSpec(
-            id=PresetId(args.preset),
-            version=args.preset_version,
+    if args.server:
+        api_key = _load_api_key_from_env_or_config()
+        client = RemoteAuroraClient(args.server, api_key=api_key)
+        remote_report = client.run_convert_workflow(
+            input_path=input_path,
+            output_path=output_path,
+            params=params,
+            overwrite=args.overwrite,
+            report_path=report_path,
         )
-        bit_depth = args.bit_depth if fmt == OutputFormat.WAV else None
-        bitrate_kbps = args.bitrate if fmt != OutputFormat.WAV else None
-        if fmt == OutputFormat.WAV and args.bitrate is not None:
-            raise ParameterValidationError(
-                "--bitrate cannot be used with uncompressed WAV output.",
-                error_code="INVALID_OUTPUT_PARAMETERS",
-            )
-
-        output_spec = OutputSpec(
-            format=fmt,
-            sample_rate=args.sample_rate,
-            bit_depth=bit_depth,
-            bitrate_kbps=bitrate_kbps,
-        )
-        timing_spec = TimingSpec(
-            mode=TimingMode(args.timing_mode),
-            tail=TailPolicy(args.tail),
-            fade_out_ms=args.fade_out_ms,
-        )
-        params = AuroraParams(
-            preset=preset_spec,
-            strength=args.strength,
-            seed=args.seed,
-            output=output_spec,
-            timing=timing_spec,
-        )
-    except ValidationError as exc:
-        raise ParameterValidationError(
-            f"Parameter validation failed: {exc}",
-            error_code="INVALID_PARAMETERS",
-            details={"errors": json.loads(exc.json())},
-        ) from exc
-    except ValueError as exc:
-        raise ParameterValidationError(
-            f"Invalid parameter value: {exc}",
-            error_code="INVALID_PARAMETERS",
-        ) from exc
+        _emit_json_stdout(remote_report)
+        return int(ExitCode.OK)
 
     report = convert_audio(
         input_path=input_path,
@@ -283,9 +300,52 @@ def _cmd_convert(args: argparse.Namespace) -> int:
         simulated_latency_samples=args.simulated_latency,
         simulated_tail_samples=args.simulated_tail,
         keep_input_sample_rate=args.keep_sample_rate,
+        strict_ffmpeg=args.strict_ffmpeg,
     )
     _emit_json_stdout(report.model_dump(mode="json"))
     return int(ExitCode.OK)
+
+
+def _cmd_compare(args: argparse.Namespace) -> int:
+    input_path = Path(args.input)
+    output_dir = Path(args.output_dir)
+    try:
+        fmt = OutputFormat(args.format.lower())
+    except ValueError as exc:
+        raise ParameterValidationError(
+            f"Unsupported output format '{args.format}'. Choose from: wav, m4a, mp3.",
+            error_code="INVALID_OUTPUT_FORMAT",
+        ) from exc
+
+    params = _build_aurora_params_from_args(
+        preset=args.preset,
+        preset_version=args.preset_version,
+        strength=args.strength,
+        seed=args.seed,
+        fmt=fmt,
+        sample_rate=args.sample_rate,
+        bit_depth=args.bit_depth,
+        bitrate=args.bitrate,
+    )
+    comp_report = compare_audio(
+        input_path=input_path,
+        output_dir=output_dir,
+        params=params,
+        overwrite=args.overwrite,
+        block_size=args.block_size,
+        strict_ffmpeg=args.strict_ffmpeg,
+    )
+    _emit_json_stdout(comp_report.model_dump(mode="json"))
+    return int(ExitCode.OK)
+
+
+def _cleanup_temp_files_in_dir(directory: Path) -> None:
+    """Remove any leftover `.aurora_tmp_*` files in `directory` (e.g. on Ctrl-C during batch)."""
+    if not directory.exists() or not directory.is_dir():
+        return
+    for p in directory.glob(".aurora_tmp_*"):
+        with contextlib.suppress(OSError):
+            p.unlink(missing_ok=True)
 
 
 def _cmd_batch(args: argparse.Namespace) -> int:
@@ -296,50 +356,70 @@ def _cmd_batch(args: argparse.Namespace) -> int:
             f"Batch input directory does not exist: {in_dir}",
             error_code="INPUT_DIR_NOT_FOUND",
         )
-    out_dir.mkdir(parents=True, exist_ok=True)
-    fmt = OutputFormat(args.format.lower())
-    files = sorted(p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() in (".wav", ".m4a", ".mp3", ".aac"))
+    try:
+        fmt = OutputFormat(args.format.lower())
+    except ValueError as exc:
+        raise ParameterValidationError(
+            f"Unsupported batch output format '{args.format}'. Choose from: wav, m4a, mp3.",
+            error_code="INVALID_OUTPUT_FORMAT",
+        ) from exc
+
+    params_template = _build_aurora_params_from_args(
+        preset=args.preset,
+        strength=args.strength,
+        seed=args.seed,
+        fmt=fmt,
+        sample_rate=args.sample_rate,
+        bit_depth=24 if fmt == OutputFormat.WAV else None,
+    )
+
+    files = sorted(
+        p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() in (".wav", ".m4a", ".mp3", ".aac")
+    )
     if not files:
         raise InputAudioError(
             f"No supported audio files (.wav, .m4a, .mp3, .aac) found in {in_dir}",
             error_code="EMPTY_BATCH_INPUT",
         )
 
+    out_dir.mkdir(parents=True, exist_ok=True)
     item_results: list[dict[str, Any]] = []
     failed_count = 0
-    for src in files:
-        dst = out_dir / f"{src.stem}.{fmt.value}"
-        try:
-            params = AuroraParams(
-                preset=PresetSpec(id=PresetId(args.preset), version="1"),
-                strength=args.strength,
-                seed=args.seed,
-                output=OutputSpec(
-                    format=fmt,
-                    sample_rate=args.sample_rate,
-                    bit_depth=24 if fmt == OutputFormat.WAV else None,
-                ),
-            )
-            rep = convert_audio(src, dst, params, overwrite=args.overwrite)
-            item_results.append(
-                {
-                    "input": str(src),
-                    "output": str(dst),
-                    "ok": True,
-                    "samples": rep.output.samples,
-                    "sha256": rep.output.sha256,
-                }
-            )
-        except AuroraError as exc:
-            failed_count += 1
-            item_results.append(
-                {
-                    "input": str(src),
-                    "output": str(dst),
-                    "ok": False,
-                    "error": exc.to_dict()["error"],
-                }
-            )
+    try:
+        for src in files:
+            dst = out_dir / f"{src.stem}.{fmt.value}"
+            try:
+                rep = convert_audio(
+                    src,
+                    dst,
+                    params_template,
+                    overwrite=args.overwrite,
+                    block_size=args.block_size,
+                    strict_ffmpeg=args.strict_ffmpeg,
+                )
+                item_results.append(
+                    {
+                        "input": str(src),
+                        "output": str(dst),
+                        "ok": True,
+                        "samples": rep.output.samples,
+                        "sha256": rep.output.sha256,
+                        "sync_within_tolerance": rep.timeline.sync_within_tolerance,
+                        "sync_warning": rep.timeline.sync_warning,
+                    }
+                )
+            except AuroraError as exc:
+                failed_count += 1
+                item_results.append(
+                    {
+                        "input": str(src),
+                        "output": str(dst),
+                        "ok": False,
+                        "error": exc.to_dict()["error"],
+                    }
+                )
+    finally:
+        _cleanup_temp_files_in_dir(out_dir)
 
     payload = {
         "ok": failed_count == 0,
@@ -352,13 +432,23 @@ def _cmd_batch(args: argparse.Namespace) -> int:
     return int(ExitCode.OK if failed_count == 0 else ExitCode.PROCESSING_ERROR)
 
 
+def _cmd_gui(_args: argparse.Namespace) -> int:
+    raise ParameterValidationError(
+        "Web GUI (`aurora gui`) is not implemented yet (scheduled for P4). "
+        "Please use `aurora convert`, `aurora compare`, or `aurora batch`.",
+        error_code="GUI_NOT_IMPLEMENTED",
+    )
+
+
 def _cmd_job(args: argparse.Namespace) -> int:
     if not args.server:
         raise ParameterValidationError(
             "`aurora job` requires `--server <url>`.",
             error_code="MISSING_SERVER_URL",
         )
-    res = _handle_remote_request(args.server, f"/v1/jobs/{args.job_id}")
+    api_key = _load_api_key_from_env_or_config()
+    client = RemoteAuroraClient(args.server, api_key=api_key)
+    res = client.cancel_job(args.job_id) if args.action == "cancel" else client.get_job_status(args.job_id)
     _emit_json_stdout(res)
     return int(ExitCode.OK)
 
@@ -437,14 +527,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_convert.add_argument(
         "--fade-out-ms",
         type=float,
-        default=5.0,
-        help="Short fade-out in ms when tail=trim and reverb tail > 0 (default: 5.0)",
+        default=10.0,
+        help="Short fade-out in ms when tail=trim (default: 10.0)",
     )
     p_convert.add_argument(
         "--block-size",
         type=int,
-        default=256,
-        help="Engine processing block size in frames (default: 256)",
+        default=1024,
+        help="Engine processing block size in frames (default: 1024)",
     )
     p_convert.add_argument(
         "--simulated-latency",
@@ -473,7 +563,36 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional remote Aurora API server URL (reads AURORA_API_KEY from environment)",
     )
+    p_convert.add_argument(
+        "--strict-ffmpeg",
+        action="store_true",
+        help="Reject M4A/AAC processing with exit code 4 if FFmpeg version is older than 7.0",
+    )
     p_convert.set_defaults(func=_cmd_convert)
+
+    # aurora compare
+    p_compare = subparsers.add_parser(
+        "compare",
+        help="Generate BS.1770 equal-loudness matched dry reference and spatial effect files",
+    )
+    p_compare.add_argument("input", help="Input audio file path (.wav, .m4a, .mp3, .aac)")
+    p_compare.add_argument("--output-dir", required=True, help="Directory for loudness-matched dry and effect files")
+    p_compare.add_argument("--preset", default="room", help="Preset identifier: room, surround, or orbit (default: room)")
+    p_compare.add_argument("--preset-version", default="1", help="Preset version string (default: 1)")
+    p_compare.add_argument("--strength", type=float, default=None, help="Effect strength in [0.0, 1.0]")
+    p_compare.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
+    p_compare.add_argument("--format", default="wav", help="Output format: wav, m4a, or mp3 (default: wav)")
+    p_compare.add_argument("--sample-rate", type=int, default=48000, help="Output sample rate in Hz (default: 48000)")
+    p_compare.add_argument("--bit-depth", type=int, default=24, help="WAV bit depth: 16, 24, or 32 (default: 24)")
+    p_compare.add_argument("--bitrate", type=int, default=None, help="Lossy bitrate in kbps (default: 256)")
+    p_compare.add_argument("--block-size", type=int, default=1024, help="Engine block size in frames (default: 1024)")
+    p_compare.add_argument("--overwrite", action="store_true", help="Allow overwriting existing output files")
+    p_compare.add_argument(
+        "--strict-ffmpeg",
+        action="store_true",
+        help="Reject M4A/AAC processing with exit code 4 if FFmpeg version is older than 7.0",
+    )
+    p_compare.set_defaults(func=_cmd_compare)
 
     # aurora inspect
     p_inspect = subparsers.add_parser(
@@ -482,6 +601,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_inspect.add_argument("input", help="Input audio file path")
     p_inspect.add_argument("--json", action="store_true", help="Output JSON (enabled by default)")
+    p_inspect.add_argument(
+        "--strict-ffmpeg",
+        action="store_true",
+        help="Reject M4A/AAC inspection with exit code 4 if FFmpeg version is older than 7.0",
+    )
     p_inspect.set_defaults(func=_cmd_inspect)
 
     # aurora presets
@@ -491,6 +615,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_presets.add_argument("--json", action="store_true", help="Output JSON (enabled by default)")
     p_presets.set_defaults(func=_cmd_presets)
+
+    # aurora gui
+    p_gui = subparsers.add_parser(
+        "gui",
+        help="Launch Web GUI (scheduled for P4; currently exits with code 2)",
+    )
+    p_gui.set_defaults(func=_cmd_gui)
 
     # aurora schema
     p_schema = subparsers.add_parser(
@@ -525,7 +656,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
     p_batch.add_argument("--format", default="wav", help="Output format: wav, m4a, or mp3")
     p_batch.add_argument("--sample-rate", type=int, default=48000, help="Output sample rate in Hz")
+    p_batch.add_argument("--block-size", type=int, default=1024, help="Engine block size in frames (default: 1024)")
     p_batch.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
+    p_batch.add_argument(
+        "--strict-ffmpeg",
+        action="store_true",
+        help="Reject M4A/AAC processing with exit code 4 if FFmpeg version is older than 7.0",
+    )
     p_batch.set_defaults(func=_cmd_batch)
 
     # aurora job
@@ -533,7 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
         "job",
         help="Query or manage remote asynchronous jobs",
     )
-    p_job.add_argument("action", choices=["status"], help="Job action (status)")
+    p_job.add_argument("action", choices=["status", "cancel"], help="Job action (status, cancel)")
     p_job.add_argument("job_id", help="Remote job identifier")
     p_job.add_argument("--server", required=True, help="Remote Aurora server URL")
     p_job.add_argument("--json", action="store_true", help="Output JSON (enabled by default)")
@@ -542,11 +679,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _startup_ffmpeg_probe(command: str | None) -> None:
+    """Detect FFmpeg version on startup for local media commands (F-AG-1)."""
+    if command in ("convert", "inspect", "compare", "batch", "timeline-verify"):
+        try:
+            ver = get_ffmpeg_version()
+            if not ver.meets_m4a_requirement:
+                log_stderr(
+                    f"NOTICE: Detected FFmpeg {ver.major}.{ver.minor}.{ver.patch} (< 7.0). "
+                    "M4A/AAC processing will emit degradation warnings (or fail with exit code 4 under --strict-ffmpeg)."
+                )
+        except AuroraError:
+            # Will be raised if local ffmpeg is actually invoked (not needed for --server remote mode)
+            pass
+
+
 def run_cli(argv: Sequence[str] | None = None) -> int:
     """Execute CLI with given arguments and return numerical exit code (Section 9)."""
     parser = build_parser()
     try:
         args = parser.parse_args(list(argv) if argv is not None else None)
+        if not getattr(args, "server", None):
+            _startup_ffmpeg_probe(getattr(args, "command", None))
         handler = getattr(args, "func", None)
         if handler is None:
             raise ParameterValidationError("No subcommand specified.")

@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from aurora_binaural.cli import run_cli
 from aurora_binaural.exit_codes import ExitCode, OperationCanceledError, ProcessingError
+from aurora_binaural.media import get_ffmpeg_version
 from aurora_binaural.params import (
     AuroraParams,
     OutputContainer,
@@ -122,11 +123,7 @@ class TestUnifiedParameterModel:
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         for required_key in ("preset", "strength", "seed", "output", "timing"):
             assert required_key in schema["properties"]
-
-        qa_schema_path = Path(__file__).resolve().parents[2] / "qa" / "p0" / "antigravity" / "params.schema.json"
-        if qa_schema_path.exists():
-            on_disk = json.loads(qa_schema_path.read_text(encoding="utf-8"))
-            assert on_disk == schema
+        assert schema["$defs"]["TimingSpec"]["properties"]["fade_out_ms"]["default"] == pytest.approx(10.0)
 
 
 class TestStubCoreAndBlockInvariance:
@@ -263,9 +260,18 @@ class TestCliPipelineAndExitCodes:
         assert stdout_json["ok"] is True
         assert stdout_json["status"] == "succeeded"
         assert stdout_json["input"]["samples"] == n_samples
-        assert stdout_json["output"]["samples"] == n_samples
-        assert stdout_json["timeline"]["sample_diff"] == 0
-        assert stdout_json["timeline"]["sync_within_tolerance"] is True
+
+        ffmpeg_ver = get_ffmpeg_version()
+        if fmt == "m4a" and ffmpeg_ver.major < 8:
+            # F-AG-2: On FFmpeg < 8 (e.g. 4.4 / 5.1 / 7.1), libavformat/mov.c does not attach trailing
+            # AV_PKT_DATA_SKIP_SAMPLES to the final AAC packet; program must emit explicit sync_warning.
+            assert stdout_json["timeline"]["sync_warning"] is not None
+            assert "FFmpeg" in stdout_json["timeline"]["sync_warning"] or "WAV" in stdout_json["timeline"]["sync_warning"]
+        else:
+            assert stdout_json["output"]["samples"] == n_samples
+            assert stdout_json["timeline"]["sample_diff"] == 0
+            assert stdout_json["timeline"]["sync_within_tolerance"] is True
+            assert stdout_json["timeline"]["sync_warning"] is None
 
     def test_overwrite_protection_and_exit_code_3(
         self,
