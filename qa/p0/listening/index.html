@@ -1,0 +1,49 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aurora P0 听感试听</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--mut:#78716c;--card:#fff;--bd:#e7e5e4;--acc:#4f46e5}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--mut:#a8a29e;--card:#292524;--bd:#44403c;--acc:#818cf8}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"PingFang SC",sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:22px;margin:0 0 4px}.mut{color:var(--mut);font-size:13px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:middle}
+th{font-size:12px;color:var(--mut);font-weight:500}
+button{font:inherit;border:1px solid var(--bd);background:var(--bg);color:var(--fg);border-radius:8px;padding:4px 10px;cursor:pointer}
+button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+select{font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px}
+textarea{width:100%;min-height:160px;font:12px/1.5 ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:8px;box-sizing:border-box}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style></head><body><main>
+<h1>Aurora Binaural · P0 听感试听</h1>
+<p class="mut">请戴耳机。所有版本都已按 BS.1770 匹配到同一响度。点"播放"切换版本，播放位置会保持同步，方便逐段对比。打分：1 = 明显变差，3 = 和原声差不多，5 = 明显更好。打完分点最下方"生成结果"，把文字复制给 Claude。</p>
+<div class="row"><label><input type="checkbox" id="blind"> 盲听（隐藏名称，随机排序）</label>
+<label>耳机型号 <input id="hp" placeholder="例如 AirPods Pro 2" style="font:inherit"></label></div>
+<div id="app"></div>
+<section><div class="row"><button id="gen">生成结果</button><span class="mut">生成后复制下面的文字发给 Claude</span></div><textarea id="out" readonly></textarea></section>
+</main>
+<audio id="player" preload="auto"></audio>
+<script>
+const G={"voice": {"label": "人声", "items": [{"id": "dry", "name": "原声（参照）", "file": "voice_dry_lufs20.wav"}, {"id": "voice_routeA_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 A · 强度 0.4 · KU100", "file": "voice_routeA_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "voice_routeA_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 A · 强度 0.8 · KU100", "file": "voice_routeA_str0.8_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "voice_routeB_str0.4_hrtf-sadie2_d1_eq-frontal", "name": "路线 B · 强度 0.4 · SADIE II", "file": "voice_routeB_str0.4_hrtf-sadie2_d1_eq-frontal.wav"}, {"id": "voice_routeB_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 0.4 · KU100", "file": "voice_routeB_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "voice_routeB_str0.8_hrtf-sadie2_d1_eq-frontal", "name": "路线 B · 强度 0.8 · SADIE II", "file": "voice_routeB_str0.8_hrtf-sadie2_d1_eq-frontal.wav"}, {"id": "voice_routeB_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 0.8 · KU100", "file": "voice_routeB_str0.8_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "voice_routeC_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 C · 强度 0.4 · KU100", "file": "voice_routeC_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "voice_routeC_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 C · 强度 0.8 · KU100", "file": "voice_routeC_str0.8_hrtf-thk_ku100_eq-frontal.wav"}]}, "music": {"label": "音乐", "items": [{"id": "dry", "name": "原声（参照）", "file": "music_dry_lufs20.wav"}, {"id": "music_routeA_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 A · 强度 0.4 · KU100", "file": "music_routeA_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "music_routeA_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 A · 强度 0.8 · KU100", "file": "music_routeA_str0.8_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "music_routeB_str0.2_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 0.2 · KU100", "file": "music_routeB_str0.2_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "music_routeB_str0.4_hrtf-sadie2_d1_eq-frontal", "name": "路线 B · 强度 0.4 · SADIE II", "file": "music_routeB_str0.4_hrtf-sadie2_d1_eq-frontal.wav"}, {"id": "music_routeB_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 0.4 · KU100", "file": "music_routeB_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "music_routeB_str0.8_hrtf-sadie2_d1_eq-frontal", "name": "路线 B · 强度 0.8 · SADIE II", "file": "music_routeB_str0.8_hrtf-sadie2_d1_eq-frontal.wav"}, {"id": "music_routeB_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 0.8 · KU100", "file": "music_routeB_str0.8_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "music_routeB_str1.0_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 1.0 · KU100", "file": "music_routeB_str1.0_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "music_routeC_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 C · 强度 0.4 · KU100", "file": "music_routeC_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "music_routeC_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 C · 强度 0.8 · KU100", "file": "music_routeC_str0.8_hrtf-thk_ku100_eq-frontal.wav"}]}, "ambience": {"label": "环境音（雨声）", "items": [{"id": "dry", "name": "原声（参照）", "file": "ambience_dry_lufs20.wav"}, {"id": "ambience_routeA_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 A · 强度 0.4 · KU100", "file": "ambience_routeA_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "ambience_routeA_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 A · 强度 0.8 · KU100", "file": "ambience_routeA_str0.8_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "ambience_routeB_str0.4_hrtf-sadie2_d1_eq-frontal", "name": "路线 B · 强度 0.4 · SADIE II", "file": "ambience_routeB_str0.4_hrtf-sadie2_d1_eq-frontal.wav"}, {"id": "ambience_routeB_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 0.4 · KU100", "file": "ambience_routeB_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "ambience_routeB_str0.8_hrtf-sadie2_d1_eq-frontal", "name": "路线 B · 强度 0.8 · SADIE II", "file": "ambience_routeB_str0.8_hrtf-sadie2_d1_eq-frontal.wav"}, {"id": "ambience_routeB_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 B · 强度 0.8 · KU100", "file": "ambience_routeB_str0.8_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "ambience_routeC_str0.4_hrtf-thk_ku100_eq-frontal", "name": "路线 C · 强度 0.4 · KU100", "file": "ambience_routeC_str0.4_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "ambience_routeC_str0.8_hrtf-thk_ku100_eq-frontal", "name": "路线 C · 强度 0.8 · KU100", "file": "ambience_routeC_str0.8_hrtf-thk_ku100_eq-frontal.wav"}]}};const BASE="../cursor/samples/";
+const player=document.getElementById('player');let cur=null;
+const crit=[['space','空间感'],['clarity','清晰度'],['tone','音色自然'],['fatigue','不疲劳']];
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function render(){const blind=document.getElementById('blind').checked;const app=document.getElementById('app');app.innerHTML='';
+ for(const [cat,g] of Object.entries(G)){const s=document.createElement('section');s.innerHTML='<h2 style="font-size:17px;margin:0 0 8px">'+g.label+'</h2>';
+  const t=document.createElement('table');t.innerHTML='<tr><th>版本</th><th></th>'+crit.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr>';
+  let items=g.items;if(blind){const dry=items[0];items=[dry].concat(shuffle(items.slice(1)))}
+  items.forEach((it,i)=>{const tr=document.createElement('tr');const nm=blind&&it.id!=='dry'?('版本 '+String.fromCharCode(64+i)):it.name;
+   tr.innerHTML='<td>'+nm+'</td><td><button data-f="'+it.file+'">播放</button></td>'+(it.id==='dry'?crit.map(()=>'<td class="mut">参照</td>').join(''):crit.map(c=>'<td><select data-k="'+cat+'|'+it.id+'|'+c[0]+'"><option></option>'+[1,2,3,4,5].map(v=>'<option>'+v+'</option>').join('')+'</select></td>').join(''));
+   t.appendChild(tr)});s.appendChild(t);
+  const n=document.createElement('div');n.innerHTML='<input data-note="'+cat+'" placeholder="备注（可选，例如：低频发闷、方向偏左）" style="width:100%;margin-top:8px;font:inherit;box-sizing:border-box">';s.appendChild(n);app.appendChild(s)}
+ app.querySelectorAll('button[data-f]').forEach(b=>b.onclick=()=>{const f=b.dataset.f;
+  if(cur===b&&!player.paused){player.pause();b.classList.remove('on');return}
+  const t=player.currentTime||0;const same=player.dataset.cat===f.split('_')[0];player.src=BASE+f;player.dataset.cat=f.split('_')[0];
+  player.onloadedmetadata=()=>{if(same)player.currentTime=t;player.play()};
+  app.querySelectorAll('button.on').forEach(x=>x.classList.remove('on'));b.classList.add('on');cur=b})}
+document.getElementById('blind').onchange=render;render();
+document.getElementById('gen').onclick=()=>{const r={headphones:document.getElementById('hp').value,blind:document.getElementById('blind').checked,scores:{},notes:{}};
+ document.querySelectorAll('select[data-k]').forEach(s=>{if(s.value){const [c,id,k]=s.dataset.k.split('|');(r.scores[c+'|'+id]??={})[k]=+s.value}});
+ document.querySelectorAll('input[data-note]').forEach(i=>{if(i.value)r.notes[i.dataset.note]=i.value});
+ document.getElementById('out').value='AURORA-P0-LISTENING '+JSON.stringify(r)};
+</script></body></html>
