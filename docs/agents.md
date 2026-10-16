@@ -40,4 +40,4 @@
 ## Cursor 账号与模型（2026-10-16）
 
 - 账号：已切换为 Premium 账号（`agent status` 显示 sevava0405@gmail.com）。之前登录的免费账号在 P0-cursor-01 运行中途撞到用量上限。
-- 模型选择（由 Claude 决定）：算法任务默认用 `gpt-5.6-sol-high`。理由：推理能力强，而且和验收方 Claude 不是同一模型家族，可以减少编码与审查出现相同盲点的风险。普通任务可以降到 `gpt-5.3-codex`。每次派单的模型都记录在 run-agent 日志的第一行。
+- 模型选择（由 Claude 决定）：原计划用 `gpt-5.6-sol-high`。实测发现，这个账号本周额度只覆盖 Grok 系列：GPT-5.6 Sol、Claude Opus 5.5、Codex 5.3 都提示"不在每周用量内"，需要另外购买额度（未购买）。因此 P0-cursor-02 改用 `grok-4.7-high`。理由：推理能力强，而且和验收方 Claude 不是同一模型家族，可以减少编码与审查出现相同盲点的风险。普通任务可以降到 `gpt-5.3-codex`。每次派单的模型都记录在 run-agent 日志的第一行。

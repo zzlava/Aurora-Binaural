@@ -1,6 +1,6 @@
 # P0-cursor-02：修订渲染算法原型
 
-状态：已派发（2026-10-16，模型 gpt-5.6-sol-high）
+状态：已派发（2026-10-16，模型 grok-4.7-high）
 派单方：Claude　执行方：Cursor（`agent`）
 前置：先阅读 `qa/p0/REVIEW-cursor-01.md`（审查意见）和 `docs/tasks/P0-cursor-01.md`（原任务书，其中的规则继续有效）。
 
