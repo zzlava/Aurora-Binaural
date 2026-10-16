@@ -1,0 +1,32 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+# Rust
+target/
+# Node / web
+node_modules/
+web/dist/
+# Runtime data (never commit)
+.env
+.env.*
+!.env.example
+runtime/
+tmp/
+*.log
+# Render outputs: only curated QA samples under qa/ are tracked (via LFS)
+outputs/
+renders/
