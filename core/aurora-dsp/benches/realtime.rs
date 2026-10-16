@@ -43,7 +43,8 @@ fn route_b(c: &mut Criterion) {
     let (pack, source) = write_pack(&dir);
     let preset =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../presets/p0_draft.toml");
-    let cfg = RenderConfig::route_b(pack, source, preset);
+    let mut cfg = RenderConfig::route_b(pack, source, preset);
+    cfg.hrtf_name = "ku100".to_string();
     let mut dsp = RouteB::new();
     dsp.prepare(48_000, 256, &cfg).unwrap();
     let n = 256;

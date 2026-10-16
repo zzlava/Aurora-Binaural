@@ -1,72 +1,64 @@
-//! Seeded cascaded allpass decorrelator.
+//! Seeded interaural delay.
 //!
-//! Matches `prototypes/aurora_p0/upmix.py` `decorrelate`: four sections,
-//! `numpy.random.default_rng`, delay in `[0.002 s, 0.011 s)`, gain in `[0.4, 0.7)`.
-//! Coefficient draws alternate `integers` then `uniform`, one section at a time.
-//! Delay lines are sized in `new`; `process` does not allocate.
+//! Matches `prototypes/aurora_p0/upmix.py` `decorrelate`. The delay table
+//! comes from the preset (`engine.decorrelator_delays_ms`). The seed picks
+//! the tap and the sign. Magnitude is unity. `process` does not allocate.
 
-use crate::rng::NumpyGenerator;
+const MAX_DELAY: usize = 2048;
 
-const N_AP: usize = 4;
-const MAX_DELAY: usize = 528;
-
-struct Section {
-    g: f64,
+pub struct Decorrelator {
     delay: usize,
+    sign: f64,
     state: Vec<f64>,
     pos: usize,
 }
 
-pub struct Decorrelator {
-    sections: [Section; N_AP],
-}
-
 impl Decorrelator {
-    pub fn new(sample_rate: u32, seed: u64) -> Self {
-        let mut rng = NumpyGenerator::new(seed);
-        let lo = (0.002 * f64::from(sample_rate)) as i64;
-        let hi = (0.011 * f64::from(sample_rate)) as i64;
-        let mut sections = Vec::with_capacity(N_AP);
-        for _ in 0..N_AP {
-            let d = rng.integers(lo, hi).clamp(1, MAX_DELAY as i64) as usize;
-            let g = rng.uniform(0.4, 0.7);
-            sections.push(Section {
-                g,
-                delay: d,
-                state: vec![0.0; d],
+    pub fn new(sample_rate: u32, seed: u64, delays_ms: &[f64]) -> Self {
+        if delays_ms.is_empty() {
+            return Self {
+                delay: 0,
+                sign: 1.0,
+                state: Vec::new(),
                 pos: 0,
-            });
+            };
         }
-        let sections: [Section; N_AP] = sections.try_into().ok().expect("four sections");
-        Self { sections }
+        let ms = delays_ms[(seed % delays_ms.len() as u64) as usize];
+        let delay = (ms * 1e-3 * f64::from(sample_rate))
+            .round()
+            .clamp(0.0, MAX_DELAY as f64) as usize;
+        let sign = if (seed / 7) % 2 == 0 { -1.0 } else { 1.0 };
+        Self {
+            delay,
+            sign,
+            state: vec![0.0; delay],
+            pos: 0,
+        }
     }
 
     pub fn reset(&mut self) {
-        for section in &mut self.sections {
-            section.state.fill(0.0);
-            section.pos = 0;
-        }
+        self.state.fill(0.0);
+        self.pos = 0;
     }
 
     pub fn process(&mut self, input: &[f64], output: &mut [f64]) {
         let n = input.len().min(output.len());
-        for i in 0..n {
-            let mut x = if input[i].is_finite() { input[i] } else { 0.0 };
-            for section in &mut self.sections {
-                let d = section.delay;
-                let g = section.g;
-                let y = -g * x + section.state[section.pos];
-                // Shift the delay: the sample that just left is replaced by x + g*y
-                // after the remaining samples move toward the read point.
-                // State is a ring: index `pos` is the oldest sample (zi[0]).
-                section.state[section.pos] = x + g * y;
-                section.pos += 1;
-                if section.pos == d {
-                    section.pos = 0;
-                }
-                x = y;
+        if self.delay == 0 {
+            for i in 0..n {
+                let x = if input[i].is_finite() { input[i] } else { 0.0 };
+                output[i] = x * self.sign;
             }
-            output[i] = x;
+            return;
+        }
+        for i in 0..n {
+            let x = if input[i].is_finite() { input[i] } else { 0.0 };
+            let y = self.state[self.pos];
+            self.state[self.pos] = x;
+            self.pos += 1;
+            if self.pos == self.delay {
+                self.pos = 0;
+            }
+            output[i] = y * self.sign;
         }
     }
 }
@@ -75,19 +67,28 @@ impl Decorrelator {
 mod tests {
     use super::*;
 
+    const DELAYS_MS: [f64; 12] = [
+        3.2, 6.4, 10.0, 13.5, 4.4, 7.6, 11.2, 14.8, 3.8, 6.0, 9.2, 12.4,
+    ];
+
     #[test]
-    fn impulse_matches_numpy_product_of_gains() {
-        let mut d = Decorrelator::new(48_000, 20_261_019);
-        let mut y = [0.0; 8];
-        d.process(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], &mut y);
-        assert!((y[0] - 0.098_928_488_312_898_2).abs() < 1e-12, "{}", y[0]);
+    fn side_seed_matches_prototype_tap() {
+        // seed 20261016 + 11 → delays[11] = 12.4 ms → 595 samples, negative.
+        let mut d = Decorrelator::new(48_000, 20_261_027, &DELAYS_MS);
+        let mut x = vec![0.0; 800];
+        x[0] = 1.0;
+        let mut y = vec![0.0; 800];
+        d.process(&x, &mut y);
+        let hit = y.iter().position(|s| s.abs() > 0.5).unwrap();
+        assert_eq!(hit, 595);
+        assert!((y[595] - (-1.0)).abs() < 1e-12);
     }
 
     #[test]
     fn blocks_match_one_shot() {
         let x: Vec<f64> = (0..300).map(|i| (i as f64 * 0.13).sin()).collect();
-        let mut a = Decorrelator::new(48_000, 20_261_016);
-        let mut b = Decorrelator::new(48_000, 20_261_016);
+        let mut a = Decorrelator::new(48_000, 20_261_016, &DELAYS_MS);
+        let mut b = Decorrelator::new(48_000, 20_261_016, &DELAYS_MS);
         let mut whole = vec![0.0; x.len()];
         let mut parts = vec![0.0; x.len()];
         a.process(&x, &mut whole);

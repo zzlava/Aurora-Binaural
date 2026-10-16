@@ -14,6 +14,42 @@ pub const N_STEMS: usize = 6 + N_SECTORS;
 pub const WIDE_DEG: f64 = 90.0;
 pub const REAR_DEG: f64 = 130.0;
 
+/// Knobs shared with `StreamingUpmixer`. Clamps match the prototype.
+#[derive(Debug, Clone, Copy)]
+pub struct UpmixControls {
+    pub width_deg: f64,
+    pub ambient_mix: f64,
+    pub coherence_floor: f64,
+    pub coherence_power: f64,
+    pub pan_gamma: f64,
+    pub direct_bleed: f64,
+    pub hf_pan_floor: f64,
+    pub hf_pan_start_hz: f64,
+    pub hf_pan_end_hz: f64,
+    pub hf_direct_start_hz: f64,
+    pub hf_direct_end_hz: f64,
+}
+
+impl UpmixControls {
+    /// Prototype constructor defaults: no bleed, no HF pan collapse, no HF
+    /// direct fade. Preset values replace these on the render chain.
+    pub fn prototype_defaults(width_deg: f64, ambient_mix: f64) -> Self {
+        Self {
+            width_deg,
+            ambient_mix,
+            coherence_floor: 0.22,
+            coherence_power: 2.0,
+            pan_gamma: 1.0,
+            direct_bleed: 0.0,
+            hf_pan_floor: 1.0,
+            hf_pan_start_hz: 3000.0,
+            hf_pan_end_hz: 8000.0,
+            hf_direct_start_hz: 0.0,
+            hf_direct_end_hz: 0.0,
+        }
+    }
+}
+
 pub struct StreamingUpmix {
     n_fft: usize,
     hop: usize,
@@ -23,6 +59,17 @@ pub struct StreamingUpmix {
     alpha: f64,
     pub width_deg: f64,
     pub ambient_mix: f64,
+    pub coherence_floor: f64,
+    pub coherence_power: f64,
+    pub pan_gamma: f64,
+    pub direct_bleed: f64,
+    pub hf_pan_floor: f64,
+    pub hf_pan_start_hz: f64,
+    pub hf_pan_end_hz: f64,
+    pub hf_direct_start_hz: f64,
+    pub hf_direct_end_hz: f64,
+    w_steady: f64,
+    freqs: Vec<f64>,
     pub sector_az: [f64; N_SECTORS],
     gll: Vec<f64>,
     grr: Vec<f64>,
@@ -67,6 +114,14 @@ pub struct StreamingUpmix {
 
 impl StreamingUpmix {
     pub fn new(sample_rate: f64, max_block: usize, width_deg: f64, ambient_mix: f64) -> Self {
+        Self::with_controls(
+            sample_rate,
+            max_block,
+            UpmixControls::prototype_defaults(width_deg, ambient_mix),
+        )
+    }
+
+    pub fn with_controls(sample_rate: f64, max_block: usize, controls: UpmixControls) -> Self {
         let n_fft = N_FFT;
         let hop = HOP;
         let mut hann = vec![0.0; n_fft];
@@ -75,11 +130,26 @@ impl StreamingUpmix {
             hann[k] = 0.5 - 0.5 * (2.0 * std::f64::consts::PI * k as f64 / n_fft as f64).cos();
             aw[k] = hann[k].sqrt();
         }
+        // Steady overlap of the synthesis window. Dividing a partial sum by
+        // itself undoes the fade and clicks. The prototype keeps the natural
+        // edge fade by dividing by max(w, w_steady).
+        let mut probe = vec![0.0; n_fft + hop * 8];
+        for i in 0..8 {
+            let start = i * hop;
+            for k in 0..n_fft {
+                probe[start + k] += hann[k];
+            }
+        }
+        let w_steady = probe.into_iter().fold(0.0_f64, f64::max);
         let alpha = 1.0 - (-(hop as f64) / (0.040 * sample_rate)).exp();
         let mut planner = RealFftPlanner::<f64>::new();
         let forward = planner.plan_fft_forward(n_fft);
         let inverse = planner.plan_fft_inverse(n_fft);
         let bins = n_fft / 2 + 1;
+        let mut freqs = vec![0.0; bins];
+        for i in 0..bins {
+            freqs[i] = i as f64 * sample_rate / n_fft as f64;
+        }
         let acc_cap = 4 * n_fft + max_block.max(n_fft);
         let in_cap = n_fft + max_block.max(n_fft);
         let mut up = Self {
@@ -91,6 +161,17 @@ impl StreamingUpmix {
             alpha,
             width_deg: 0.0,
             ambient_mix: 0.0,
+            coherence_floor: 0.22,
+            coherence_power: 2.0,
+            pan_gamma: 1.0,
+            direct_bleed: 0.0,
+            hf_pan_floor: 1.0,
+            hf_pan_start_hz: 3000.0,
+            hf_pan_end_hz: 8000.0,
+            hf_direct_start_hz: 0.0,
+            hf_direct_end_hz: 0.0,
+            w_steady,
+            freqs,
             sector_az: [0.0; N_SECTORS],
             gll: vec![0.0; bins],
             grr: vec![0.0; bins],
@@ -132,7 +213,7 @@ impl StreamingUpmix {
             coherence_sum: 0.0,
             coherence_n: 0,
         };
-        up.set_width_ambient(width_deg, ambient_mix);
+        up.set_controls(controls);
         up
     }
 
@@ -143,6 +224,25 @@ impl StreamingUpmix {
     pub fn set_width_ambient(&mut self, width_deg: f64, ambient_mix: f64) {
         self.width_deg = width_deg.max(0.0);
         self.ambient_mix = ambient_mix.clamp(0.0, 1.0);
+        self.retarget_sectors();
+    }
+
+    pub fn set_controls(&mut self, controls: UpmixControls) {
+        self.width_deg = controls.width_deg.max(0.0);
+        self.ambient_mix = controls.ambient_mix.clamp(0.0, 1.0);
+        self.coherence_floor = controls.coherence_floor.clamp(0.0, 0.95);
+        self.coherence_power = controls.coherence_power.max(0.25);
+        self.pan_gamma = controls.pan_gamma.max(0.05);
+        self.direct_bleed = controls.direct_bleed.clamp(0.0, 0.9);
+        self.hf_pan_floor = controls.hf_pan_floor.clamp(0.0, 1.0);
+        self.hf_pan_start_hz = controls.hf_pan_start_hz;
+        self.hf_pan_end_hz = controls.hf_pan_end_hz;
+        self.hf_direct_start_hz = controls.hf_direct_start_hz;
+        self.hf_direct_end_hz = controls.hf_direct_end_hz;
+        self.retarget_sectors();
+    }
+
+    fn retarget_sectors(&mut self) {
         if self.width_deg < 5.0 {
             self.sector_az = [0.0; N_SECTORS];
         } else {
@@ -296,9 +396,12 @@ impl StreamingUpmix {
 
     fn masks(&mut self) {
         let n = self.m_dir.len();
+        let floor = self.coherence_floor;
+        let span = (1.0 - floor).max(1e-3);
+        let power = self.coherence_power;
         for i in 0..n {
-            let raw = ((self.phi[i] - 0.22) / 0.78).clamp(0.0, 1.0);
-            self.m_dir[i] = raw * raw;
+            let raw = ((self.phi[i] - floor) / span).clamp(0.0, 1.0);
+            self.m_dir[i] = raw.powf(power);
         }
         if !self.has_prev {
             self.prev_mdir.copy_from_slice(&self.m_dir);
@@ -311,10 +414,26 @@ impl StreamingUpmix {
             }
         }
         let amb = self.ambient_mix;
+        let bleed = self.direct_bleed;
         for i in 0..n {
             let incoh = 1.0 - self.m_dir[i];
-            self.m_amb[i] = incoh * amb;
+            // direct_bleed moves a fraction of the coherent mask onto the rear
+            // bed. ambient_ratio alone only repartitions the incoherent residual.
+            self.m_amb[i] = incoh * amb + self.m_dir[i] * bleed;
             self.m_wide[i] = incoh * (1.0 - amb);
+            self.m_dir[i] *= 1.0 - bleed;
+        }
+        let start = self.hf_direct_start_hz;
+        let end = self.hf_direct_end_hz;
+        if end > start + 1.0 {
+            let span = end - start;
+            for i in 0..n {
+                let t = ((self.freqs[i] - start) / span).clamp(0.0, 1.0);
+                let keep = 1.0 - t;
+                self.m_dir[i] = keep * self.m_dir[i] + t;
+                self.m_wide[i] *= keep;
+                self.m_amb[i] *= keep;
+            }
         }
     }
 
@@ -379,8 +498,21 @@ impl StreamingUpmix {
         }
         let span = self.sector_az[n_sec - 1] - self.sector_az[0];
         let step = span / (n_sec - 1) as f64;
+        let gamma = self.pan_gamma;
+        let collapse = self.hf_pan_floor < 0.999;
+        let hf_span = (self.hf_pan_end_hz - self.hf_pan_start_hz).max(1.0);
         for i in 0..bins {
-            let az = self.pan[i] * self.width_deg;
+            let mut g = self.pan[i];
+            if collapse {
+                let t = ((self.freqs[i] - self.hf_pan_start_hz) / hf_span).clamp(0.0, 1.0);
+                g *= 1.0 - (1.0 - self.hf_pan_floor) * t;
+            }
+            let g_map = if g == 0.0 {
+                0.0
+            } else {
+                g.signum() * g.abs().powf(gamma)
+            };
+            let az = g_map * self.width_deg;
             let pos = (az - self.sector_az[0]) / step;
             let i0 = pos.floor().clamp(0.0, (n_sec - 2) as f64) as usize;
             let frac = (pos - i0 as f64).clamp(0.0, 1.0);
@@ -431,8 +563,12 @@ impl StreamingUpmix {
             }
             let w = self.w[local as usize];
             if w > 1e-12 {
+                // Steady state is unchanged (w == w_steady). Edges keep the
+                // window fade instead of an amplified startup impulse.
+                let denom = w.max(self.w_steady);
                 for s in 0..N_STEMS {
-                    out[s * stride + offset + i] = self.acc[s * self.acc_cap + local as usize] / w;
+                    out[s * stride + offset + i] =
+                        self.acc[s * self.acc_cap + local as usize] / denom;
                 }
             }
         }
@@ -526,7 +662,23 @@ mod tests {
     fn render(block: usize) -> Vec<f64> {
         let n = 4096;
         let (left, right) = sine_pair(n);
-        let mut up = StreamingUpmix::new(48_000.0, block.max(n), 60.8, 0.4);
+        let mut up = StreamingUpmix::with_controls(
+            48_000.0,
+            block.max(n),
+            UpmixControls {
+                width_deg: 60.8,
+                ambient_mix: 0.4,
+                coherence_floor: 0.22,
+                coherence_power: 2.0,
+                pan_gamma: 0.65,
+                direct_bleed: 0.0,
+                hf_pan_floor: 0.0,
+                hf_pan_start_hz: 3000.0,
+                hf_pan_end_hz: 8000.0,
+                hf_direct_start_hz: 4000.0,
+                hf_direct_end_hz: 8000.0,
+            },
+        );
         let mut stems = vec![0.0; N_STEMS * n];
         let mut o = 0;
         while o < n {

@@ -6,6 +6,7 @@
 // several buffers at once. Both are intentional.
 #![allow(clippy::excessive_precision, clippy::needless_range_loop)]
 
+pub mod bed;
 pub mod chain;
 pub mod conv;
 pub mod coords;
@@ -14,6 +15,7 @@ pub mod decorrelate;
 pub mod early;
 pub mod error;
 pub mod fdn;
+pub mod fixed_eq;
 pub mod guard;
 pub mod hrir;
 pub mod interpolate;
@@ -21,6 +23,7 @@ pub mod limiter;
 pub mod params;
 pub mod processor;
 pub mod rng;
+pub mod side_lpf;
 pub mod upmix;
 mod ziggurat_tables;
 

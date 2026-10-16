@@ -21,6 +21,7 @@ struct PyRenderer {
     strength: f64,
     seed: u64,
     preset: String,
+    hrtf_name: Option<String>,
     limiter: bool,
     timbre_guard: bool,
     max_block: usize,
@@ -31,7 +32,7 @@ struct PyRenderer {
 impl PyRenderer {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (hrtf_pack, hrtf_source, preset_path, strength=0.4, seed=20_261_016, preset="room", limiter=true, timbre_guard=false))]
+    #[pyo3(signature = (hrtf_pack, hrtf_source, preset_path, strength=0.4, seed=20_261_016, preset="room", limiter=true, timbre_guard=false, hrtf_name=None))]
     fn new(
         hrtf_pack: PathBuf,
         hrtf_source: PathBuf,
@@ -41,6 +42,7 @@ impl PyRenderer {
         preset: &str,
         limiter: bool,
         timbre_guard: bool,
+        hrtf_name: Option<String>,
     ) -> Self {
         Self {
             inner: RouteB::new(),
@@ -50,6 +52,7 @@ impl PyRenderer {
             strength,
             seed,
             preset: preset.to_string(),
+            hrtf_name,
             limiter,
             timbre_guard,
             max_block: 0,
@@ -73,6 +76,8 @@ impl PyRenderer {
         cfg.preset = self.preset.clone();
         cfg.limiter = self.limiter;
         cfg.timbre_guard = self.timbre_guard;
+        cfg.hrtf_name = self.hrtf_name.clone().unwrap_or_default();
+        cfg.content_frames = optional_usize(config, "content_frames")?;
         self.inner
             .prepare(sample_rate, max_block, &cfg)
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -240,6 +245,7 @@ fn read_preset(params: &Bound<'_, PyAny>) -> PyResult<String> {
 
 fn optional_usize(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Option<usize>> {
     match obj.getattr(name) {
+        Ok(value) if value.is_none() => Ok(None),
         Ok(value) => Ok(Some(value.extract()?)),
         Err(_) => Ok(None),
     }

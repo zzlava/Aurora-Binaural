@@ -19,6 +19,12 @@ pub struct RenderConfig {
     pub seed: u64,
     pub timbre_guard: bool,
     pub limiter: bool,
+    /// Empty means infer KU100 / SADIE from the pack or SOFA path.
+    pub hrtf_name: String,
+    /// File length in samples. When set, the last 128 samples (or length/8)
+    /// crossfade back to the dry input at the DRR gain, matching
+    /// `process_file`. `None` leaves the stream endpoint alone.
+    pub content_frames: Option<usize>,
 }
 
 impl RenderConfig {
@@ -38,6 +44,8 @@ impl RenderConfig {
             seed: 20_261_016,
             timbre_guard: false,
             limiter: true,
+            hrtf_name: String::new(),
+            content_frames: None,
         }
     }
 }

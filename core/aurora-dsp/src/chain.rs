@@ -1,23 +1,32 @@
 //! Route B block processor.
 //!
-//! Low frequencies stay mono through an LR4 crossover. The high band is a
-//! streaming direct/ambient upmix, HRIR-convolved, with shoebox early
-//! reflections and a seeded FDN. `strength == 0` returns the stereo input
-//! and reports zero latency. `process` does not allocate.
+//! Low frequencies stay mono through an LR4 crossover and take the same DRR
+//! gain as the high image. The high band is a streaming direct/ambient upmix
+//! (coherence floor, bleed, HF pan and HF direct fade from the preset), HRIR
+//! convolved, with a fixed interaural delay on the side and bed paths, a
+//! raised-cosine side fade, shoebox early reflections and a seeded FDN. A
+//! 512-tap minimum-phase FIR from the preset's fixed EQ follows the mix. The
+//! true-peak limiter is the last stage. `strength == 0` returns the stereo
+//! input and reports zero latency. `process` does not allocate.
 
+use crate::bed::BandLift;
 use crate::conv::{DelayLine, UniformConvolver};
 use crate::crossover::Lr4Crossover;
 use crate::decorrelate::Decorrelator;
 use crate::early::{EarlyReflections, N_DIRECTED};
 use crate::error::DspError;
 use crate::fdn::FdnReverb;
+use crate::fixed_eq::{design_minphase_fir, StereoFir};
 use crate::guard::TimbreGuard;
 use crate::hrir::HrirPack;
 use crate::interpolate::idw_render;
 use crate::limiter::{TruePeakLimiter, LOOKAHEAD};
-use crate::params::{map_strength, MappedStrength, PresetTable};
+use crate::params::{
+    canonical_hrtf_key, infer_hrtf_key, map_strength, MappedStrength, PresetTable,
+};
 use crate::processor::{Params, Processor, RenderConfig};
-use crate::upmix::{StreamingUpmix, N_FFT, N_SECTORS, N_STEMS, REAR_DEG, WIDE_DEG};
+use crate::side_lpf::design_side_lpf;
+use crate::upmix::{StreamingUpmix, UpmixControls, N_FFT, N_SECTORS, N_STEMS};
 
 const PART: usize = 64;
 const FADE: usize = 128;
@@ -35,6 +44,10 @@ struct Engine {
     mapped: MappedStrength,
     seed: u64,
     preset_id: String,
+    hrtf_key: String,
+    delays_ms: Vec<f64>,
+    content_frames: Option<usize>,
+    rendered: usize,
     table: PresetTable,
     pack: HrirPack,
     hrir_peak: usize,
@@ -58,6 +71,10 @@ struct Engine {
     delay_room_r: DelayLine,
     limiter: TruePeakLimiter,
     guard: TimbreGuard,
+    eq: StereoFir,
+    side_fir: StereoFir,
+    side_fir_delay: usize,
+    bed: BandLift,
     in_l: Vec<f64>,
     in_r: Vec<f64>,
     low_l: Vec<f64>,
@@ -69,6 +86,8 @@ struct Engine {
     wide_r: Vec<f64>,
     amb_l: Vec<f64>,
     amb_r: Vec<f64>,
+    bed_l: Vec<f64>,
+    bed_r: Vec<f64>,
     side_in: Vec<f64>,
     side_l: Vec<f64>,
     side_r: Vec<f64>,
@@ -152,6 +171,27 @@ impl Processor for RouteB {
         }
         let n_taps = pack.n_taps().max(1);
         let mapped = map_strength(config.strength, &row);
+        let hrtf_key = if config.hrtf_name.is_empty() {
+            infer_hrtf_key(&config.hrtf_pack, &config.hrtf_source).ok_or_else(|| {
+                DspError::Preset {
+                    path: config.preset_path.clone(),
+                    reason: format!(
+                        "preset '{}' fixed_eq needs an HRTF id; pass hrtf_name or a KU100/SADIE path",
+                        config.preset
+                    ),
+                }
+            })?
+        } else {
+            canonical_hrtf_key(&config.hrtf_name)
+        };
+        let (bands, gains) = row.eq_curve(&hrtf_key, config.strength.max(0.2))?;
+        let eq = StereoFir::new(&design_minphase_fir(&bands, &gains, f64::from(sample_rate)));
+        let (side_fir, side_fir_delay) = match design_side_lpf(f64::from(sample_rate), mapped.side_lpf_hz)
+        {
+            Some((coeff, delay)) => (StereoFir::new(&coeff), delay),
+            None => (StereoFir::bypass(), 0),
+        };
+        let delays_ms = table.delays_for(&row).to_vec();
         let mb = max_block;
         let mut conv = Vec::with_capacity(N_CONV);
         for _ in 0..N_CONV {
@@ -166,22 +206,25 @@ impl Processor for RouteB {
             mapped,
             seed: config.seed,
             preset_id: config.preset.clone(),
+            hrtf_key,
+            delays_ms: delays_ms.clone(),
+            content_frames: config.content_frames,
+            rendered: 0,
             table,
             pack,
             hrir_peak: 0,
             xo: Lr4Crossover::new(f64::from(sample_rate), row.crossover_hz),
-            up: StreamingUpmix::new(
+            up: StreamingUpmix::with_controls(
                 f64::from(sample_rate),
                 mb,
-                mapped.width_deg,
-                mapped.ambient_ratio,
+                upmix_controls(&mapped),
             ),
-            dec_wide_l: Decorrelator::new(sample_rate, config.seed + 3),
-            dec_wide_r: Decorrelator::new(sample_rate, config.seed + 4),
-            dec_amb_l: Decorrelator::new(sample_rate, config.seed + 5),
-            dec_amb_r: Decorrelator::new(sample_rate, config.seed + 6),
-            dec_side_l: Decorrelator::new(sample_rate, config.seed + 11),
-            dec_side_r: Decorrelator::new(sample_rate, config.seed + 12),
+            dec_wide_l: Decorrelator::new(sample_rate, config.seed + 3, &delays_ms),
+            dec_wide_r: Decorrelator::new(sample_rate, config.seed + 4, &delays_ms),
+            dec_amb_l: Decorrelator::new(sample_rate, config.seed + 5, &delays_ms),
+            dec_amb_r: Decorrelator::new(sample_rate, config.seed + 6, &delays_ms),
+            dec_side_l: Decorrelator::new(sample_rate, config.seed + 11, &delays_ms),
+            dec_side_r: Decorrelator::new(sample_rate, config.seed + 12, &delays_ms),
             conv,
             early: EarlyReflections::new(sample_rate),
             fdn: FdnReverb::new(sample_rate, row.t60, config.seed),
@@ -198,6 +241,15 @@ impl Processor for RouteB {
             } else {
                 TimbreGuard::disabled()
             },
+            eq,
+            side_fir,
+            side_fir_delay,
+            bed: BandLift::new(
+                f64::from(sample_rate),
+                mapped.bed_peak_lo_hz,
+                mapped.bed_peak_hi_hz,
+                mapped.bed_peak_db,
+            ),
             in_l: vec![0.0; mb],
             in_r: vec![0.0; mb],
             low_l: vec![0.0; mb],
@@ -209,6 +261,8 @@ impl Processor for RouteB {
             wide_r: vec![0.0; mb],
             amb_l: vec![0.0; mb],
             amb_r: vec![0.0; mb],
+            bed_l: vec![0.0; mb],
+            bed_r: vec![0.0; mb],
             side_in: vec![0.0; mb],
             side_l: vec![0.0; mb],
             side_r: vec![0.0; mb],
@@ -236,11 +290,7 @@ impl Processor for RouteB {
             silence: vec![0.0; mb],
         };
         engine.install_irs();
-        // Delays include the frontal HRIR peak, known only after interpolation.
-        let low_delay = N_FFT + engine.hrir_peak + PART;
-        engine.delay_low = DelayLine::new(low_delay);
-        engine.delay_side_l = DelayLine::new(low_delay);
-        engine.delay_side_r = DelayLine::new(low_delay);
+        engine.realign();
         self.engine = Some(engine);
         Ok(())
     }
@@ -253,16 +303,28 @@ impl Processor for RouteB {
             return;
         };
         let mapped = map_strength(params.strength, &row);
+        let Ok((bands, gains)) = row.eq_curve(&engine.hrtf_key, params.strength.max(0.2)) else {
+            return;
+        };
         let width_changed = (mapped.width_deg - engine.mapped.width_deg).abs() > 1e-9;
+        let bed_changed = (mapped.wide_deg - engine.mapped.wide_deg).abs() > 1e-9
+            || (mapped.rear_deg - engine.mapped.rear_deg).abs() > 1e-9;
         let cutoff_changed = (mapped.crossover_hz - engine.mapped.crossover_hz).abs() > 1e-9;
         let t60_changed = (mapped.t60 - engine.mapped.t60).abs() > 1e-12;
         let seed_changed = params.seed != engine.seed;
+        let lpf_changed = (mapped.side_lpf_hz - engine.mapped.side_lpf_hz).abs() > 1e-9;
+        let bed_db_changed = (mapped.bed_peak_db - engine.mapped.bed_peak_db).abs() > 1e-9
+            || (mapped.bed_peak_lo_hz - engine.mapped.bed_peak_lo_hz).abs() > 1e-6
+            || (mapped.bed_peak_hi_hz - engine.mapped.bed_peak_hi_hz).abs() > 1e-6;
+        let delays_ms = engine.table.delays_for(&row).to_vec();
         engine.mapped = mapped;
         engine.bypass = mapped.bypass;
         engine.preset_id = params.preset.clone();
+        engine.delays_ms = delays_ms.clone();
+        engine.up.set_controls(upmix_controls(&mapped));
         engine
-            .up
-            .set_width_ambient(mapped.width_deg, mapped.ambient_ratio);
+            .eq
+            .set_coeffs(&design_minphase_fir(&bands, &gains, 48_000.0));
         if cutoff_changed {
             engine.xo = Lr4Crossover::new(48_000.0, mapped.crossover_hz);
         }
@@ -271,15 +333,39 @@ impl Processor for RouteB {
             engine.fdn.reseed(48_000, mapped.t60, params.seed);
         }
         if seed_changed {
-            engine.dec_wide_l = Decorrelator::new(48_000, params.seed + 3);
-            engine.dec_wide_r = Decorrelator::new(48_000, params.seed + 4);
-            engine.dec_amb_l = Decorrelator::new(48_000, params.seed + 5);
-            engine.dec_amb_r = Decorrelator::new(48_000, params.seed + 6);
-            engine.dec_side_l = Decorrelator::new(48_000, params.seed + 11);
-            engine.dec_side_r = Decorrelator::new(48_000, params.seed + 12);
+            engine.dec_wide_l = Decorrelator::new(48_000, params.seed + 3, &delays_ms);
+            engine.dec_wide_r = Decorrelator::new(48_000, params.seed + 4, &delays_ms);
+            engine.dec_amb_l = Decorrelator::new(48_000, params.seed + 5, &delays_ms);
+            engine.dec_amb_r = Decorrelator::new(48_000, params.seed + 6, &delays_ms);
+            engine.dec_side_l = Decorrelator::new(48_000, params.seed + 11, &delays_ms);
+            engine.dec_side_r = Decorrelator::new(48_000, params.seed + 12, &delays_ms);
+        }
+        if lpf_changed {
+            match design_side_lpf(48_000.0, mapped.side_lpf_hz) {
+                Some((coeff, delay)) => {
+                    engine.side_fir.set_coeffs(&coeff);
+                    engine.side_fir_delay = delay;
+                }
+                None => {
+                    engine.side_fir = StereoFir::bypass();
+                    engine.side_fir_delay = 0;
+                }
+            }
+            engine.realign();
+        }
+        if bed_db_changed {
+            engine.bed = BandLift::new(
+                48_000.0,
+                mapped.bed_peak_lo_hz,
+                mapped.bed_peak_hi_hz,
+                mapped.bed_peak_db,
+            );
         }
         if width_changed {
             engine.install_sector_irs();
+        }
+        if bed_changed {
+            engine.install_bed_irs();
         }
     }
 
@@ -393,6 +479,10 @@ impl Processor for RouteB {
         engine.delay_room_r.reset();
         engine.limiter.reset();
         engine.guard.reset();
+        engine.eq.reset();
+        engine.side_fir.reset();
+        engine.bed.reset();
+        engine.rendered = 0;
     }
 }
 
@@ -400,10 +490,7 @@ impl Engine {
     fn install_irs(&mut self) {
         self.hrir_peak = self.interpolate_peak(0.0, 0.0);
         self.install_sector_irs();
-        self.set_conv(N_SECTORS, WIDE_DEG, 0.0);
-        self.set_conv(N_SECTORS + 1, -WIDE_DEG, 0.0);
-        self.set_conv(N_SECTORS + 2, REAR_DEG, 0.0);
-        self.set_conv(N_SECTORS + 3, -REAR_DEG, 0.0);
+        self.install_bed_irs();
         let taps: Vec<(f64, f64)> = self
             .early
             .taps()
@@ -414,6 +501,23 @@ impl Engine {
         for (i, (az, el)) in taps.iter().enumerate() {
             self.set_conv(N_SECTORS + 4 + i, *az, *el);
         }
+    }
+
+    fn install_bed_irs(&mut self) {
+        let wide = self.mapped.wide_deg;
+        let rear = self.mapped.rear_deg;
+        self.set_conv(N_SECTORS, wide, 0.0);
+        self.set_conv(N_SECTORS + 1, -wide, 0.0);
+        self.set_conv(N_SECTORS + 2, rear, 0.0);
+        self.set_conv(N_SECTORS + 3, -rear, 0.0);
+    }
+
+    fn realign(&mut self) {
+        let low_delay = N_FFT + self.hrir_peak + PART;
+        let side_delay = low_delay.saturating_sub(self.side_fir_delay);
+        self.delay_low = DelayLine::new(low_delay);
+        self.delay_side_l = DelayLine::new(side_delay);
+        self.delay_side_r = DelayLine::new(side_delay);
     }
 
     fn install_sector_irs(&mut self) {
@@ -496,14 +600,16 @@ impl Engine {
             &self.stems[5 * stride..5 * stride + m],
             &mut self.amb_r[..m],
         );
+        self.bed_l[..m].fill(0.0);
+        self.bed_r[..m].fill(0.0);
         self.conv[N_SECTORS].process(
             &self.wide_l[..m],
             &mut self.tmp_l[..m],
             &mut self.tmp_r[..m],
         );
         acc(
-            &mut self.img_l[..m],
-            &mut self.img_r[..m],
+            &mut self.bed_l[..m],
+            &mut self.bed_r[..m],
             &self.tmp_l[..m],
             &self.tmp_r[..m],
         );
@@ -513,8 +619,8 @@ impl Engine {
             &mut self.tmp_r[..m],
         );
         acc(
-            &mut self.img_l[..m],
-            &mut self.img_r[..m],
+            &mut self.bed_l[..m],
+            &mut self.bed_r[..m],
             &self.tmp_l[..m],
             &self.tmp_r[..m],
         );
@@ -524,8 +630,8 @@ impl Engine {
             &mut self.tmp_r[..m],
         );
         acc(
-            &mut self.img_l[..m],
-            &mut self.img_r[..m],
+            &mut self.bed_l[..m],
+            &mut self.bed_r[..m],
             &self.tmp_l[..m],
             &self.tmp_r[..m],
         );
@@ -535,11 +641,16 @@ impl Engine {
             &mut self.tmp_r[..m],
         );
         acc(
-            &mut self.img_l[..m],
-            &mut self.img_r[..m],
+            &mut self.bed_l[..m],
+            &mut self.bed_r[..m],
             &self.tmp_l[..m],
             &self.tmp_r[..m],
         );
+        self.bed.process(&mut self.bed_l[..m], &mut self.bed_r[..m]);
+        for i in 0..m {
+            self.img_l[i] += self.bed_l[i];
+            self.img_r[i] += self.bed_r[i];
+        }
 
         for i in 0..m {
             self.side_in[i] = 0.5 * (self.high_l[i] - self.high_r[i]);
@@ -548,10 +659,16 @@ impl Engine {
             .process(&self.side_in[..m], &mut self.side_l[..m]);
         self.dec_side_r
             .process(&self.side_in[..m], &mut self.side_r[..m]);
+        self.side_fir.process(
+            &self.side_l[..m],
+            &self.side_r[..m],
+            &mut self.tmp_l[..m],
+            &mut self.tmp_r[..m],
+        );
         self.delay_side_l
-            .process(&self.side_l[..m], &mut self.side_dl[..m]);
+            .process(&self.tmp_l[..m], &mut self.side_dl[..m]);
         self.delay_side_r
-            .process(&self.side_r[..m], &mut self.side_dr[..m]);
+            .process(&self.tmp_r[..m], &mut self.side_dr[..m]);
 
         for i in 0..m {
             self.mid[i] = 0.5 * (self.high_l[i] + self.high_r[i]);
@@ -607,8 +724,21 @@ impl Engine {
         for i in 0..m {
             let image_l = self.img_l[i] + side_g * self.side_dl[i];
             let image_r = self.img_r[i] + side_g * self.side_dr[i];
-            self.mix_l[i] = image_l * drr + self.room_dl[i] + self.low_d[i];
-            self.mix_r[i] = image_r * drr + self.room_dr[i] + self.low_d[i];
+            // Bass takes the same DRR gain as the high image. Otherwise
+            // strength reads as a bass shelf once the median level is removed.
+            self.mix_l[i] = image_l * drr + self.room_dl[i] + self.low_d[i] * drr;
+            self.mix_r[i] = image_r * drr + self.room_dr[i] + self.low_d[i] * drr;
+        }
+        self.crossfade_tail(m, drr);
+        if !self.bypass {
+            self.eq.process(
+                &self.mix_l[..m],
+                &self.mix_r[..m],
+                &mut self.tmp_l[..m],
+                &mut self.tmp_r[..m],
+            );
+            self.mix_l[..m].copy_from_slice(&self.tmp_l[..m]);
+            self.mix_r[..m].copy_from_slice(&self.tmp_r[..m]);
         }
         if self.timbre_on {
             self.guard.process(
@@ -620,6 +750,8 @@ impl Engine {
             self.mix_l[..m].copy_from_slice(&self.tmp_l[..m]);
             self.mix_r[..m].copy_from_slice(&self.tmp_r[..m]);
         }
+        // Limiter is the last stage. The fixed EQ and the optional timbre
+        // guard both sit in front of it.
         if self.limiter_on {
             self.limiter.process(
                 &self.mix_l[..m],
@@ -630,6 +762,45 @@ impl Engine {
             self.mix_l[..m].copy_from_slice(&self.tmp_l[..m]);
             self.mix_r[..m].copy_from_slice(&self.tmp_r[..m]);
         }
+        self.rendered += m;
+    }
+
+    fn crossfade_tail(&mut self, m: usize, drr: f64) {
+        let Some(total) = self.content_frames else {
+            return;
+        };
+        let n_tail = 128.min(total / 8);
+        if n_tail <= 8 || total < n_tail {
+            return;
+        }
+        let start = total - n_tail;
+        let denom = (n_tail - 1) as f64;
+        for i in 0..m {
+            let pos = self.rendered + i;
+            if pos >= start && pos < total {
+                let fade = (pos - start) as f64 / denom;
+                let dry_l = self.in_l[i] * drr;
+                let dry_r = self.in_r[i] * drr;
+                self.mix_l[i] = self.mix_l[i] * (1.0 - fade) + dry_l * fade;
+                self.mix_r[i] = self.mix_r[i] * (1.0 - fade) + dry_r * fade;
+            }
+        }
+    }
+}
+
+fn upmix_controls(mapped: &MappedStrength) -> UpmixControls {
+    UpmixControls {
+        width_deg: mapped.width_deg,
+        ambient_mix: mapped.ambient_ratio,
+        coherence_floor: mapped.coherence_floor,
+        coherence_power: mapped.coherence_power,
+        pan_gamma: mapped.pan_gamma,
+        direct_bleed: mapped.direct_bleed,
+        hf_pan_floor: mapped.hf_pan_floor,
+        hf_pan_start_hz: mapped.hf_pan_start_hz,
+        hf_pan_end_hz: mapped.hf_pan_end_hz,
+        hf_direct_start_hz: mapped.hf_direct_start_hz,
+        hf_direct_end_hz: mapped.hf_direct_end_hz,
     }
 }
 
@@ -700,11 +871,17 @@ mod tests {
     }
 
     fn prepared(max_block: usize, strength: f64) -> RouteB {
+        prepared_len(max_block, strength, None)
+    }
+
+    fn prepared_len(max_block: usize, strength: f64, frames: Option<usize>) -> RouteB {
         let dir = std::env::temp_dir().join(format!("aurora_chain_{strength}_{max_block}"));
         let _ = std::fs::create_dir_all(&dir);
         let (pack, source, preset) = write_pack(&dir);
         let mut cfg = RenderConfig::route_b(&pack, &source, &preset);
         cfg.strength = strength;
+        cfg.hrtf_name = "ku100".to_string();
+        cfg.content_frames = frames;
         let mut dsp = RouteB::new();
         dsp.prepare(48_000, max_block, &cfg).unwrap();
         dsp
@@ -754,11 +931,11 @@ mod tests {
             .map(|i| 0.04 * (i as f32 * 0.05 + 0.4).sin())
             .collect();
         let reference = {
-            let mut dsp = prepared(n, 0.4);
+            let mut dsp = prepared_len(n, 0.4, Some(n));
             render(&mut dsp, &left, &right, n)
         };
         for block in [32usize, 64, 256, 1024, 4096] {
-            let mut dsp = prepared(n, 0.4);
+            let mut dsp = prepared_len(n, 0.4, Some(n));
             let got = render(&mut dsp, &left, &right, block);
             for (u, v) in got.iter().zip(reference.iter()) {
                 let db = 20.0 * ((*u - *v).abs() as f64).max(1e-20).log10();
