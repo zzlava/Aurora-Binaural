@@ -1,6 +1,6 @@
 # P0-cursor-04：音色校正放进引擎，并让音乐真正展宽
 
-状态：已编写；在 P1a-cursor-02 之后派发
+状态：已派发（2026-10-17 02:50）
 执行方：Cursor（模型 grok-4.7-high）　分支：`agent/cursor/P0-02`（基于最新 main）
 前置：阅读 `qa/p0/ACCEPTANCE-cursor-03.md` 末尾的**勘误**。
 
@@ -25,3 +25,8 @@ P0 样片是经过 `timbre_guard()` 逐文件匹配原声频谱之后的结果�
 ## 交付
 
 `qa/p0/cursor/REPORT-v2.md`、metrics、samples_v2。在 `agent/cursor/P0-02` 上提交，不要推送。
+
+## 补充（Git）
+
+- 如果要用 `git lfs migrate`，必须加上 `--exclude-ref=refs/remotes/origin/main`，并且只作用于本分支。
+- 新生成的 wav 和 ahrp 文件必须是 LFS 指针（`.gitattributes` 已经配置好）。
