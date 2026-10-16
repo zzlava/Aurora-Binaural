@@ -44,6 +44,10 @@
 
 ## 额度不足时的后备执行方（用户规则，2026-10-16）
 
-- 规则：Cursor 因额度用完失败时，同一份任务交给 **Codex CLI** 完成。
-- 实现：run-agent（agent=cursor）在输出里检测到 "usage limit / not included in your weekly usage / Buy credits" 时，自动在同一个克隆 `.agents/cursor/`、同一个分支上运行 `codex exec --dangerously-bypass-approvals-and-sandbox`。目录所有权不变，仍然是 Cursor 负责的模块；提交信息标注 `Agent: Codex (for Cursor)`。
+- 规则：**只有 Cursor 整体额度用尽**时，才把任务交给 **Codex CLI**。仅仅是某个模型不在本周额度内，不算用尽。
+- 实现：run-agent（agent=cursor）按以下顺序处理：
+  1. 用指定的模型运行。
+  2. 如果提示"not included in your weekly usage"（这个模型不在额度内），改用 Cursor 仍可用的 `grok-4.7-high` 再跑一次。
+  3. 只有出现"hit your usage limit"这类整体用尽的提示，或者后备模型也不可用时，才在同一个克隆 `.agents/cursor/`、同一个分支上运行 `codex exec --dangerously-bypass-approvals-and-sandbox`。
+- Codex 的提交信息标注 `Agent: Codex (for Cursor)`；目录所有权不变。
 - 待验证：Mac 上 codex 的路径、版本、登录状态，以及 `exec` 子命令的参数，要在派单器重启后由 doctor 确认。确认之前，这条后备路径视为未验证。

@@ -25,6 +25,7 @@ A="$ROOT/.aurora"; Q="$A/queue"; RUN="$A/running"; RES="$A/results"; DONE="$A/do
 mkdir -p "$Q" "$RUN" "$RES" "$DONE"
 REPO_SLUG="zzlava/Aurora-Binaural"
 POLL=5
+CURSOR_FALLBACK_MODEL="grok-4.7-high"   # Cursor 本周额度内仍可用的模型
 export PATH="$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
 
 log(){ printf '%s %s\n' "$(date '+%F %T')" "$*"; }
@@ -108,13 +109,22 @@ do_agent(){ # agent task branch [model]
   case "$ag" in
     cursor)
       command -v agent >/dev/null || { echo "找不到 Cursor CLI: agent"; return 13; }
-      echo "[dispatch] cursor model=$model"
       tmp="$RES/.cursor-$$.out"
-      agent -p --force --trust --model "$model" --output-format text "$prompt" 2>&1 | tee "$tmp"
-      rc=${PIPESTATUS[0]}
-      if [ "$rc" -ne 0 ] && grep -Eqi 'usage limit|not included in your weekly usage|Buy credits' "$tmp"; then
+      for m in "$model" "$CURSOR_FALLBACK_MODEL"; do
+        echo "[dispatch] cursor model=$m"
+        agent -p --force --trust --model "$m" --output-format text "$prompt" 2>&1 | tee "$tmp"
+        rc=${PIPESTATUS[0]}
+        [ "$rc" -eq 0 ] && { rm -f "$tmp"; return 0; }
+        # 只是该模型不在本周额度内：换 Cursor 仍可用的模型，不算 Cursor 用尽
+        if grep -Eqi 'not included in your weekly usage' "$tmp" && [ "$m" != "$CURSOR_FALLBACK_MODEL" ]; then
+          echo "[dispatch] 模型 $m 不在本周额度内，改用 Cursor 的 $CURSOR_FALLBACK_MODEL"; continue
+        fi
+        break
+      done
+      # 只有 Cursor 整体用尽时才交给 Codex（用户规则）
+      if grep -Eqi "hit your usage limit|usage limit reached|out of usage|not included in your weekly usage" "$tmp"; then
         rm -f "$tmp"
-        echo "[dispatch] Cursor 额度不足，按用户规则改由 Codex CLI 在同一克隆与分支上执行"
+        echo "[dispatch] Cursor 额度已用尽，按用户规则改由 Codex CLI 在同一克隆与分支上执行"
         run_codex "$prompt"; return $?
       fi
       rm -f "$tmp"; return "$rc" ;;
