@@ -20,7 +20,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from aurora_binaural.exit_codes import (
     InputAudioError,
@@ -87,38 +87,7 @@ class RemoteAuroraClient:
                     return parsed
                 return {"ok": True, "data": parsed}
         except urllib.error.HTTPError as exc:
-            err_body = ""
-            with contextlib.suppress(Exception):
-                err_body = exc.read().decode("utf-8", errors="replace")
-            details: dict[str, object] = {
-                "server": self.base_url,
-                "endpoint": endpoint,
-                "http_status": exc.code,
-            }
-            error_code = f"REMOTE_HTTP_{exc.code}"
-            retryable = exc.code >= 500 or exc.code == 429
-            msg = f"Remote server returned HTTP {exc.code} for {method} {endpoint}"
-            if err_body:
-                try:
-                    parsed_err = json.loads(err_body)
-                    if isinstance(parsed_err, dict):
-                        err_obj = parsed_err.get("error", parsed_err)
-                        if isinstance(err_obj, dict):
-                            if isinstance(err_obj.get("code"), str):
-                                error_code = str(err_obj["code"])
-                            if isinstance(err_obj.get("message"), str):
-                                msg = str(err_obj["message"])
-                            if isinstance(err_obj.get("retryable"), bool):
-                                retryable = bool(err_obj["retryable"])
-                            details["remote_error"] = err_obj
-                except json.JSONDecodeError:
-                    details["response_body"] = err_body[:500]
-            raise RemoteServiceError(
-                msg,
-                error_code=error_code,
-                retryable=retryable,
-                details=details,
-            ) from exc
+            self._raise_from_http_error(exc, method=method, endpoint=endpoint)
         except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
             raise RemoteServiceError(
                 f"Failed to communicate with remote Aurora server '{self.base_url}': {exc}",
@@ -126,6 +95,47 @@ class RemoteAuroraClient:
                 retryable=True,
                 details={"server": self.base_url, "endpoint": endpoint},
             ) from exc
+
+    def _raise_from_http_error(
+        self,
+        exc: urllib.error.HTTPError,
+        *,
+        method: str,
+        endpoint: str,
+        default_prefix: str = "REMOTE_HTTP",
+    ) -> NoReturn:
+        err_body = ""
+        with contextlib.suppress(Exception):
+            err_body = exc.read().decode("utf-8", errors="replace")
+        details: dict[str, object] = {
+            "server": self.base_url,
+            "endpoint": endpoint,
+            "http_status": exc.code,
+        }
+        error_code = f"{default_prefix}_{exc.code}"
+        retryable = exc.code >= 500 or exc.code == 429
+        msg = f"Remote server returned HTTP {exc.code} for {method} {endpoint}"
+        if err_body:
+            try:
+                parsed_err = json.loads(err_body)
+                if isinstance(parsed_err, dict):
+                    err_obj = parsed_err.get("error", parsed_err)
+                    if isinstance(err_obj, dict):
+                        if isinstance(err_obj.get("code"), str):
+                            error_code = str(err_obj["code"])
+                        if isinstance(err_obj.get("message"), str):
+                            msg = str(err_obj["message"])
+                        if isinstance(err_obj.get("retryable"), bool):
+                            retryable = bool(err_obj["retryable"])
+                        details["remote_error"] = err_obj
+            except json.JSONDecodeError:
+                details["response_body"] = err_body[:500]
+        raise RemoteServiceError(
+            msg,
+            error_code=error_code,
+            retryable=retryable,
+            details=details,
+        ) from exc
 
     def get_job_status(self, job_id: str) -> dict[str, Any]:
         """Query `GET /v1/jobs/{id}` (Section 10)."""
@@ -158,11 +168,12 @@ class RemoteAuroraClient:
                     raw = resp.read().decode("utf-8", errors="replace")
                     payload = json.loads(raw) if raw else {}
         except urllib.error.HTTPError as exc:
-            raise RemoteServiceError(
-                f"Asset upload failed with HTTP {exc.code}",
-                error_code=f"REMOTE_UPLOAD_HTTP_{exc.code}",
-                details={"server": self.base_url, "http_status": exc.code},
-            ) from exc
+            self._raise_from_http_error(
+                exc,
+                method="POST",
+                endpoint="/v1/assets",
+                default_prefix="REMOTE_UPLOAD_HTTP",
+            )
         except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
             raise RemoteServiceError(
                 f"Failed to upload asset to '{self.base_url}': {exc}",
@@ -213,7 +224,8 @@ class RemoteAuroraClient:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = output_path.parent / f".aurora_tmp_{uuid.uuid4().hex}_{output_path.name}"
         safe_id = urllib.parse.quote(job_id, safe="")
-        url = f"{self.base_url}/v1/jobs/{safe_id}/result"
+        endpoint = f"/v1/jobs/{safe_id}/result"
+        url = f"{self.base_url}{endpoint}"
         req = urllib.request.Request(url, headers=self._headers({"Accept": "*/*"}), method="GET")
 
         try:
@@ -229,6 +241,13 @@ class RemoteAuroraClient:
                     error_code="OUTPUT_ALREADY_EXISTS",
                 )
             os.replace(tmp_path, output_path)
+        except urllib.error.HTTPError as exc:
+            self._raise_from_http_error(
+                exc,
+                method="GET",
+                endpoint=endpoint,
+                default_prefix="REMOTE_DOWNLOAD_HTTP",
+            )
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise RemoteServiceError(
                 f"Failed to download job result for '{job_id}': {exc}",

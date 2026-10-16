@@ -144,6 +144,8 @@ class ConversionReport(BaseModel):
 
     ok: Literal[True] = True
     status: Literal["succeeded"] = "succeeded"
+    job_id: str | None = Field(default=None, description="Remote job identifier when processed via HTTP API/Worker.")
+    asset_id: str | None = Field(default=None, description="Uploaded asset identifier when processed via HTTP API/Worker.")
     input: AudioProbeInfo
     output: AudioProbeInfo
     engine: EngineMetadata
