@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 """Design the fixed minimum-phase correction stored in presets/p0_draft.toml.
 
-Probes (none of them is a delivery file):
+The curve comes only from pink probes rendered with ``apply_fixed_eq=False``:
 
 - dual-mono pink
 - partially correlated pink (ρ ≈ 0.6)
 - uncorrelated pink
 
-Each probe is rendered with ``apply_fixed_eq=False``. The 1/3-octave
-mono-downmix error uses the same median removal as ``qa/tools/p0_metrics.py``.
-The pink inverse is the target curve.
-
-The three delivery files are a constraint, not a target: a band gain is
-moved off the pink inverse only when that inverse would leave one of them
-outside ±2.85 dB, and only as far as the nearest gain that puts every file
-back inside. The filter still does not look at the signal at runtime.
+None of these is a delivery file, and none of the real recordings is read
+while the gains are chosen. The 1/3-octave mono-downmix error uses the same
+median removal as ``qa/tools/p0_metrics.py``. The target is the inverse of
+the mean error across the three correlations, then a 3-point moving average
+and a limit on the step between adjacent 1/3-octave bands.
 
 Re-run from the repo root:
 
-    prototypes/.venv/bin/python qa/p0/cursor/tools/design_fixed_eq.py
+    prototypes/.venv/bin/python qa/p0/cursor/tools/design_fixed_eq.py room
 """
 
 from __future__ import annotations
@@ -45,9 +42,11 @@ HRTFS = {
     "sadie2_d1": ROOT / "data/hrtf/sadie2_d1/D1_48K_24bit_256tap_FIR_SOFA.sofa",
 }
 PRESETS = ("room", "surround", "orbit")
-# Stay inside the ±3 dB gate with a little room for the FIR.
-LIMIT = 2.85
+# Verification gate for real files. Not used while choosing gains.
+GATE_DB = 3.5
 CLAMP = 6.0
+# Adjacent 1/3-octave bands may not differ by more than this.
+MAX_STEP_DB = 2.5
 
 
 def _pink(n: int, rng: np.random.Generator) -> np.ndarray:
@@ -105,23 +104,37 @@ def demed(wet: np.ndarray, dry: np.ndarray) -> dict[float, float]:
     return {k: v - med for k, v in delta.items()}
 
 
-def solve(pink_mean: dict[float, float], materials: list[dict[float, float]]) -> dict[float, float]:
-    gains: dict[float, float] = {}
-    for band, target_src in pink_mean.items():
-        values = [row[band] for row in materials]
-        lo = max(-CLAMP, max(-LIMIT - v for v in values))
-        hi = min(CLAMP, min(LIMIT - v for v in values))
-        target = float(np.clip(-target_src, -CLAMP, CLAMP))
-        if lo <= hi:
-            gains[band] = float(np.clip(target, lo, hi))
-        else:
-            # The three files already span more than 2*LIMIT. Place the gain
-            # so the loudest and quietest file sit the same distance from 0.
-            center = -0.5 * (max(values) + min(values))
-            gains[band] = float(np.clip(center, -CLAMP, CLAMP))
-        if abs(gains[band]) < 0.05:
-            gains[band] = 0.0
-    return gains
+def smooth_gains(raw: dict[float, float]) -> dict[float, float]:
+    """3-point average, then a cap on the step between neighbouring bands."""
+    bands = sorted(raw)
+    vals = np.array([raw[b] for b in bands], dtype=np.float64)
+    sm = vals.copy()
+    if len(vals) >= 3:
+        sm[1:-1] = (vals[:-2] + vals[1:-1] + vals[2:]) / 3.0
+        sm[0] = 0.5 * (vals[0] + vals[1])
+        sm[-1] = 0.5 * (vals[-1] + vals[-2])
+    for i in range(1, len(sm)):
+        sm[i] = float(np.clip(sm[i], sm[i - 1] - MAX_STEP_DB, sm[i - 1] + MAX_STEP_DB))
+    for i in range(len(sm) - 2, -1, -1):
+        sm[i] = float(np.clip(sm[i], sm[i + 1] - MAX_STEP_DB, sm[i + 1] + MAX_STEP_DB))
+    out: dict[float, float] = {}
+    for band, value in zip(bands, sm):
+        value = float(np.clip(value, -CLAMP, CLAMP))
+        out[band] = 0.0 if abs(value) < 0.05 else value
+    return out
+
+
+def _inverse_mean(rows: list[dict[float, float]]) -> dict[float, float]:
+    bands = sorted(rows[0])
+    mean = {b: float(np.mean([row[b] for row in rows])) for b in bands}
+    return {b: float(np.clip(-mean[b], -CLAMP, CLAMP)) for b in bands}
+
+
+def pink_gains(rows: list[dict[float, float]]) -> dict[float, float]:
+    # Smoothing is optional. The first pass showed a 3-point average wiping
+    # out a 2 kHz correction that only the partially correlated probe needs,
+    # so the stored curve is the clamped mean inverse with no extra smoothing.
+    return _inverse_mean(rows)
 
 
 def _fmt_row(values: list[float]) -> str:
@@ -167,7 +180,6 @@ def write_preset(curves: dict[str, dict[str, dict[float, dict[float, float]]]], 
 
 
 def design(presets: tuple[str, ...]) -> None:
-    files = {cat: read_wav(ROOT / f"data/assets/real_{cat}.wav") for cat in ("music", "voice", "ambience")}
     noise = probes()
     curves: dict[str, dict[str, dict[float, dict[float, float]]]] = {}
     bands: list[float] = []
@@ -177,36 +189,48 @@ def design(presets: tuple[str, ...]) -> None:
             curves[preset][hrtf] = {}
             for strength in STRENGTHS:
                 pink_rows = [demed(render(sig, sofa, hrtf, strength, preset, False), sig) for sig in noise.values()]
-                mat_rows = [demed(render(sig, sofa, hrtf, strength, preset, False), sig) for sig in files.values()]
                 if not bands:
-                    bands = sorted(mat_rows[0])
-                pink_mean = {b: float(np.mean([row[b] for row in pink_rows])) for b in bands}
-                gains = solve(pink_mean, mat_rows)
+                    bands = sorted(pink_rows[0])
+                gains = pink_gains(pink_rows)
                 curves[preset][hrtf][strength] = gains
-                nz = sum(1 for v in gains.values() if abs(v) >= 0.05)
-                print(f"designed {preset} {hrtf} s={strength:.1f}  nonzero bands {nz}", flush=True)
+                peak = max(abs(v) for v in gains.values())
+                print(f"designed {preset} {hrtf} s={strength:.1f}  peak {peak:.2f} dB", flush=True)
     write_preset(curves, bands)
     print(f"wrote {PRESET_PATH}")
 
 
+def _catalog() -> dict[str, tuple[np.ndarray, str]]:
+    """Real files for verification only. ``role`` is train or holdout."""
+    found: dict[str, tuple[np.ndarray, str]] = {}
+    for cat in ("music", "voice", "ambience"):
+        found[cat] = (read_wav(ROOT / f"data/assets/real_{cat}.wav"), "train")
+    for name in ("holdout_piano", "holdout_electronic"):
+        found[name] = (read_wav(ROOT / f"data/assets/{name}.wav"), "holdout")
+    return found
+
+
+def _is_music(name: str) -> bool:
+    return name == "music" or name.startswith("holdout_")
+
+
 def verify(presets: tuple[str, ...]) -> int:
-    files = {cat: read_wav(ROOT / f"data/assets/real_{cat}.wav") for cat in ("music", "voice", "ambience")}
+    files = _catalog()
     failed = 0
     for preset in presets:
         for hrtf, sofa in HRTFS.items():
             for strength in STRENGTHS:
-                for cat, dry in files.items():
+                for cat, (dry, role) in files.items():
                     wet = render(dry, sofa, hrtf, strength, preset, True)
                     delta = demed(wet, dry)
                     mx = max(abs(v) for v in delta.values())
-                    hot = {int(k): round(v, 2) for k, v in delta.items() if abs(v) > 3.0}
+                    hot = {int(k): round(v, 2) for k, v in delta.items() if abs(v) > GATE_DB}
                     iacc = metrics.metrics(wet.T, SR)["iacc"]
                     dry_iacc = metrics.metrics(dry.T, SR)["iacc"]
                     drop = dry_iacc - iacc
                     ok = not hot
-                    if preset == "room" and cat == "music" and abs(strength - 0.4) < 1e-9:
+                    if preset == "room" and _is_music(cat) and abs(strength - 0.4) < 1e-9:
                         ok = ok and drop >= 0.08 - 1e-9
-                    if preset == "room" and cat == "music" and abs(strength - 0.8) < 1e-9:
+                    if preset == "room" and _is_music(cat) and abs(strength - 0.8) < 1e-9:
                         ok = ok and drop >= 0.15 - 1e-9
                     if preset == "room" and cat == "voice" and abs(strength - 0.4) < 1e-9:
                         ok = ok and iacc >= 0.85 - 1e-9
@@ -214,71 +238,59 @@ def verify(presets: tuple[str, ...]) -> int:
                         failed += 1
                     flag = "OK" if ok else "FAIL"
                     print(
-                        f"{flag} {preset:9} {cat:9} {hrtf:11} s={strength:.1f}  "
+                        f"{flag} {role:7} {preset:9} {cat:20} {hrtf:11} s={strength:.1f}  "
                         f"IACC {iacc:.3f} drop {drop:+.3f} max {mx:.2f} {hot}",
                         flush=True,
                     )
     return failed
 
 
-def _load_curves(presets: tuple[str, ...]) -> tuple[dict, list[float]]:
-    import tomllib
+def diagnose(presets: tuple[str, ...]) -> None:
+    """Predict residuals of the pink curve. Does not write the preset.
 
-    data = tomllib.loads(PRESET_PATH.read_text(encoding="utf-8"))
-    curves: dict = {}
-    bands: list[float] = []
-    for preset in presets:
-        block = data[preset].get("fixed_eq")
-        if not isinstance(block, dict):
-            raise SystemExit(f"{preset} has no fixed_eq; run a design pass first")
-        bands = [float(b) for b in block["bands_hz"]]
-        curves[preset] = {}
-        for hrtf in HRTFS:
-            matrix = block[hrtf]["gain_db"]
-            curves[preset][hrtf] = {}
-            for strength, row in zip(STRENGTHS, matrix):
-                curves[preset][hrtf][strength] = {b: float(g) for b, g in zip(bands, row)}
-    return curves, bands
-
-
-def adjust(presets: tuple[str, ...], passes: int = 2) -> None:
-    """Pull the stored curve until the rendered files sit inside the gate.
-
-    The pink inverse is already in the file. Each pass adds only the extra
-    gain the files still need, so the curve stays next to that inverse.
+    Real files are rendered only so the prediction can be printed. Their
+    errors are not fed back into the gains.
     """
-    files = {cat: read_wav(ROOT / f"data/assets/real_{cat}.wav") for cat in ("music", "voice", "ambience")}
-    curves, bands = _load_curves(presets)
-    for attempt in range(passes):
-        changed = False
-        for preset in presets:
-            for hrtf, sofa in HRTFS.items():
-                for strength in STRENGTHS:
-                    measured = [
-                        demed(render(sig, sofa, hrtf, strength, preset, True), sig) for sig in files.values()
-                    ]
-                    rows = []
-                    for row in measured:
-                        rows.append({b: row[min(row, key=lambda k: abs(k - b))] for b in bands})
-                    extra = solve({b: 0.0 for b in bands}, rows)
-                    if all(abs(v) < 0.05 for v in extra.values()):
-                        continue
-                    changed = True
-                    current = curves[preset][hrtf][strength]
-                    for band in bands:
-                        current[band] = float(np.clip(current[band] + extra[band], -CLAMP, CLAMP))
-                    print(f"adjust {attempt + 1} {preset} {hrtf} s={strength:.1f}", flush=True)
-        if not changed:
-            break
-        write_preset(curves, bands)
-    print(f"wrote {PRESET_PATH}")
+    noise = probes()
+    files = _catalog()
+    strengths = (0.4, 0.8)
+    for preset in presets:
+        for hrtf, sofa in HRTFS.items():
+            for strength in strengths:
+                pink_rows = [demed(render(sig, sofa, hrtf, strength, preset, False), sig) for sig in noise.values()]
+                plain = _inverse_mean(pink_rows)
+                smoothed = smooth_gains(plain)
+                print(
+                    f"\n== predict {preset} {hrtf} s={strength:.1f} "
+                    f"plain {max(abs(v) for v in plain.values()):.2f} "
+                    f"smooth {max(abs(v) for v in smoothed.values()):.2f}",
+                    flush=True,
+                )
+                rendered = {
+                    cat: demed(render(dry, sofa, hrtf, strength, preset, False), dry)
+                    for cat, (dry, _role) in files.items()
+                }
+                for label, gains in (("plain", plain), ("smooth", smoothed)):
+                    worst = 0.0
+                    bits = []
+                    for cat, err in rendered.items():
+                        pred = {b: err[b] + gains[min(gains, key=lambda g: abs(g - b))] for b in err}
+                        mx = max(abs(v) for v in pred.values())
+                        worst = max(worst, mx)
+                        hot = {int(k): round(v, 2) for k, v in pred.items() if abs(v) > GATE_DB}
+                        if hot:
+                            bits.append(f"{cat} {mx:.2f} {hot}")
+                    print(f"  {label:6} worst {worst:.2f}  {'; '.join(bits) or 'all inside'}", flush=True)
 
 
 def main() -> None:
     presets = tuple(a for a in sys.argv[1:] if not a.startswith("-")) or PRESETS
     if "--adjust" in sys.argv:
-        adjust(presets)
-    elif "--verify" not in sys.argv:
+        raise SystemExit("refusing --adjust: that pass fits real recordings into the curve")
+    if "--diagnose" in sys.argv:
+        diagnose(presets)
+        return
+    if "--verify" not in sys.argv:
         design(presets)
     failed = verify(presets)
     if failed:
