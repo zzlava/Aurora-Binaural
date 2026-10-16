@@ -51,6 +51,8 @@ do_doctor(){
   rustc --version 2>&1; python3 --version 2>&1; ffmpeg -version 2>&1 | head -n1
   echo "== gh auth"; gh auth status 2>&1
   echo "== git"; git -C "$ROOT" remote -v; git -C "$ROOT" log --oneline -n3
+  echo "== agent status"; agent status 2>&1 | head -n 20
+  echo "== agent models"; agent models 2>&1 | head -n 80
   echo "== agent --help"; agent --help 2>&1 | head -n 100
   echo "== agy --help"; agy --help 2>&1 | head -n 100
 }
@@ -84,8 +86,8 @@ do_setup_remote(){
   do_push
 }
 
-do_agent(){ # agent task branch
-  ag="$1"; task="$2"; branch="$3"
+do_agent(){ # agent task branch [model]
+  ag="$1"; task="$2"; branch="$3"; model="${4:-auto}"
   dir="$ROOT/.agents/$ag"
   [ -d "$dir/.git" ] || { echo "缺少代理克隆：$dir"; return 10; }
   cur="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
@@ -95,7 +97,7 @@ do_agent(){ # agent task branch
   case "$ag" in
     cursor)
       command -v agent >/dev/null || { echo "找不到 Cursor CLI: agent"; return 13; }
-      agent -p --force --trust --model auto --output-format text "$prompt" ;;
+      echo "[dispatch] cursor model=$model"; agent -p --force --trust --model "$model" --output-format text "$prompt" ;;
     antigravity)
       command -v agy >/dev/null || { echo "找不到 Antigravity CLI: agy"; return 13; }
       agy --dangerously-skip-permissions --print-timeout 3h -p "$prompt" ;;
@@ -177,8 +179,9 @@ handle(){
     push)         do_push > "$out" 2>&1; code=$? ;;
     setup-remote) do_setup_remote > "$out" 2>&1; code=$? ;;
     run-agent)
-      ag="$(getf "$job" agent)"; task="$(getf "$job" task)"; branch="$(getf "$job" branch)"
+      ag="$(getf "$job" agent)"; task="$(getf "$job" task)"; branch="$(getf "$job" branch)"; model="$(getf "$job" model)"
       case "$ag" in cursor|antigravity) ;; *) echo "非法 agent: $ag" > "$out"; code=20 ;; esac
+      if [ $code -eq 0 ] && [ -n "$model" ] && ! [[ "$model" =~ ^[A-Za-z0-9._-]+$ ]]; then echo "非法模型名：$model" > "$out"; code=25; fi
       if [ $code -eq 0 ]; then
         if ! [[ "$task" =~ ^docs/tasks/[A-Za-z0-9._-]+\.md$ ]] || [ ! -f "$ROOT/$task" ]; then echo "非法或不存在的任务书：$task" > "$out"; code=21; fi
       fi
@@ -186,7 +189,7 @@ handle(){
         if ! [[ "$branch" =~ ^agent/$ag/[A-Za-z0-9._-]+$ ]]; then echo "非法分支：$branch" > "$out"; code=22; fi
       fi
       if [ $code -eq 0 ] && agent_busy "$ag" "$id"; then echo "$ag 已有任务在运行" > "$out"; code=23; fi
-      if [ $code -eq 0 ]; then log "[$id] 派单 $ag ← $task ($branch)"; do_agent "$ag" "$task" "$branch" > "$out" 2>&1; code=$?; fi ;;
+      if [ $code -eq 0 ]; then log "[$id] 派单 $ag ← $task ($branch)"; do_agent "$ag" "$task" "$branch" "$model" > "$out" 2>&1; code=$?; fi ;;
     init-lfs)     do_init_lfs > "$out" 2>&1; code=$? ;;
     prepare-agent)
       ag="$(getf "$job" agent)"; branch="$(getf "$job" branch)"
