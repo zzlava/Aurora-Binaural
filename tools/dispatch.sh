@@ -14,6 +14,7 @@
 #   prepare-agent 在 .agents/<agent>/ 克隆中基于最新 main 切出 agent/<agent>/* 分支（克隆必须干净）
 #   merge         把 agent/* 或 qa/* 分支以 --no-ff 合并到 main（主仓库必须干净；冲突则中止）
 #   tag           打阶段标签 pN-accepted 或 vX.Y.Z（不覆盖已有标签）
+#   commit-agent  把被中断的代理工作区改动保存为 WIP 提交（只在该代理自己的分支上，遵守 .gitignore 与 LFS）
 #   cancel        结束指定任务
 # 结果写入 .aurora/results/<id>.log 与 <id>.status。
 # 本脚本修改后不会自动生效，需要用户重新启动（修改会出现在 git 提交里，便于审查）。
@@ -145,6 +146,17 @@ do_tag(){ # name
   git -C "$ROOT" tag -a "$t" -m "$t" main && echo "已打标签 $t"
 }
 
+do_commit_agent(){ # agent branch
+  ag="$1"; branch="$2"; d="$ROOT/.agents/$ag"
+  [ -d "$d/.git" ] || { echo "缺少代理克隆：$d"; return 10; }
+  [ "$(git -C "$d" rev-parse --abbrev-ref HEAD)" = "$branch" ] || { echo "分支不一致"; return 11; }
+  git -C "$d" add -A || return 70
+  if git -C "$d" diff --cached --quiet; then echo "没有需要保存的改动"; return 0; fi
+  case "$ag" in cursor) who="Cursor";; antigravity) who="Antigravity";; esac
+  git -C "$d" commit -q -m "wip($ag): snapshot of interrupted run (saved by dispatcher on Claude's request)" -m "Agent: $who" || return 71
+  git -C "$d" log --oneline -n1; git -C "$d" lfs ls-files 2>/dev/null | head -n 50
+}
+
 agent_busy(){ # agent self_id
   for j in "$RUN"/*.job; do
     [ -e "$j" ] || continue
@@ -187,6 +199,11 @@ handle(){
     tag)
       t="$(getf "$job" name)"
       if [[ "$t" =~ ^(p[0-9]+-accepted|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then do_tag "$t" > "$out" 2>&1; code=$?; else echo "非法标签：$t" > "$out"; code=22; fi ;;
+    commit-agent)
+      ag="$(getf "$job" agent)"; branch="$(getf "$job" branch)"
+      if [[ "$ag" =~ ^(cursor|antigravity)$ ]] && [[ "$branch" =~ ^agent/$ag/[A-Za-z0-9._-]+$ ]]; then
+        if agent_busy "$ag" "$id"; then echo "$ag 有任务在运行" > "$out"; code=23; else do_commit_agent "$ag" "$branch" > "$out" 2>&1; code=$?; fi
+      else echo "非法参数：$ag $branch" > "$out"; code=22; fi ;;
     cancel)
       target="$(getf "$job" target)"
       if [[ "$target" =~ ^[A-Za-z0-9._-]+$ ]] && [ -f "$RES/$target.pid" ]; then
