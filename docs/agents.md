@@ -4,8 +4,8 @@
 
 | 代理 | 用户说明 | 实测命令与版本 | 非交互参数 | 状态 |
 |---|---|---|---|---|
-| Cursor | 启动命令 `agent` | 待 doctor 记录 | `agent -p --force --output-format text "<任务书>"`（待 --help 确认） | 未验证 |
-| Antigravity | 启动命令 `agy` | 待 doctor 记录 | 待 --help 确认 | 未验证 |
+| Cursor | 启动命令 `agent` | 2026.10.14-941492e（~/.local/bin/agent） | `agent -p --force --trust --output-format text "<任务书>"` | 参数已确认，待首次派单 |
+| Antigravity | 启动命令 `agy` | 1.0.9（/opt/homebrew/bin/agy） | `agy -p --dangerously-skip-permissions --print-timeout 3h "<任务书>"` | 参数已确认，待首次派单 |
 
 ## 已知环境事实（2026-10-16）
 
@@ -23,3 +23,9 @@
 - 代理在 `.agents/<agent>/` 独立克隆中工作，只提交到自己的分支，不推送。
 - 安全边界：派单器不执行队列里的任意命令；但 run-agent 会以非交互、免确认模式运行代理，代理本身可以在本机执行命令。
 - 派单器脚本修改后需要用户重启才生效，修改会出现在 git 提交里。
+
+## macOS 环境（doctor，2026-10-16）
+
+- macOS 26.7.1；Apple Git 2.50.1；gh 2.101.0，已登录 zzlava（https）；Python 3.14.7；uv；ffmpeg 9.0.2（Homebrew）
+- 缺少：git-lfs、Rust 工具链（rustup／cargo）
+- 远程：origin = https://github.com/zzlava/Aurora-Binaural.git，2026-10-16 首次推送 main 成功

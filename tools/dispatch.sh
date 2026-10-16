@@ -90,10 +90,10 @@ do_agent(){ # agent task branch
   case "$ag" in
     cursor)
       command -v agent >/dev/null || { echo "找不到 Cursor CLI: agent"; return 13; }
-      agent -p --force --output-format text "$prompt" ;;
+      agent -p --force --trust --output-format text "$prompt" ;;
     antigravity)
       command -v agy >/dev/null || { echo "找不到 Antigravity CLI: agy"; return 13; }
-      echo "Antigravity 的非交互参数尚未确认（见 doctor 输出），暂不执行"; return 14 ;;
+      agy -p --dangerously-skip-permissions --print-timeout 3h "$prompt" ;;
   esac
 }
 
