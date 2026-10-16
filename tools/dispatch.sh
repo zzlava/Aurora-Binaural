@@ -251,7 +251,7 @@ handle(){
       target="$(getf "$job" target)"
       if [[ "$target" =~ ^[A-Za-z0-9._-]+$ ]] && [ -f "$RES/$target.pid" ]; then
         p="$(cat "$RES/$target.pid")"; pkill -TERM -P "$p" 2>/dev/null; kill -TERM "$p" 2>/dev/null
-        echo "已结束 $target (pid $p)" > "$out"; setstatus "$target" state canceled
+        echo "已结束 $target (pid $p)" > "$out"; setstatus "$target" state canceled; mv "$RUN/$target.job" "$DONE/$target.job" 2>/dev/null; rm -f "$RES/$target.pid"
       else echo "找不到任务 $target" > "$out"; code=24; fi ;;
     *) echo "非白名单动作：$action" > "$out"; code=29 ;;
   esac
