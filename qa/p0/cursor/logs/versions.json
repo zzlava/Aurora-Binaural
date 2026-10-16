@@ -1,0 +1,30 @@
+{
+  "numpy": {
+    "version": "2.5.4",
+    "license": "BSD-3-Clause"
+  },
+  "scipy": {
+    "version": "1.18.1",
+    "license": "BSD-3-Clause"
+  },
+  "soundfile": {
+    "version": "0.14.0",
+    "license": "BSD-3-Clause"
+  },
+  "sofar": {
+    "version": "1.2.3",
+    "license": "MIT"
+  },
+  "spaudiopy": {
+    "version": "0.2.0",
+    "license": "MIT"
+  },
+  "pyfar": {
+    "version": "0.8.1",
+    "license": "MIT"
+  },
+  "pyloudnorm": {
+    "version": "0.2.0",
+    "license": "MIT"
+  }
+}

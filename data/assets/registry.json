@@ -1,0 +1,121 @@
+{
+  "synth_pink": {
+    "file": "synth_pink_stereo.wav",
+    "path": "data/assets/synth_pink_stereo.wav",
+    "category": "synth",
+    "source": "generated-by-aurora-p0",
+    "license": "CC0-1.0 (original synthetic, dedicated to public domain)",
+    "sha256": "664a6cc39dd444ee38e3c9f697263e3fb624011c32f02ae5426d52e3f9211c12",
+    "sample_rate": 48000,
+    "duration_s": 6.0,
+    "note": "pink noise"
+  },
+  "synth_sweep": {
+    "file": "synth_sweep_mono.wav",
+    "path": "data/assets/synth_sweep_mono.wav",
+    "category": "synth",
+    "source": "generated-by-aurora-p0",
+    "license": "CC0-1.0 (original synthetic, dedicated to public domain)",
+    "sha256": "825c03054330199fab5e8e864a71715f153c22baf30ae52fae1860f77de25596",
+    "sample_rate": 48000,
+    "duration_s": 6.0,
+    "note": "log sweep"
+  },
+  "synth_impulse": {
+    "file": "synth_impulse_mono.wav",
+    "path": "data/assets/synth_impulse_mono.wav",
+    "category": "synth",
+    "source": "generated-by-aurora-p0",
+    "license": "CC0-1.0 (original synthetic, dedicated to public domain)",
+    "sha256": "25e956915f3718b6cbc588530d758a3c07d4f1eb5ecd32ccbdc9101b33f8c15f",
+    "sample_rate": 48000,
+    "duration_s": 6.0,
+    "note": "impulse"
+  },
+  "synth_voice": {
+    "file": "synth_voice_mono.wav",
+    "path": "data/assets/synth_voice_mono.wav",
+    "category": "synth",
+    "source": "generated-by-aurora-p0",
+    "license": "CC0-1.0 (original synthetic, dedicated to public domain)",
+    "sha256": "5864341909311727ba15187b70e027da2e06aab7b60e19016db9d98c9c573cf4",
+    "sample_rate": 48000,
+    "duration_s": 6.0,
+    "note": "formant voice substitute"
+  },
+  "cat_voice": {
+    "file": "cat_voice.wav",
+    "path": "data/assets/cat_voice.wav",
+    "category": "voice",
+    "source": "generated-by-aurora-p0",
+    "license": "CC0-1.0 (original synthetic, dedicated to public domain)",
+    "sha256": "8db53c69050a729be6c1fee884c07b15594f4f7b462df1a0055d701c8febabe0",
+    "sample_rate": 48000,
+    "duration_s": 6.0,
+    "note": "stereo voice-category proxy for P0 matrix"
+  },
+  "cat_music": {
+    "file": "cat_music.wav",
+    "path": "data/assets/cat_music.wav",
+    "category": "music",
+    "source": "generated-by-aurora-p0",
+    "license": "CC0-1.0 (original synthetic, dedicated to public domain)",
+    "sha256": "d1cc25d19a426b63a7f1f977674a5f4c9294414e8484968740c13eb3450f7b63",
+    "sample_rate": 48000,
+    "duration_s": 6.0,
+    "note": "stereo music-category proxy for P0 matrix"
+  },
+  "cat_ambience": {
+    "file": "cat_ambience.wav",
+    "path": "data/assets/cat_ambience.wav",
+    "category": "ambience",
+    "source": "generated-by-aurora-p0",
+    "license": "CC0-1.0 (original synthetic, dedicated to public domain)",
+    "sha256": "efff1b5928559bf3ecdb73a8faab435d3b56a59ee2b738dd23646b88b4853222",
+    "sample_rate": 48000,
+    "duration_s": 6.0,
+    "note": "stereo ambience-category proxy for P0 matrix"
+  },
+  "real_voice": {
+    "file": "real_voice.wav",
+    "path": "data/assets/real_voice.wav",
+    "category": "voice",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/2/27/Brittany_Lauda_Sample.ogg",
+    "page": "https://commons.wikimedia.org/wiki/File:Brittany_Lauda_Sample.ogg",
+    "author": "Animyth Productions, Brittany Lauda",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "sha256": "41d733d17b632f943cfdc883ed6c150ceb33de667b7946a94c022e2b4f69a3a1",
+    "sample_rate": 48000,
+    "duration_s": 9.079,
+    "note": "Voice-actor sample, trimmed to the full 9.1 s source, 48 kHz stereo"
+  },
+  "real_music": {
+    "file": "real_music.wav",
+    "path": "data/assets/real_music.wav",
+    "category": "music",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Luminous_Rain_%28ISRC_USUAN1100169%29.mp3",
+    "page": "https://commons.wikimedia.org/wiki/File:Luminous_Rain_(ISRC_USUAN1100169).mp3",
+    "author": "Kevin MacLeod (incompetech.com)",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "sha256": "daa390ce27ef10fc5d828f0a1573336bc55900ba1c25516b56c14922d545af41",
+    "sample_rate": 48000,
+    "duration_s": 20.0,
+    "note": "Piano piece Luminous Rain, 20 s excerpt starting at 5 s, 48 kHz stereo"
+  },
+  "real_ambience": {
+    "file": "real_ambience.wav",
+    "path": "data/assets/real_ambience.wav",
+    "category": "ambience",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/8/81/Rain_clip.theora.ogv",
+    "page": "https://commons.wikimedia.org/wiki/File:Rain_clip.theora.ogv",
+    "author": "PB (Wikimedia Commons user Buddpaul)",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "5651e59f0ad0fd0f0f4288feb13cc60dc5832e459cbbb67eccf69f99d5afa94d",
+    "sample_rate": 48000,
+    "duration_s": 8.684,
+    "note": "Field recording of rainfall, full 8.7 s audio extracted from the CC0 video"
+  }
+}
