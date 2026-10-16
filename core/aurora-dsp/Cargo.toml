@@ -1,0 +1,21 @@
+[package]
+name = "aurora-dsp"
+version = "0.1.0"
+edition = "2021"
+description = "Aurora Binaural real-time-safe route B DSP core"
+publish = false
+license = "LicenseRef-proprietary"
+
+[dependencies]
+num-complex = "0.4"
+realfft = "3"
+sha2 = "0.10"
+thiserror = "2"
+toml = "0.8"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "realtime"
+harness = false

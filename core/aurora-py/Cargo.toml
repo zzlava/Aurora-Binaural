@@ -1,0 +1,15 @@
+[package]
+name = "aurora-py"
+version = "0.1.0"
+edition = "2021"
+description = "Python bindings for the Aurora route B core"
+publish = false
+license = "LicenseRef-proprietary"
+
+[lib]
+name = "aurora_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+aurora-dsp = { path = "../aurora-dsp" }
+pyo3 = { version = "0.25", features = ["extension-module"] }

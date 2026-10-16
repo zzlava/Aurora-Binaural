@@ -11,3 +11,4 @@
 *.rs    text eol=lf
 *.py    text eol=lf
 *.toml  text eol=lf
+*.ahrp filter=lfs diff=lfs merge=lfs -text
