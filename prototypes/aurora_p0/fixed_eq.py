@@ -1,7 +1,7 @@
 """Fixed minimum-phase timbre correction.
 
 The gains depend on HRTF, equalization mode, preset and strength. They are
-designed offline (see ``qa/tools/design_fixed_eq.py``) and stored in the
+designed offline (see ``qa/p0/cursor/tools/design_fixed_eq.py``) and stored in the
 preset. Nothing here looks at the program being rendered.
 """
 

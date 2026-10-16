@@ -33,7 +33,7 @@
 # brightening incoherent material. A minimum-phase lowpass pulls the
 # interaural delay back inside ±1 ms and the widening disappears.
 #
-# [fixed_eq] is filled by qa/tools/design_fixed_eq.py. The target is the
+# [fixed_eq] is filled by qa/p0/cursor/tools/design_fixed_eq.py. The target is the
 # inverse of broadband pink rendered through several fixed correlations.
 # The three delivery files are a design-time constraint: a band moves off
 # that inverse only far enough to keep every file inside ±3 dB. At runtime

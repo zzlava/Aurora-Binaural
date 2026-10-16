@@ -18,7 +18,7 @@ back inside. The filter still does not look at the signal at runtime.
 
 Re-run from the repo root:
 
-    prototypes/.venv/bin/python qa/tools/design_fixed_eq.py
+    prototypes/.venv/bin/python qa/p0/cursor/tools/design_fixed_eq.py
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "qa" / "tools"))
 sys.path.insert(0, str(ROOT / "qa" / "p1" / "cursor"))
