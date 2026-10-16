@@ -76,8 +76,46 @@
     "duration_s": 6.0,
     "note": "stereo ambience-category proxy for P0 matrix"
   },
-  "_fetch_note": {
-    "curl_exit": 56,
-    "stderr": "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n                                 Dload  Upload   Total   Spent    Left  Speed\n\n  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0\n  0    82    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0\ncurl: (56) The requested URL returned error: 404\n"
+  "real_voice": {
+    "file": "real_voice.wav",
+    "path": "data/assets/real_voice.wav",
+    "category": "voice",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/2/27/Brittany_Lauda_Sample.ogg",
+    "page": "https://commons.wikimedia.org/wiki/File:Brittany_Lauda_Sample.ogg",
+    "author": "Animyth Productions, Brittany Lauda",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "sha256": "41d733d17b632f943cfdc883ed6c150ceb33de667b7946a94c022e2b4f69a3a1",
+    "sample_rate": 48000,
+    "duration_s": 9.079,
+    "note": "Voice-actor sample, trimmed to the full 9.1 s source, 48 kHz stereo"
+  },
+  "real_music": {
+    "file": "real_music.wav",
+    "path": "data/assets/real_music.wav",
+    "category": "music",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Luminous_Rain_%28ISRC_USUAN1100169%29.mp3",
+    "page": "https://commons.wikimedia.org/wiki/File:Luminous_Rain_(ISRC_USUAN1100169).mp3",
+    "author": "Kevin MacLeod (incompetech.com)",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "sha256": "daa390ce27ef10fc5d828f0a1573336bc55900ba1c25516b56c14922d545af41",
+    "sample_rate": 48000,
+    "duration_s": 20.0,
+    "note": "Piano piece Luminous Rain, 20 s excerpt starting at 5 s, 48 kHz stereo"
+  },
+  "real_ambience": {
+    "file": "real_ambience.wav",
+    "path": "data/assets/real_ambience.wav",
+    "category": "ambience",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/8/81/Rain_clip.theora.ogv",
+    "page": "https://commons.wikimedia.org/wiki/File:Rain_clip.theora.ogv",
+    "author": "PB (Wikimedia Commons user Buddpaul)",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "5651e59f0ad0fd0f0f4288feb13cc60dc5832e459cbbb67eccf69f99d5afa94d",
+    "sample_rate": 48000,
+    "duration_s": 8.684,
+    "note": "Field recording of rainfall, full 8.7 s audio extracted from the CC0 video"
   }
 }

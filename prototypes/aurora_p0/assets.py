@@ -181,15 +181,102 @@ def ensure_assets(asset_dir: Path, duration_s: float = 8.0) -> dict[str, dict]:
     write_wav(p, ambience_substitute(n, seed=23))
     reg("cat_ambience", "ambience", p, "stereo ambience-category proxy for P0 matrix")
 
-    # Try optional CC0 fetch (non-fatal)
-    try:
-        _try_fetch_cc0(asset_dir, registry)
-    except Exception as exc:  # noqa: BLE001
-        registry["_fetch_note"] = {"error": str(exc)}
+    # Real CC0 / CC BY excerpts. Synthetic cat_* stay for controlled measurements.
+    _ensure_real_recordings(asset_dir, registry)
 
     meta = asset_dir / "registry.json"
     meta.write_text(json.dumps(registry, indent=2), encoding="utf-8")
     return registry
+
+
+REAL_RECORDINGS = [
+    {
+        "name": "real_voice",
+        "file": "real_voice.wav",
+        "category": "voice",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/2/27/Brittany_Lauda_Sample.ogg",
+        "page": "https://commons.wikimedia.org/wiki/File:Brittany_Lauda_Sample.ogg",
+        "author": "Animyth Productions, Brittany Lauda",
+        "license": "CC BY 3.0",
+        "license_url": "https://creativecommons.org/licenses/by/3.0",
+        "note": "Voice-actor sample, trimmed to the full 9.1 s source, 48 kHz stereo",
+        "ffmpeg_ss": "0",
+        "ffmpeg_t": "20",
+    },
+    {
+        "name": "real_music",
+        "file": "real_music.wav",
+        "category": "music",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Luminous_Rain_%28ISRC_USUAN1100169%29.mp3",
+        "page": "https://commons.wikimedia.org/wiki/File:Luminous_Rain_(ISRC_USUAN1100169).mp3",
+        "author": "Kevin MacLeod (incompetech.com)",
+        "license": "CC BY 3.0",
+        "license_url": "https://creativecommons.org/licenses/by/3.0",
+        "note": "Piano piece Luminous Rain, 20 s excerpt starting at 5 s, 48 kHz stereo",
+        "ffmpeg_ss": "5",
+        "ffmpeg_t": "20",
+    },
+    {
+        "name": "real_ambience",
+        "file": "real_ambience.wav",
+        "category": "ambience",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Rain_clip.theora.ogv",
+        "page": "https://commons.wikimedia.org/wiki/File:Rain_clip.theora.ogv",
+        "author": "PB (Wikimedia Commons user Buddpaul)",
+        "license": "CC0-1.0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "note": "Field recording of rainfall, full 8.7 s audio extracted from the CC0 video",
+        "ffmpeg_ss": "0",
+        "ffmpeg_t": "20",
+    },
+]
+
+
+def _ensure_real_recordings(asset_dir: Path, registry: dict) -> None:
+    """Download and trim real recordings when the wav excerpt is missing."""
+    import shutil
+
+    ffmpeg = shutil.which("ffmpeg")
+    for spec in REAL_RECORDINGS:
+        dest = asset_dir / spec["file"]
+        if not dest.is_file():
+            if not ffmpeg:
+                raise RuntimeError(f"ffmpeg required to build {dest.name}")
+            raw = asset_dir / "src" / spec["file"].replace(".wav", ".src")
+            raw.parent.mkdir(parents=True, exist_ok=True)
+            r = subprocess.run(
+                ["curl", "-fL", "--retry", "3", "-A", "AuroraBinauralP0/1.0", "--max-time", "120", "-o", str(raw), spec["url"]],
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode != 0:
+                raise RuntimeError(f"download failed {spec['url']}: {r.stderr[-400:]}")
+            conv = subprocess.run(
+                [
+                    ffmpeg, "-y", "-ss", spec["ffmpeg_ss"], "-i", str(raw),
+                    "-t", spec["ffmpeg_t"], "-vn", "-ac", "2", "-ar", str(SAMPLE_RATE),
+                    "-c:a", "pcm_s24le", str(dest),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if conv.returncode != 0:
+                raise RuntimeError(f"ffmpeg failed for {spec['file']}: {conv.stderr[-400:]}")
+        info = sf.info(str(dest))
+        registry[spec["name"]] = {
+            "file": dest.name,
+            "path": f"data/assets/{dest.name}",
+            "category": spec["category"],
+            "source": spec["url"],
+            "page": spec["page"],
+            "author": spec["author"],
+            "license": spec["license"],
+            "license_url": spec["license_url"],
+            "sha256": sha256_file(dest),
+            "sample_rate": info.samplerate,
+            "duration_s": round(info.duration, 3),
+            "note": spec["note"],
+        }
 
 
 def _try_fetch_cc0(asset_dir: Path, registry: dict) -> None:

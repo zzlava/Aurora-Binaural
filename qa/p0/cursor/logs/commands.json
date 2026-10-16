@@ -12,103 +12,227 @@
     "exit_code": 0
   },
   {
-    "step": "direction_diffuse",
+    "step": "eq_thk_ku100_diffuse",
     "exit_code": 0
   },
   {
-    "step": "frontal_diffuse",
+    "step": "eq_thk_ku100_diffuse_power",
     "exit_code": 0
   },
   {
-    "step": "direction_frontal",
+    "step": "eq_thk_ku100_frontal",
     "exit_code": 0
   },
   {
-    "step": "frontal_frontal",
+    "step": "eq_thk_ku100_frontal_power",
     "exit_code": 0
   },
   {
-    "step": "direction_sadie",
+    "step": "eq_sadie_frontal_power",
     "exit_code": 0
   },
   {
-    "step": "frontal_sadie",
+    "step": "upmix_energy",
     "exit_code": 0
   },
   {
-    "step": "block_consistency_render",
+    "step": "block_consistency_route_B",
     "exit_code": 0
   },
   {
-    "step": "render_voice_routeA_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "block_consistency_route_C",
     "exit_code": 0
   },
   {
-    "step": "render_voice_routeA_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_voice_A_0.4",
     "exit_code": 0
   },
   {
-    "step": "render_voice_routeB_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_voice_A_0.8",
     "exit_code": 0
   },
   {
-    "step": "render_voice_routeB_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_voice_B_0.4",
     "exit_code": 0
   },
   {
-    "step": "render_voice_routeC_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_voice_B_0.8",
     "exit_code": 0
   },
   {
-    "step": "render_voice_routeC_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_voice_C_0.4",
     "exit_code": 0
   },
   {
-    "step": "render_music_routeA_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_voice_C_0.8",
     "exit_code": 0
   },
   {
-    "step": "render_music_routeA_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_A_0.0",
     "exit_code": 0
   },
   {
-    "step": "render_music_routeB_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_A_0.2",
     "exit_code": 0
   },
   {
-    "step": "render_music_routeB_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_A_0.4",
     "exit_code": 0
   },
   {
-    "step": "render_music_routeC_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_A_0.6",
     "exit_code": 0
   },
   {
-    "step": "render_music_routeC_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_A_0.8",
     "exit_code": 0
   },
   {
-    "step": "render_ambience_routeA_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_A_1.0",
     "exit_code": 0
   },
   {
-    "step": "render_ambience_routeA_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_B_0.0",
     "exit_code": 0
   },
   {
-    "step": "render_ambience_routeB_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_B_0.2",
     "exit_code": 0
   },
   {
-    "step": "render_ambience_routeB_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_B_0.4",
     "exit_code": 0
   },
   {
-    "step": "render_ambience_routeC_str0.4_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_B_0.6",
     "exit_code": 0
   },
   {
-    "step": "render_ambience_routeC_str0.8_hrtf-thk_ku100_eq-diffuse",
+    "step": "synth_music_B_0.8",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_music_B_1.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_music_C_0.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_music_C_0.2",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_music_C_0.4",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_music_C_0.6",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_music_C_0.8",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_music_C_1.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_A_0.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_A_0.2",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_A_0.4",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_A_0.6",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_A_0.8",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_A_1.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_B_0.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_B_0.2",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_B_0.4",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_B_0.6",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_B_0.8",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_B_1.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_C_0.0",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_C_0.2",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_C_0.4",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_C_0.6",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_C_0.8",
+    "exit_code": 0
+  },
+  {
+    "step": "synth_ambience_C_1.0",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeA_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeA_str0.8_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeB_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeB_str0.8_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeC_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_voice_routeC_str0.8_hrtf-thk_ku100_eq-frontal",
     "exit_code": 0
   },
   {
@@ -116,7 +240,15 @@
     "exit_code": 0
   },
   {
+    "step": "render_music_routeA_str0.8_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
     "step": "render_music_routeB_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_music_routeB_str0.8_hrtf-thk_ku100_eq-frontal",
     "exit_code": 0
   },
   {
@@ -124,12 +256,40 @@
     "exit_code": 0
   },
   {
-    "step": "render_music_routeB_str0.4_hrtf-sadie2_d1_eq-diffuse",
+    "step": "render_music_routeC_str0.8_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeA_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeA_str0.8_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeB_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeB_str0.8_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeC_str0.4_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_ambience_routeC_str0.8_hrtf-thk_ku100_eq-frontal",
+    "exit_code": 0
+  },
+  {
+    "step": "render_sadie_music_B",
     "exit_code": 0
   },
   {
     "step": "write_metrics",
     "exit_code": 0,
-    "path": "~/Desktop/leo/Aurora Binaural/.agents/cursor/qa/p0/cursor/metrics.json"
+    "path": "qa/p0/cursor/metrics.json"
   }
 ]

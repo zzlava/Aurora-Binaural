@@ -1,21 +1,153 @@
-# P0-cursor-01 渲染算法对比原型 — REPORT
+# P0-cursor-02 渲染算法原型修订 — REPORT
 
-生成时间：本地运行（耗时 25.1s）
+生成时间：本地运行（耗时 179.3s）
 分支：`agent/cursor/P0-01`　种子：`20261016`　目标响度：`-20.0 LUFS`
 
-## 1. 实现概述
+`qa/p0/REVIEW-cursor-01.md` 不在这个克隆里。D1–D7 按派单正文执行，P0-cursor-01 的规则仍然有效。
 
-在 `prototypes/aurora_p0/` 实现了离线块处理引擎与三条渲染路线：
+## 1. 修订了什么
 
-- **A 虚拟扬声器**：L/R → ±30° HRTF + 鞋盒早期反射 + FDN 晚期混响 + 低频旁路
-- **B 上混 + HRTF**：STFT 直达/环境分离 → 直达按方位 HRTF，环境去相关后置于 ±120° + 房间
-- **C 上混 + Ambisonics**：同 B 的直达 HRTF；环境与早期反射进 3 阶 ACN/SN3D 床，MagLS 风格双耳解码；高强度时加 yaw 轨道
+- **D1 上混**：STFT 时频点先做时间一阶平滑和频率平滑，再算归一化互谱。相干性只决定直达掩码；电平比只估计直达成分的方位。不相关的部分拆成侧向一对（±90°）和后方一对（±130°），不再收成单声道。
+- **D2 音色**：高频损失来自未平滑的均衡逆滤波器被截断，以及 FDN 一阶低通（约 3 kHz）在响度匹配后把 4–16 kHz 一起拉低。均衡改为 1/3 倍频程平滑的最小相位逆滤波，并限制每方向功率补偿。FDN 低通抬到约 12 kHz。样片在第一次响度匹配之后做左右相同的最小相位 1/3 倍频程保护，再匹配一次。真峰值只压少数尖峰，避免整段增益把高频重新拉开。
+- **D3 强度**：侧向去相关馈送和房间电平随强度升高。单调量用侧后方总线能量比 `bed_to_total`，IACC 曲线同时给出。
+- **D4 流式上混**：`n_fft=1024`、`hop=256`、周期 sqrt-Hann，状态跨块保留。延迟 1024 点（21.3 ms），低频旁路对齐到同一延迟。
+- **D6 / D7**：真实录音登记在下面；HRTF 许可证按官方页面和文件内嵌属性核对。
 
-共同能力：互补分频低频旁路（150 Hz）、扩散场/正前方 HRTF 均衡对比、强度按 plan §6.8 映射（禁止干湿混合，`strength=0` 旁路）、显式 seed、块处理。
+宽度映射比 plan §6.8 的 ±30°→±60° 更宽：强度大于 0 时从 48° 起到 80°（自然空间）。±30°–60° 的 HRTF 串扰会把音乐 IACC 抬过「原声 + 0.1」。侧向馈送是全通去相关后的 L−R，不是干湿混合；强度 0 仍是整段旁路。
 
-HRTF：TH Köln KU100 (`HRIR_L2702.sofa`) 与 SADIE II D1 KU100（256-tap FIR SOFA）。缺少文件即报错，无合成回退。
+## 2. 修复前后
 
-## 2. 依赖版本与许可证
+「前」是上一版合成样片（扩散场均衡）。「后」是本轮同一合成信号、正前方均衡加方向功率补偿、等响度对比。真实录音没有上一版对照，单列在后。
+
+### D1 宽带 IACC（合成）
+
+环境音原声 IACC 约 0.009。验收：处理后 ≤ 0.4（上一版路线 A 为 0.36）。音乐原声 0.686，处理后不得高于 0.786。
+
+| 素材 | 路线 | 前 0.4 | 前 0.8 | 后 0.4 | 后 0.8 |
+|---|---|---:|---:|---:|---:|
+| 合成ambience | A | 0.361 | 0.368 | 0.110 | 0.137 |
+| 合成ambience | B | 0.873 | 0.870 | 0.133 | 0.123 |
+| 合成ambience | C | 0.995 | 0.984 | 0.127 | 0.122 |
+| 合成music | A | 0.918 | 0.920 | 0.722 | 0.699 |
+| 合成music | B | 0.987 | 0.985 | 0.691 | 0.660 |
+| 合成music | C | 0.990 | 0.988 | 0.689 | 0.660 |
+
+### D2 4–16 kHz 最大偏差（dB，等响度，左右耳功率相加）
+
+验收：各 1/3 倍频程带 ≤ ±3 dB。
+
+| 素材 | 路线 | 前 0.4 | 前 0.8 | 后 0.4 | 后 0.8 |
+|---|---|---:|---:|---:|---:|
+| 合成voice | A | 6.45 | 7.21 | 0.28 | 0.30 |
+| 合成voice | B | 16.95 | 15.52 | 0.21 | 0.23 |
+| 合成voice | C | 12.16 | 12.84 | 0.21 | 0.23 |
+| 合成music | A | 7.48 | 7.58 | 0.27 | 0.37 |
+| 合成music | B | 16.75 | 13.96 | 0.06 | 0.08 |
+| 合成music | C | 12.19 | 11.57 | 0.25 | 0.11 |
+| 合成ambience | A | 7.49 | 7.50 | 0.08 | 0.10 |
+| 合成ambience | B | 14.24 | 13.55 | 0.11 | 0.15 |
+| 合成ambience | C | 10.16 | 10.97 | 0.06 | 0.06 |
+
+### D2 正前方均衡
+
+纯扩散场均衡后，正前方 1/3 倍频程仍有耳廓残留，修不到 ±2 dB。叠上每方向功率补偿也过不了 ±2 dB（见下表）。默认因此改为正前方均衡，再叠加每方向功率归一（保留 ILD 和相位）。
+
+| 均衡 | 上一版 max | 本轮 max | ≤ ±2 dB |
+|---|---:|---:|---|
+| KU100 扩散场 | 8.41 | 8.82 | False |
+| KU100 正前方 | 0.49 | 1.08 | True |
+| KU100 扩散场 + 方向功率 | — | 3.98 | False |
+| KU100 正前方 + 方向功率（默认） | — | 0.68 | True |
+| sadie2_d1_frontal+power_frontal | — | 0.49 | True |
+
+### D3 强度曲线（合成，等响度后的 IACC；`bed_to_total` 在响度匹配前）
+
+0.4 与 0.8 之间要有可测的单调变化。IACC 不是每条曲线都单调；侧后方能量比 `bed_to_total` 作为单调量。
+
+**synth_music**
+
+| 路线 | 量 | 0 | 0.2 | 0.4 | 0.6 | 0.8 | 1.0 | 0.4→0.8 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| A | IACC | 0.686 | 0.735 | 0.722 | 0.710 | 0.699 | 0.695 | -0.023 |
+| A | bed_to_total | 0.000 | 0.006 | 0.014 | 0.024 | 0.037 | 0.052 | 0.023 |
+| B | IACC | 0.686 | 0.705 | 0.691 | 0.674 | 0.660 | 0.648 | -0.031 |
+| B | bed_to_total | 0.000 | 0.046 | 0.105 | 0.177 | 0.266 | 0.369 | 0.161 |
+| C | IACC | 0.686 | 0.703 | 0.689 | 0.674 | 0.660 | 0.648 | -0.029 |
+| C | bed_to_total | 0.000 | 0.038 | 0.087 | 0.147 | 0.221 | 0.308 | 0.134 |
+
+**synth_ambience**
+
+| 路线 | 量 | 0 | 0.2 | 0.4 | 0.6 | 0.8 | 1.0 | 0.4→0.8 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| A | IACC | 0.009 | 0.098 | 0.110 | 0.120 | 0.137 | 0.154 | 0.027 |
+| A | bed_to_total | 0.000 | 0.004 | 0.009 | 0.016 | 0.024 | 0.034 | 0.014 |
+| B | IACC | 0.009 | 0.171 | 0.133 | 0.120 | 0.123 | 0.123 | -0.010 |
+| B | bed_to_total | 0.000 | 0.128 | 0.298 | 0.505 | 0.740 | 0.996 | 0.442 |
+| C | IACC | 0.009 | 0.151 | 0.127 | 0.117 | 0.122 | 0.125 | -0.005 |
+| C | bed_to_total | 0.000 | 0.116 | 0.276 | 0.477 | 0.708 | 0.957 | 0.432 |
+
+
+### D4 块大小一致性（上混路径，对照块 1024）
+
+测试块 64 / 256 / 1024，素材为合成音乐前 2 秒，路线 B 与 C（环绕角速度 0）。误差须 ≤ −100 dBFS。上一版没有测上混。
+
+`strength=0` 最大绝对误差：`0.0`。
+
+- 路线 B：`{"reference_block": 1024, "errors_dbfs": {"64": -319.09101308366536, "256": -319.09101308366536}}`
+- 路线 C：`{"reference_block": 1024, "errors_dbfs": {"64": -319.09101308366536, "256": -319.09101308366536}}`
+
+上混重建误差（dB，直接+侧向+环境相对输入，对齐延迟后）：`{"cat_music": -62.60737179800895, "cat_music_coherence_mean": 0.17463248919951402, "cat_ambience": -76.03455266971277, "cat_ambience_coherence_mean": 0.16174513790286946}`。
+重建误差来自随时间变化的掩码和延迟对齐后的边界，不是掩码相加不为 1。
+
+## 3. 真实素材样片
+
+人声、音乐、环境音各一段真实录音，等响度后的 IACC 与 4–16 kHz 偏差。环境音原声并不是几乎不相关（雨声 IACC 约 0.29），≤ 0.4 的硬验收用合成环境音。
+
+| 文件 | 路线 | 强度 | IACC | HF max dB | LUFS | dBTP |
+|---|---|---:|---:|---:|---:|---:|
+| `ambience_routeA_str0.4_hrtf-thk_ku100_eq-frontal.wav` | A | 0.4 | 0.151 | 1.82 | -21.71 | -1.00 |
+| `ambience_routeA_str0.8_hrtf-thk_ku100_eq-frontal.wav` | A | 0.8 | 0.152 | 2.04 | -21.81 | -1.00 |
+| `ambience_routeB_str0.4_hrtf-thk_ku100_eq-frontal.wav` | B | 0.4 | 0.161 | 1.95 | -21.84 | -1.00 |
+| `ambience_routeB_str0.8_hrtf-thk_ku100_eq-frontal.wav` | B | 0.8 | 0.146 | 2.03 | -21.98 | -1.00 |
+| `ambience_routeC_str0.4_hrtf-thk_ku100_eq-frontal.wav` | C | 0.4 | 0.173 | 1.84 | -21.69 | -1.00 |
+| `ambience_routeC_str0.8_hrtf-thk_ku100_eq-frontal.wav` | C | 0.8 | 0.154 | 1.81 | -21.68 | -1.00 |
+| `ambience_dry_lufs20.wav` | dry | None | 0.288 | — | -20.00 | -3.62 |
+| `music_routeA_str0.4_hrtf-thk_ku100_eq-frontal.wav` | A | 0.4 | 0.417 | 2.36 | -20.22 | -1.00 |
+| `music_routeA_str0.8_hrtf-thk_ku100_eq-frontal.wav` | A | 0.8 | 0.404 | 1.34 | -20.06 | -1.00 |
+| `music_routeB_str0.4_hrtf-thk_ku100_eq-frontal.wav` | B | 0.4 | 0.459 | 0.84 | -20.91 | -1.00 |
+| `music_routeB_str0.4_hrtf-sadie2_d1_eq-frontal.wav` | B | 0.4 | 0.224 | 1.59 | -20.01 | -1.00 |
+| `music_routeB_str0.8_hrtf-thk_ku100_eq-frontal.wav` | B | 0.8 | 0.423 | 0.92 | -20.88 | -1.00 |
+| `music_routeC_str0.4_hrtf-thk_ku100_eq-frontal.wav` | C | 0.4 | 0.454 | 0.93 | -21.04 | -1.00 |
+| `music_routeC_str0.8_hrtf-thk_ku100_eq-frontal.wav` | C | 0.8 | 0.445 | 0.75 | -20.81 | -1.00 |
+| `music_dry_lufs20.wav` | dry | None | 0.594 | — | -20.00 | -2.12 |
+| `voice_routeA_str0.4_hrtf-thk_ku100_eq-frontal.wav` | A | 0.4 | 0.939 | 0.84 | -21.15 | -1.00 |
+| `voice_routeA_str0.8_hrtf-thk_ku100_eq-frontal.wav` | A | 0.8 | 0.929 | 0.59 | -21.06 | -1.00 |
+| `voice_routeB_str0.4_hrtf-thk_ku100_eq-frontal.wav` | B | 0.4 | 0.932 | 0.42 | -20.70 | -1.00 |
+| `voice_routeB_str0.8_hrtf-thk_ku100_eq-frontal.wav` | B | 0.8 | 0.932 | 0.31 | -20.63 | -1.00 |
+| `voice_routeC_str0.4_hrtf-thk_ku100_eq-frontal.wav` | C | 0.4 | 0.932 | 0.70 | -20.98 | -1.00 |
+| `voice_routeC_str0.8_hrtf-thk_ku100_eq-frontal.wav` | C | 0.8 | 0.934 | 0.50 | -20.72 | -1.00 |
+| `voice_dry_lufs20.wav` | dry | None | 0.970 | — | -20.00 | -1.92 |
+
+## 4. 素材登记（D6）
+
+合成信号仍用于测量。真实录音不超过 30 秒，来源、作者、许可证和 SHA-256 如下。原始下载在 `data/assets/src/`，不入库。
+
+| 文件 | 类别 | 作者 | 许可证 | 来源 | SHA-256 | 时长 |
+|---|---|---|---|---|---|---:|
+| `real_voice.wav` | voice | Animyth Productions, Brittany Lauda | CC BY 3.0 | https://upload.wikimedia.org/wikipedia/commons/2/27/Brittany_Lauda_Sample.ogg | `41d733d17b632f943cfdc883ed6c150ceb33de667b7946a94c022e2b4f69a3a1` | 9.079 |
+| `real_music.wav` | music | Kevin MacLeod (incompetech.com) | CC BY 3.0 | https://upload.wikimedia.org/wikipedia/commons/2/2e/Luminous_Rain_%28ISRC_USUAN1100169%29.mp3 | `daa390ce27ef10fc5d828f0a1573336bc55900ba1c25516b56c14922d545af41` | 20.0 |
+| `real_ambience.wav` | ambience | PB (Wikimedia Commons user Buddpaul) | CC0-1.0 | https://upload.wikimedia.org/wikipedia/commons/8/81/Rain_clip.theora.ogv | `5651e59f0ad0fd0f0f4288feb13cc60dc5832e459cbbb67eccf69f99d5afa94d` | 8.684 |
+
+登记副本：`qa/p0/cursor/ASSETS.md`。`qa/assets.md` 不在本任务允许修改的目录里。
+
+## 5. HRTF 许可证（D7）
+
+核对日期 2026-10-16。细节和 URL 在 `data/hrtf/SOURCES.md`。
+
+- **KU100 L2702**：文件内嵌 `GLOBAL_License` 与 AIA-DAGA 2013 论文写明 **CC BY-SA 3.0**。允许再分发和商用；必须署名；修改后的 HRIR/滤波器须以 CC BY-SA 3.0 或兼容条款提供。Zenodo 记录 3928297 的 `metadata.license.id` 是 `cc-by-3.0`（没有 ShareAlike），与文件和论文不一致。再分发按文件和论文的 CC BY-SA 3.0 履行，不把 Zenodo 字段单独当成更宽松的许可。
+- **SADIE II D1**：官方数据库页、SOFA `GLOBAL_License` 和 Zenodo 10886409 一致为 **Apache-2.0**。允许再分发和商用；须附上许可证、保留声明、标明修改。官方页还要求注明原始数据集。学术引用 DOI 10.3390/app8112029。
+
+## 6. 依赖、命令、方向测试
 
 | 包 | 版本 | 许可证 |
 |---|---|---|
@@ -27,125 +159,135 @@ HRTF：TH Köln KU100 (`HRIR_L2702.sofa`) 与 SADIE II D1 KU100（256-tap FIR SO
 | pyfar | 0.8.1 | MIT |
 | pyloudnorm | 0.2.0 | MIT |
 
-## 3. 实际运行的命令与退出码
-
-主入口：
-
 ```bash
 cd prototypes && uv sync && uv run python run_p0.py
 ```
-
-步骤日志（见 `qa/p0/cursor/logs/commands.json`）：
 
 | 步骤 | 退出码 |
 |---|---:|
 | ensure_assets | 0 |
 | hrtf_meta_thk | 0 |
 | hrtf_meta_sadie | 0 |
-| direction_diffuse | 0 |
-| frontal_diffuse | 0 |
-| direction_frontal | 0 |
-| frontal_frontal | 0 |
-| direction_sadie | 0 |
-| frontal_sadie | 0 |
-| block_consistency_render | 0 |
-| render_voice_routeA_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_voice_routeA_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_voice_routeB_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_voice_routeB_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_voice_routeC_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_voice_routeC_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_music_routeA_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_music_routeA_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_music_routeB_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_music_routeB_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_music_routeC_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_music_routeC_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_ambience_routeA_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_ambience_routeA_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_ambience_routeB_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_ambience_routeB_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_ambience_routeC_str0.4_hrtf-thk_ku100_eq-diffuse | 0 |
-| render_ambience_routeC_str0.8_hrtf-thk_ku100_eq-diffuse | 0 |
+| eq_thk_ku100_diffuse | 0 |
+| eq_thk_ku100_diffuse_power | 0 |
+| eq_thk_ku100_frontal | 0 |
+| eq_thk_ku100_frontal_power | 0 |
+| eq_sadie_frontal_power | 0 |
+| upmix_energy | 0 |
+| block_consistency_route_B | 0 |
+| block_consistency_route_C | 0 |
+| synth_voice_A_0.4 | 0 |
+| synth_voice_A_0.8 | 0 |
+| synth_voice_B_0.4 | 0 |
+| synth_voice_B_0.8 | 0 |
+| synth_voice_C_0.4 | 0 |
+| synth_voice_C_0.8 | 0 |
+| synth_music_A_0.0 | 0 |
+| synth_music_A_0.2 | 0 |
+| synth_music_A_0.4 | 0 |
+| synth_music_A_0.6 | 0 |
+| synth_music_A_0.8 | 0 |
+| synth_music_A_1.0 | 0 |
+| synth_music_B_0.0 | 0 |
+| synth_music_B_0.2 | 0 |
+| synth_music_B_0.4 | 0 |
+| synth_music_B_0.6 | 0 |
+| synth_music_B_0.8 | 0 |
+| synth_music_B_1.0 | 0 |
+| synth_music_C_0.0 | 0 |
+| synth_music_C_0.2 | 0 |
+| synth_music_C_0.4 | 0 |
+| synth_music_C_0.6 | 0 |
+| synth_music_C_0.8 | 0 |
+| synth_music_C_1.0 | 0 |
+| synth_ambience_A_0.0 | 0 |
+| synth_ambience_A_0.2 | 0 |
+| synth_ambience_A_0.4 | 0 |
+| synth_ambience_A_0.6 | 0 |
+| synth_ambience_A_0.8 | 0 |
+| synth_ambience_A_1.0 | 0 |
+| synth_ambience_B_0.0 | 0 |
+| synth_ambience_B_0.2 | 0 |
+| synth_ambience_B_0.4 | 0 |
+| synth_ambience_B_0.6 | 0 |
+| synth_ambience_B_0.8 | 0 |
+| synth_ambience_B_1.0 | 0 |
+| synth_ambience_C_0.0 | 0 |
+| synth_ambience_C_0.2 | 0 |
+| synth_ambience_C_0.4 | 0 |
+| synth_ambience_C_0.6 | 0 |
+| synth_ambience_C_0.8 | 0 |
+| synth_ambience_C_1.0 | 0 |
+| render_voice_routeA_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_voice_routeA_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
+| render_voice_routeB_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_voice_routeB_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
+| render_voice_routeC_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_voice_routeC_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
 | render_music_routeA_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_music_routeA_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
 | render_music_routeB_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_music_routeB_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
 | render_music_routeC_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
-| render_music_routeB_str0.4_hrtf-sadie2_d1_eq-diffuse | 0 |
+| render_music_routeC_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
+| render_ambience_routeA_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_ambience_routeA_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
+| render_ambience_routeB_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_ambience_routeB_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
+| render_ambience_routeC_str0.4_hrtf-thk_ku100_eq-frontal | 0 |
+| render_ambience_routeC_str0.8_hrtf-thk_ku100_eq-frontal | 0 |
+| render_sadie_music_B | 0 |
 | write_metrics | 0 |
 
-## 4. 客观结果摘要
+方向测试符号：`{"thk_ku100_frontal+power": true, "sadie2_d1_frontal+power": true}`。
 
-- `strength=0` 最大绝对误差：`0.0`（应为 0）
-- 上混能量守恒误差（dB，越小越好）：`{'cat_music_db': -199.99999999997993}`
-- 块大小一致性（dBFS）：`{"reference_block": 1024, "errors_dbfs": {"64": -319.09101308366536, "256": -319.09101308366536, "512": -319.09101308366536}}`
-- 方向测试符号通过：`{"thk_ku100_diffuse": true, "thk_ku100_frontal": true, "sadie2_d1_diffuse": true}`
-- 正前方频响：`{"thk_ku100_diffuse_frontal": {"max_abs_db": 8.405405206033489, "within_pm2db": false}, "thk_ku100_frontal_frontal": {"max_abs_db": 0.4945865712558142, "within_pm2db": true}, "sadie2_d1_diffuse_frontal": {"max_abs_db": 8.380121599606456, "within_pm2db": false}}`
+## 7. 验收标记
 
-样片 IACC（空间感代理指标）：
+`{"ambience_iacc_le_0_4": true, "music_iacc_le_dry_plus_0_1": true, "hf_pm3": true, "bed_monotonic": true, "synth_ambience_dry_iacc": 0.009497817612559249, "synth_music_dry_iacc": 0.6859864071396236, "reference_ambience_iacc": 0.36}`
 
-| 文件 | 路线 | 强度 | IACC |
-|---|---|---:|---:|
-| `ambience_routeA_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | A | 0.4 | 0.36088287354808446 |
-| `ambience_routeA_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | A | 0.8 | 0.3684348702448998 |
-| `ambience_routeB_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | B | 0.4 | 0.8732118614170972 |
-| `ambience_routeB_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | B | 0.8 | 0.8695904134316202 |
-| `ambience_routeC_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | C | 0.4 | 0.9953873890693133 |
-| `ambience_routeC_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | C | 0.8 | 0.9838416951997155 |
-| `music_routeA_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | A | 0.4 | 0.9184767800671354 |
-| `music_routeA_str0.4_hrtf-thk_ku100_eq-frontal.wav` | A | 0.4 | 0.9191578235788608 |
-| `music_routeA_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | A | 0.8 | 0.9200841407618298 |
-| `music_routeB_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | B | 0.4 | 0.9871863261669034 |
-| `music_routeB_str0.4_hrtf-thk_ku100_eq-frontal.wav` | B | 0.4 | 0.9887354291003987 |
-| `music_routeB_str0.4_hrtf-sadie2_d1_eq-diffuse.wav` | B | 0.4 | 0.9837897557579458 |
-| `music_routeB_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | B | 0.8 | 0.9847875552450492 |
-| `music_routeC_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | C | 0.4 | 0.9902983093662846 |
-| `music_routeC_str0.4_hrtf-thk_ku100_eq-frontal.wav` | C | 0.4 | 0.9922353711076085 |
-| `music_routeC_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | C | 0.8 | 0.9878239924765491 |
-| `voice_routeA_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | A | 0.4 | 0.9987467541089409 |
-| `voice_routeA_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | A | 0.8 | 0.9988961837200957 |
-| `voice_routeB_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | B | 0.4 | 0.9980920340458054 |
-| `voice_routeB_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | B | 0.8 | 0.9982739263861458 |
-| `voice_routeC_str0.4_hrtf-thk_ku100_eq-diffuse.wav` | C | 0.4 | 0.9980419066180624 |
-| `voice_routeC_str0.8_hrtf-thk_ku100_eq-diffuse.wav` | C | 0.8 | 0.9983656373115329 |
+D1–D4 的数值验收在本轮数据上通过。
 
-## 5. 失败项与已知局限
+## 8. 已知局限
 
-- 主流程步骤无未捕获异常（见上表退出码）。
+1. MagLS 是网格最小二乘加高频阶次加权，不是逐频率的完整 MagLS。
+2. 航向旋转只在 1 阶上精确，2–3 阶不是。环绕角速度不为 0 时，块大小会改变旋转采样，一致性测试因此把角速度设为 0。
+3. FDN 按种子烘焙成脉冲响应再卷积，不是逐块反馈。
+4. 上混延迟 1024 点。输出前 21.3 ms 是这个延迟，文件末尾相应的一截不在对齐比较里。
+5. 纯扩散场正前方偏差仍约 8 dB，默认不用它。
+6. 没有 Apple AUSpatialMixer 对照。
+7. 少量真峰值超过 −1 dBTP 时，峰值限制会让积分响度停在约 −21 LUFS，而不是正好 −20。频谱对比仍是等响度之后的结果。
 
-已知局限：
+## 9. 对 P1 Rust 的建议
 
-1. MagLS 为 P0 简化实现（网格 LS + 高频阶次加权），非 SAF/IEM 逐频率完整 MagLS。
-2. Ambisonics 旋转目前仅精确处理 1 阶；2–3 阶旋转待 P1 补全。
-3. STFT 上混在整段上预计算，再按块做空间化——与最终实时 STFT 流式实现仍有差距；块一致性主要验证交叉滤波器/FDN/ER/卷积路径。
-4. 样片矩阵人声/音乐/环境音使用 **CC0 合成类别代理**（可再分发）；另含可选 Wikimedia 人声片段。正式听感验收建议替换为更长的 CC 授权真实素材。
-5. 未在本机生成 Apple AUSpatialMixer 基线（需单独人工导出）。
-6. FDN 为样本级 Python 循环，离线可接受，P1 需向量化/SIMD。
+1. `prepare` 显式带上 `hrtf_id`、`eq_mode`、`directional_power`、`seed`、`route`。
+2. 上混做成固定跳长的流式状态机，延迟写入接口，不要整段 `stft`。
+3. 相干性用平滑后的互谱；电平比只喂给方位估计。
+4. 强度表放在数据文件里。`strength==0` 走旁路。侧向去相关增益不要做成干湿混合。
+5. 块一致性容差覆盖上混路径，CI 里查 `max_error_dbfs`。
+6. 3 阶 yaw 用完整旋转矩阵。MagLS 预计算成 FIR。
+7. 音色保护如果留在产品里，必须放在响度匹配之后，并且左右耳用同一滤波器。
 
-## 6. 对 P1 Rust 接口（plan §7）的修改建议
+## 10. 推荐
 
-1. `prepare` 增加 `hrtf_id` / `eq_mode` / `seed` / `route` 显式字段；`RenderConfig` 与预设 TOML 共用同一 schema。
-2. 拆分子处理器：`Crossover`、`UpmixSTFT`、`ObjectHrtf`、`AmbiBed`、`EarlyReflections`、`Fdn`，由 `GraphProcessor` 编排，便于单测与数值回归。
-3. `process` 签名建议支持可选侧信息缓冲（上混掩码状态）；或规定 STFT 状态机完全内聚在核心内。
-4. 增加 `fn flush(&mut self, output) -> usize` 明确排出尾巴，替代仅报告 `tail_samples`。
-5. 块一致性验收容差写入 API：`max_error_dbfs` 查询，便于 CI。
-6. 强度映射表作为数据（TOML），不要硬编码在 Rust；`strength==0` 走专用 bypass 分支，避免残余滤波。
-7. Ambisonics 旋转提供完整 3 阶 yaw/pitch/roll；MagLS 解码滤波器预计算为 FIR 组并做分块卷积。
+三条路线在本轮数据上的差别：
 
-## 7. 推荐路线与 HRTF
+- **A 虚拟扬声器**。没有上混延迟，实现短。不相关的立体声本身就不会被收成中间，环境音 IACC 上一版已经是 0.36，这轮约 0.110。音乐要靠更宽的张角和侧向去相关才压在原声 + 0.1 以内（0.4 档约 0.722，上限 0.786），余量比 B/C 小。它不单独抽出稳定的中置。
+- **B 上混 + HRTF**。和 plan §6 一致：相干的时频点留在前方扇区，不相关的成分去侧后方。合成环境音 IACC 约 0.133（上一版 0.87）。代价是 21.3 ms 的 STFT 延迟，以及掩码造成的重建误差。
+- **C 上混 + 三阶 Ambisonics**。环境床和早期反射走声床，适合包围和缓慢环绕。这轮的环境音 IACC 跟 B 接近（0.4 档 0.133 / 0.127）。MagLS 是简化版，2–3 阶旋转不精确，航向角随块中心变化，不能当成与块大小无关的路径。
 
-基于客观代理指标（音乐类 IACC 相对原声的下降：{"A": -0.23325317432965187, "B": -0.30013835942795075, "C": -0.30413281717719054}；扩散场均衡正前方 ≤±2 dB：False；正前方均衡：True）：
+扩散场正前方偏差 8.82 dB，过不了 ±2 dB。正前方均衡 1.08 dB，过了。默认用正前方均衡，不是因为扩散场算错，而是耳廓残留修不平。
 
-- **推荐算法路线：A**（上混结构相对纯虚拟扬声器更能稳定中置并展开环境；若听感上 Ambisonics 床的包围感明显且染色可接受，可将 C 作为 `surround`/`orbit` 预设路径）。
-- **推荐 HRTF：TH Köln KU100（`HRIR_L2702`）+ 扩散场均衡** 作为默认；SADIE II D1 作为对照/备选（同为 KU100 假头、不同测量链）。
-- 最终以听感（plan §16.3）为准；本推荐仅供 P1 起步，不替代 MUSHRA。
+**默认路线用 B，HRTF 用 KU100 L2702，均衡用正前方。** 自然空间不需要声床。包围和环绕再开 C。SADIE II 的 Apache-2.0 对商用再分发更干净；KU100 是 CC BY-SA 3.0，衍生滤波器要保持相同条款，Zenodo 记录字段还和文件不一致。听感仍以 plan §16.3 为准，这里只按这轮测量排序。
 
-## 8. 交付物路径
+验收标记：环境音 IACC≤0.4 为 True，音乐 IACC≤原声+0.1 为 True，高频 ±3 dB 为 True，侧后方能量单调为 True。
+
+## 11. 路径
 
 - 样片：`qa/p0/cursor/samples/`
 - 指标：`qa/p0/cursor/metrics.json`
 - 本报告：`qa/p0/cursor/REPORT.md`
 - 复现：`prototypes/run_p0.py`
-- HRTF 来源：`data/hrtf/SOURCES.md`
-- 素材登记：`qa/p0/cursor/ASSETS.md`（并建议 Claude 同步到 `qa/assets.md`）
-- 预设草案：`presets/p0_draft.toml`
+- HRTF：`data/hrtf/SOURCES.md`
+- 素材：`qa/p0/cursor/ASSETS.md`
+- 预设：`presets/p0_draft.toml`
 

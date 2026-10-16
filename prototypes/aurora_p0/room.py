@@ -116,7 +116,9 @@ def _run_fdn_stream(x: np.ndarray, sr: int, params: RoomParams) -> np.ndarray:
     yl = np.zeros(x.shape[0])
     yr = np.zeros(x.shape[0])
     lp_l = lp_r = 0.0
-    a_l, a_r = 0.35, 0.40
+    # One-pole brightness. a=0.35 rolled off near 3 kHz and, after loudness
+    # match, pulled 4–16 kHz down. ~0.82 keeps the tail near 12 kHz.
+    a_l, a_r = 0.82, 0.80
     for i in range(x.shape[0]):
         taps = np.array([bufs[k][idx[k]] for k in range(n_lines)])
         yl[i] = (lp_l := (1 - a_l) * lp_l + a_l * float(taps @ b_l))

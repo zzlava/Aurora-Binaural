@@ -149,6 +149,49 @@ def frontal_response_deviation(
     }
 
 
+def band_deltas_db(
+    processed: np.ndarray,
+    reference: np.ndarray,
+    sr: int,
+    f_lo: float = 4000.0,
+    f_hi: float = 16000.0,
+) -> dict:
+    """1/3-octave power difference (sum of ear powers), processed minus reference, in dB."""
+
+    def levels(x: np.ndarray) -> list[tuple[float, float]]:
+        n = min(x.shape[1], reference.shape[1], processed.shape[1])
+        spec = np.zeros(n // 2 + 1, dtype=np.float64)
+        for ch in range(x.shape[0]):
+            spec += np.abs(np.fft.rfft(np.asarray(x[ch, :n], dtype=np.float64))) ** 2
+        freqs = np.fft.rfftfreq(n, d=1.0 / sr)
+        out = []
+        f = f_lo
+        while f < f_hi * 1.01:
+            lo, hi = f / 2.0 ** (1.0 / 6.0), f * 2.0 ** (1.0 / 6.0)
+            mask = (freqs >= lo) & (freqs < hi)
+            lvl = float(10.0 * np.log10(np.mean(spec[mask]) + 1e-20)) if np.any(mask) else float("nan")
+            out.append((f, lvl))
+            f *= 2.0 ** (1.0 / 3.0)
+        return out
+
+    ref = levels(reference)
+    pro = levels(processed)
+    deltas = [p[1] - r[1] for r, p in zip(ref, pro)]
+    return {
+        "centers_hz": [r[0] for r in ref],
+        "delta_db": deltas,
+        "max_abs_db": float(np.max(np.abs(deltas))) if deltas else float("nan"),
+        "within_pm3db": bool(deltas and max(abs(v) for v in deltas) <= 3.0),
+    }
+
+
+def lateral_energy_ratio(stereo: np.ndarray) -> float:
+    """Energy in (L−R) over total energy. Rises when the image widens."""
+    mid = 0.5 * (stereo[0] + stereo[1])
+    side = 0.5 * (stereo[0] - stereo[1])
+    return float(np.sum(side**2) / (np.sum(mid**2) + np.sum(side**2) + 1e-20))
+
+
 def sample_metrics(stereo: np.ndarray, sr: int) -> dict:
     safe = check_nan_inf(stereo)
     return {
@@ -158,4 +201,5 @@ def sample_metrics(stereo: np.ndarray, sr: int) -> dict:
         "true_peak_dbtp": true_peak_dbtp(stereo, sr),
         "itd_us": estimate_itd_ild(stereo, sr)[0],
         "ild_db": estimate_itd_ild(stereo, sr)[1],
+        "lateral_energy_ratio": lateral_energy_ratio(stereo),
     }

@@ -1,40 +1,48 @@
-# Aurora Binaural presets (P0 draft values)
+# Aurora Binaural presets (P0 draft)
+# Endpoints are strength=1. strength.py also applies a floor so that
+# strength 0.4 already clears the music IACC cap (dry + 0.1):
+# width starts at 48° (not 30°) and side_decor_gain starts at 2.05.
+# s=0 is still a full bypass. This is wider than the plan §6.8 example
+# (±30° → ±60°) because HRTF crossfeed at ±30–60° lifts music IACC.
 
 version = 1
 
 [room]
 name = "自然空间"
 default_strength = 0.4
-width_deg_at_1 = 45.0
-ambient_ratio_at_1 = 0.7
-early_level_at_1 = 0.8
-late_level_at_1 = 0.55
-drr_offset_db_at_1 = -4.0
+width_deg_at_1 = 80.0
+ambient_ratio_at_1 = 1.0
+early_level_at_1 = 0.9
+late_level_at_1 = 0.7
+drr_offset_db_at_1 = -6.0
+side_decor_gain_at_1 = 2.4
 t60 = 0.35
 crossover_hz = 150.0
-eq_mode = "diffuse"
+eq_mode = "frontal"
 
 [surround]
 name = "包围感"
 default_strength = 0.5
-width_deg_at_1 = 60.0
+width_deg_at_1 = 90.0
 ambient_ratio_at_1 = 1.0
 early_level_at_1 = 1.0
-late_level_at_1 = 0.9
-drr_offset_db_at_1 = -6.0
+late_level_at_1 = 0.85
+drr_offset_db_at_1 = -8.0
+side_decor_gain_at_1 = 2.6
 t60 = 0.55
 crossover_hz = 150.0
-eq_mode = "diffuse"
+eq_mode = "frontal"
 
 [orbit]
 name = "缓慢环绕"
 default_strength = 0.3
-width_deg_at_1 = 45.0
-ambient_ratio_at_1 = 0.8
+width_deg_at_1 = 70.0
+ambient_ratio_at_1 = 0.85
 early_level_at_1 = 0.6
 late_level_at_1 = 0.5
-drr_offset_db_at_1 = -3.0
+drr_offset_db_at_1 = -4.0
+side_decor_gain_at_1 = 2.2
 orbit_deg_per_sec = 8.0
 t60 = 0.4
 crossover_hz = 150.0
-eq_mode = "diffuse"
+eq_mode = "frontal"

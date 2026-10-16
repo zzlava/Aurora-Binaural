@@ -100,8 +100,73 @@ def load_sofa(path: Path | str, name: str | None = None, target_sr: int = 48_000
     )
 
 
-def apply_equalization(ds: HrtfDataset, mode: str = "diffuse") -> HrtfDataset:
-    """Diffuse-field or frontal equalization (inverse of mean power spectrum)."""
+def _log_smooth_rows(mag: np.ndarray, freqs: np.ndarray, octave: float = 1.0 / 3.0) -> np.ndarray:
+    """Smooth linear magnitude along frequency, 1/N-octave moving average.
+
+    ``mag`` is (F,) or (N, F). DC bin is copied through.
+    """
+    row = mag.ndim == 1
+    if row:
+        mag = mag[np.newaxis, :]
+    f = np.maximum(freqs.astype(np.float64), 1.0)
+    logf = np.log(f)
+    n_f = mag.shape[1]
+    grid = np.linspace(logf[1], logf[-1], n_f)
+    warped = np.empty_like(mag)
+    for i in range(mag.shape[0]):
+        warped[i] = np.interp(grid, logf, mag[i])
+    d = float(grid[1] - grid[0])
+    half = max(1, int(round((np.log(2.0) * octave * 0.5) / d)))
+    kernel = np.ones(2 * half + 1, dtype=np.float64) / (2 * half + 1)
+    smoothed = np.empty_like(warped)
+    for i in range(warped.shape[0]):
+        smoothed[i] = np.convolve(warped[i], kernel, mode="same")
+    out = np.empty_like(mag)
+    for i in range(mag.shape[0]):
+        out[i] = np.interp(logf, grid, smoothed[i])
+    out[:, 0] = mag[:, 0]
+    return out[0] if row else out
+
+
+def _minphase_gain(gain: np.ndarray, nfft: int) -> np.ndarray:
+    """Minimum-phase spectrum from a linear magnitude curve (F,) or (N, F)."""
+    row = gain.ndim == 1
+    if row:
+        gain = gain[np.newaxis, :]
+    log_g = np.log(np.maximum(gain, 1e-8))
+    cep = irfft(log_g, n=nfft, axis=1)
+    cep[:, 1 : nfft // 2] *= 2.0
+    cep[:, nfft // 2 + 1 :] = 0.0
+    spec = np.exp(rfft(cep, n=nfft, axis=1))
+    return spec[0] if row else spec
+
+
+def _limited_inverse(mag: np.ndarray, max_db: float = 12.0) -> np.ndarray:
+    """Invert a smoothed magnitude and clamp the boost/cut. ``mag`` (F,) or (N, F)."""
+    row = mag.ndim == 1
+    if row:
+        mag = mag[np.newaxis, :]
+    # Reference is the mean magnitude over the speech/music band so the
+    # correction removes color, not the absolute HRIR scale.
+    ref = np.mean(mag[:, 1:], axis=1, keepdims=True)
+    gain = ref / np.maximum(mag, 1e-8)
+    cap = 10.0 ** (max_db / 20.0)
+    gain = np.clip(gain, 1.0 / cap, cap)
+    return gain[0] if row else gain
+
+
+def apply_equalization(
+    ds: HrtfDataset,
+    mode: str = "diffuse",
+    directional_power: bool = False,
+    max_db: float = 12.0,
+) -> HrtfDataset:
+    """Diffuse-field or frontal equalization, optional per-direction power flatten.
+
+    The inverse is a 1/3-octave-smoothed minimum-phase filter. Unsmoothed
+    inverses, once truncated to the HRIR length, were the main high-frequency
+    notch (around 8 kHz) in the previous prototype.
+    """
     mode = mode.lower()
     if mode not in {"diffuse", "frontal", "none"}:
         raise ValueError(mode)
@@ -113,36 +178,53 @@ def apply_equalization(ds: HrtfDataset, mode: str = "diffuse") -> HrtfDataset:
         elevations=ds.elevations.copy(),
         hrir_l=ds.hrir_l.copy(),
         hrir_r=ds.hrir_r.copy(),
-        eq_mode=mode,
+        eq_mode=mode if not directional_power else f"{mode}+power",
     )
-    if mode == "none":
-        return out
     n = out.n_taps
-    nfft = 1 << (n - 1).bit_length() + 1  # >= 2n
-    if mode == "diffuse":
-        spec_l = np.mean(np.abs(rfft(out.hrir_l, n=nfft, axis=1)) ** 2, axis=0)
-        spec_r = np.mean(np.abs(rfft(out.hrir_r, n=nfft, axis=1)) ** 2, axis=0)
-    else:
-        # nearest frontal
-        idx = int(np.argmin(angular_distance_deg_vec(out.azimuths, out.elevations, 0.0, 0.0)))
-        spec_l = np.abs(rfft(out.hrir_l[idx], n=nfft)) ** 2
-        spec_r = np.abs(rfft(out.hrir_r[idx], n=nfft)) ** 2
-    # Regularized inverse
-    eps = 1e-3 * np.max(spec_l)
-    inv_l = 1.0 / np.sqrt(np.maximum(spec_l, eps))
-    inv_r = 1.0 / np.sqrt(np.maximum(spec_r, eps))
-    # Normalize so DC gain ~ 1
-    inv_l /= inv_l[0] if inv_l[0] > 0 else 1.0
-    inv_r /= inv_r[0] if inv_r[0] > 0 else 1.0
-    eq_l = irfft(inv_l, n=nfft)[:n]
-    eq_r = irfft(inv_r, n=nfft)[:n]
-    # Apply via frequency-domain multiply per direction
-    for i in range(out.n_dirs):
-        Hl = rfft(out.hrir_l[i], n=nfft) * inv_l
-        Hr = rfft(out.hrir_r[i], n=nfft) * inv_r
-        out.hrir_l[i] = irfft(Hl, n=nfft)[:n]
-        out.hrir_r[i] = irfft(Hr, n=nfft)[:n]
+    nfft = max(2048, 1 << ((2 * n - 1).bit_length()))
+    freqs = np.fft.rfftfreq(nfft, d=1.0 / out.sr)
+    if mode != "none":
+        Hl = rfft(out.hrir_l, n=nfft, axis=1)
+        Hr = rfft(out.hrir_r, n=nfft, axis=1)
+        if mode == "diffuse":
+            power = np.mean(0.5 * (np.abs(Hl) ** 2 + np.abs(Hr) ** 2), axis=0)
+        else:
+            idx = int(np.argmin(angular_distance_deg_vec(out.azimuths, out.elevations, 0.0, 0.0)))
+            power = 0.5 * (np.abs(Hl[idx]) ** 2 + np.abs(Hr[idx]) ** 2)
+        mag = _log_smooth_rows(np.sqrt(np.maximum(power, 0.0)), freqs, octave=1.0 / 3.0)
+        gain = _limited_inverse(mag, max_db=max_db)
+        # Leave the sub-crossover region alone so the low bypass stays flat.
+        below = freqs < 80.0
+        gain = np.asarray(gain, dtype=np.float64).copy()
+        gain[below] = 1.0
+        h_eq = _minphase_gain(gain, nfft)
+        Hl = Hl * h_eq
+        Hr = Hr * h_eq
+        out.hrir_l = irfft(Hl, n=nfft, axis=1)[:, :n]
+        out.hrir_r = irfft(Hr, n=nfft, axis=1)[:, :n]
+    if directional_power:
+        # Second cap is smaller so it cannot stack with the global inverse
+        # into a 20 dB+ high-frequency boost.
+        out = _normalize_directional_power(out, nfft=nfft, max_db=min(6.0, max_db))
+        out.eq_mode = f"{mode}+power"
     return out
+
+
+def _normalize_directional_power(ds: HrtfDataset, nfft: int = 2048, max_db: float = 12.0) -> HrtfDataset:
+    """Flatten each direction's 1/3-octave binaural power sum. ILD and phase stay."""
+    freqs = np.fft.rfftfreq(nfft, d=1.0 / ds.sr)
+    Hl = rfft(ds.hrir_l, n=nfft, axis=1)
+    Hr = rfft(ds.hrir_r, n=nfft, axis=1)
+    mag = np.sqrt(np.maximum(0.5 * (np.abs(Hl) ** 2 + np.abs(Hr) ** 2), 0.0))
+    smooth = _log_smooth_rows(mag, freqs, octave=1.0 / 3.0)
+    gain = _limited_inverse(smooth, max_db=max_db)
+    below = freqs < 80.0
+    gain = np.asarray(gain, dtype=np.float64).copy()
+    gain[:, below] = 1.0
+    h_eq = _minphase_gain(gain, nfft)
+    ds.hrir_l = irfft(Hl * h_eq, n=nfft, axis=1)[:, : ds.n_taps]
+    ds.hrir_r = irfft(Hr * h_eq, n=nfft, axis=1)[:, : ds.n_taps]
+    return ds
 
 
 def angular_distance_deg_vec(az: np.ndarray, el: np.ndarray, az0: float, el0: float) -> np.ndarray:

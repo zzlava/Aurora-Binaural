@@ -58,6 +58,20 @@ class BlockCrossover:
         return low, high
 
 
+def delay_buffer(x: np.ndarray, latency: int) -> np.ndarray:
+    """Integer delay. Drops the tail and inserts zeros. ``latency <= 0`` is a copy."""
+    if latency <= 0:
+        return np.array(x, dtype=np.float64, copy=True)
+    y = np.zeros_like(x, dtype=np.float64)
+    if x.ndim == 1:
+        if latency < x.shape[0]:
+            y[latency:] = x[:-latency]
+        return y
+    if latency < x.shape[1]:
+        y[:, latency:] = x[:, :-latency]
+    return y
+
+
 def one_pole_lowpass(x: np.ndarray, coeff: float, state: float = 0.0) -> tuple[np.ndarray, float]:
     y = np.empty_like(x)
     s = state
