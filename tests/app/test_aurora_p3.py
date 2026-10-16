@@ -179,8 +179,8 @@ class TestApiContractAuthAndOpenApi:
     """Tests for Task 1 & Task 3: endpoints, OpenAPI artifact, Bearer auth, and upload limits."""
 
     def test_openapi_export_and_artifact_parity(self, tmp_path: Path) -> None:
-        qa_openapi_path = Path(__file__).resolve().parents[2] / "qa" / "p3" / "antigravity" / "openapi.json"
-        assert qa_openapi_path.is_file(), "qa/p3/antigravity/openapi.json must exist"
+        qa_openapi_path = Path(__file__).resolve().parents[2] / "qa" / "p4" / "antigravity" / "openapi.json"
+        assert qa_openapi_path.is_file(), "qa/p4/antigravity/openapi.json must exist"
 
         generated = export_openapi_schema(tmp_path / "openapi_check.json")
         on_disk = json.loads(qa_openapi_path.read_text(encoding="utf-8"))

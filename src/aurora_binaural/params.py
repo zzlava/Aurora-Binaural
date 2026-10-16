@@ -248,6 +248,23 @@ class InputSpec(BaseModel):
         return self
 
 
+class PreviewSpec(BaseModel):
+    """Source-timeline excerpt; duration is bounded before creating a queue entry."""
+
+    model_config = ConfigDict(extra="forbid")
+    start_seconds: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    duration_seconds: float = Field(default=10.0, gt=0.0, le=20.0, allow_inf_nan=False)
+
+
+class PreviewRequest(PreviewSpec):
+    """POST /v1/previews request. Always emits a matched stereo float32 WAV pair."""
+
+    asset_id: str = Field(min_length=1, max_length=128)
+    preset: PresetSpec = Field(default_factory=PresetSpec)
+    strength: float | None = Field(default=None, ge=0.0, le=1.0)
+    seed: int = Field(default=20261016, ge=0, le=4294967295)
+
+
 class AuroraParams(BaseModel):
     """Unified parameter model shared by CLI, Web GUI, and HTTP API (docs/plan.md Sections 9 & 10).
 
@@ -267,6 +284,8 @@ class AuroraParams(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    preview: PreviewSpec | None = None
 
     api_version: Literal["v1"] = Field(
         default="v1",

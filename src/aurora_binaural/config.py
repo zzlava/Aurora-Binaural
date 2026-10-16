@@ -91,6 +91,7 @@ class ServiceConfig:
     max_retries: int = 2
     worker_block_delay_ms: float = 0.0
     strict_ffmpeg: bool = False
+    cors_origins: tuple[str, ...] = ()
 
     @property
     def assets_dir(self) -> Path:
@@ -146,4 +147,5 @@ class ServiceConfig:
             max_retries=_env_int(env, "AURORA_MAX_RETRIES", 2, minimum=0),
             worker_block_delay_ms=_env_float(env, "AURORA_WORKER_BLOCK_DELAY_MS", 0.0, minimum=0.0),
             strict_ffmpeg=_env_bool(env, "AURORA_STRICT_FFMPEG", False),
+            cors_origins=tuple(value.strip() for value in env.get("AURORA_CORS_ORIGINS", "").split(",") if value.strip()),
         )

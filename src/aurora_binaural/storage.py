@@ -233,6 +233,7 @@ class JobRecord:
         return {
             "ok": True,
             "job_id": self.job_id,
+            "preview": self.params.preview.model_dump() if self.params.preview else None,
             "asset_id": self.asset_id,
             "status": self.status,
             "cancel_requested": self.cancel_requested,
@@ -253,6 +254,7 @@ def compute_canonical_job_hash(params: AuroraParams) -> str:
     """Compute a deterministic SHA-256 hex digest over the normalized `AuroraParams` payload."""
     normalized = {
         "api_version": params.api_version,
+        **({"preview": params.preview.model_dump()} if params.preview else {}),
         "mode": params.mode.value,
         "asset_id": params.input.asset_id if params.input else None,
         "preset": {
@@ -1098,7 +1100,7 @@ class TaskStore:
         with self._immediate_tx() as conn:
             expired_job_rows = conn.execute(
                 """
-                SELECT job_id, result_path, report_path
+                SELECT job_id, result_path, report_path, params_json
                 FROM jobs
                 WHERE status IN ('succeeded', 'failed', 'canceled')
                   AND result_expired = 0
@@ -1112,6 +1114,10 @@ class TaskStore:
                 with self._download_lock:
                     if self._active_downloads.get(jid, 0) > 0:
                         continue
+                params = AuroraParams.model_validate_json(str(row["params_json"]))
+                if params.preview is not None and row["result_path"]:
+                    with contextlib.suppress(OSError):
+                        Path(str(row["result_path"])).with_suffix(".original.wav").unlink(missing_ok=True)
                 for col in ("result_path", "report_path"):
                     raw_p = row[col]
                     if raw_p:

@@ -66,8 +66,8 @@ class HrtfDataInfo(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(default="none (P2 passthrough stub)", description="HRTF dataset identifier.")
-    version: str = Field(default="0.0.0-stub", description="HRTF dataset version.")
+    name: str = Field(default="SADIE II D1 (configured; not applied by stub)", description="HRTF dataset identifier.")
+    version: str = Field(default="not-applied-stub", description="HRTF dataset version.")
     sha256: str | None = Field(default=None, description="SHA-256 hash of the .sofa file.")
     license: str | None = Field(default=None, description="Dataset license identifier.")
 
@@ -137,6 +137,26 @@ class TimelineVerification(BaseModel):
     )
 
 
+class PreviewReport(BaseModel):
+    """Matched excerpt verification; all offsets refer to the source timeline."""
+
+    model_config = ConfigDict(extra="forbid")
+    start_seconds: float
+    requested_duration_seconds: float
+    actual_duration_seconds: float
+    start_sample: int
+    samples: int
+    sample_rate: int
+    timeline_strategy: Literal["render-from-source-origin"] = "render-from-source-origin"
+    original: AudioProbeInfo
+    original_loudness: LoudnessMetrics
+    target_lufs: float | None
+    original_gain_db: float
+    effect_gain_db: float
+    loudness_diff_lu: float | None
+    match_status: Literal["matched", "both_silent", "unmatchable_silence"]
+
+
 class ConversionReport(BaseModel):
     """Complete conversion report returned by `aurora convert` and `GET /v1/jobs/{id}/report` (Section 10)."""
 
@@ -146,6 +166,7 @@ class ConversionReport(BaseModel):
     status: Literal["succeeded"] = "succeeded"
     job_id: str | None = Field(default=None, description="Remote job identifier when processed via HTTP API/Worker.")
     asset_id: str | None = Field(default=None, description="Uploaded asset identifier when processed via HTTP API/Worker.")
+    preview: PreviewReport | None = None
     input: AudioProbeInfo
     output: AudioProbeInfo
     engine: EngineMetadata
