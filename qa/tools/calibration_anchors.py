@@ -77,6 +77,33 @@ def anchor_E(x, period=8.0):  # 8D 环绕
     out = out[: len(mono)]
     return mix(out, reverb(x, 0.7) * db(-10))
 
+def side_ambient(x):
+    """简单的 M/S 上混：侧信号 (L−R)/2 作为环境成分，并用短延时让两路去相关。"""
+    s = (x[:, 0] - x[:, 1]) / 2
+    d1, d2 = int(SR * 0.011), int(SR * 0.017)
+    a = np.concatenate([np.zeros(d1), s])[: len(s)]
+    b = -np.concatenate([np.zeros(d2), s])[: len(s)]
+    return a, b
+
+def anchor_F(x, front=45):  # C 的头外感，更宽
+    direct = place(x[:, 0], front) + place(x[:, 1], -front)
+    a, b = side_ambient(x)
+    wide = place(a, 90) * db(-3) + place(b, -90) * db(-3)
+    return mix(direct, wide, early(x) * db(-3), reverb(x, 1.0) * db(-6))
+
+def anchor_G(x, height_db=-6, el=45):  # F + 头顶音箱（4 个高度声道，仰角 45°）
+    base = anchor_F(x)
+    a, b = side_ambient(x)
+    mid = x.mean(1)
+    d = int(SR * 0.009); m2 = np.concatenate([np.zeros(d), mid])[: len(mid)]
+    h = (place(a, 45, el) + place(b, -45, el) + place(b, 135, el) + place(a, -135, el)) * db(height_db)
+    h += (place(m2, 45, el) + place(m2, -45, el)) * db(height_db - 9)   # 少量中置成分送到前上方，增强“头顶有音箱”的感觉
+    ceiling = reverb(np.stack([mid, mid], 1), 1.0, pre_ms=6)                  # 天花板反射
+    return mix(base, h, ceiling * db(height_db - 6))
+
+def anchor_H(x):  # G 的加强版：高度更明显、包围更强
+    return anchor_G(x, height_db=-2, el=55)
+
 meter = pyln.Meter(SR)
 def norm(y):
     y = y * db(-20 - meter.integrated_loudness(y))
@@ -86,5 +113,5 @@ for cat in ("music", "voice", "ambience"):
     x, sr = sf.read(ROOT / f"data/assets/real_{cat}.wav", always_2d=True); assert sr == SR
     if x.shape[1] == 1: x = np.repeat(x, 2, 1)
     x = x[: SR * 20]
-    for tag, fn in (("C_speakers_room", anchor_C), ("D_wide_surround", anchor_D), ("E_8d_orbit", anchor_E)):
+    for tag, fn in (("C_speakers_room", anchor_C), ("F_wider", anchor_F), ("G_wider_height", anchor_G), ("H_wider_height_strong", anchor_H)):
         sf.write(OUT / f"{cat}_{tag}.wav", norm(fn(x)), SR, subtype="PCM_24"); print(cat, tag, flush=True)
