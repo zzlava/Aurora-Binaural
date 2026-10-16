@@ -59,7 +59,7 @@ def main():
     ap.add_argument("--json")
     a = ap.parse_args()
     files = sorted(glob.glob(os.path.join(a.samples, "*.wav")))
-    cats = sorted({os.path.basename(f).split("_")[0] for f in files})
+    cats = sorted({re.split(r"_(?:dry|route)", os.path.basename(f))[0] for f in files})
     report = {}
     for cat in cats:
         dry = [f for f in files if re.match(rf"{cat}_dry", os.path.basename(f))]
@@ -71,7 +71,7 @@ def main():
         print(f"\n[{cat}] dry IACC={md['iacc']:.3f} bands={ {k: round(v, 3) for k, v in md['iacc_bands'].items()} }")
         for f in files:
             name = os.path.basename(f)
-            if not name.startswith(cat + "_") or name in map(os.path.basename, dry):
+            if re.split(r"_(?:dry|route)", name)[0] != cat or name in map(os.path.basename, dry):
                 continue
             x, fs2 = sf.read(f, always_2d=True)
             mx = metrics(x, fs2)
