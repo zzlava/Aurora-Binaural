@@ -163,6 +163,7 @@ def convert_audio(
     strict_ffmpeg: bool = False,
     post_gain_db: float = 0.0,
     cancel_check: Callable[[], bool] | None = None,
+    progress: Callable[[float], None] | None = None,
 ) -> ConversionReport:
     """Execute the streaming conversion and timeline verification pipeline."""
     t0 = time.perf_counter()
@@ -231,6 +232,8 @@ def convert_audio(
             f"strength={effective_params.effective_strength}, block_size={block_size}) -> "
             f"encode ({effective_params.output.format.value}, sr={target_sr})"
         )
+        input_duration = float(in_fmt_meta.get("duration", 0) or 0)
+        expected_frames = max(1.0, input_duration * target_sr)
         with StreamingF32LeEncoder(
             sample_rate=target_sr,
             channels=2,
@@ -245,6 +248,8 @@ def convert_audio(
             ):
                 for out_chunk in stream_proc.push_block(in_block):
                     encoder.write_block(out_chunk)
+                if progress:
+                    progress(min(0.8, 0.8 * stream_proc.input_frames / expected_frames))
 
             for out_chunk in stream_proc.finish():
                 encoder.write_block(out_chunk)
@@ -266,6 +271,8 @@ def convert_audio(
         with tmp_out_path.open("rb") as f_sync:
             os.fsync(f_sync.fileno())
 
+        if progress:
+            progress(0.9)
         log_stderr("Performing streaming readback decode verification (gapless & raw stream)")
         out_stream_meta, out_fmt_meta = probe_stream_metadata(tmp_out_path)
         readback_samples, rb_sr, rb_ch = count_decoded_samples_streaming(tmp_out_path, ignore_gapless=False)

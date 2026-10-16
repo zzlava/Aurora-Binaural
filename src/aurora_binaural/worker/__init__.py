@@ -82,6 +82,7 @@ class AuroraWorker:
         )
         attempt_dir.mkdir(parents=True, exist_ok=True)
 
+        progress_value = 0.0
         hb_stop = threading.Event()
         lease_lost_flag = threading.Event()
         cancel_seen_flag = threading.Event()
@@ -112,7 +113,6 @@ class AuroraWorker:
         )
         hb_thread.start()
 
-        progress_value = 0.0
         t_start = time.monotonic()
 
         def _cancel_check() -> bool:
@@ -174,6 +174,7 @@ class AuroraWorker:
                     renderer=renderer_instance,
                     strict_ffmpeg=self.config.strict_ffmpeg,
                     cancel_check=_cancel_check,
+                    progress=_progress,
                 )
 
             # Re-verify cancellation / lease before committing
@@ -184,7 +185,7 @@ class AuroraWorker:
             expires_epoch = commit_now + self.config.retention_sec
             expires_iso = format_utc_iso(expires_epoch)
 
-            sanitized_in = report.input.model_copy(
+            sanitized_in = (asset.probe if job.params.preview is not None else report.input).model_copy(
                 update={"path": f"asset://{asset.asset_id}/{asset.filename}"}
             )
             sanitized_out = report.output.model_copy(
