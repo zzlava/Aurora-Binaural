@@ -1,0 +1,70 @@
+# Aurora Binaural — Single-Node Docker Compose Deployment (docs/plan.md Section 11 & P3-antigravity-01)
+# Runs `api` (FastAPI) and `worker` (SQLite task processor) sharing a persistent volume (`/data/runtime`).
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: aurora-binaural:p3-trixie
+    command: ["api", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${AURORA_HOST:-127.0.0.1}:${AURORA_PORT:-8000}:8000"
+    environment:
+      AURORA_API_KEY: "${AURORA_API_KEY:-aurora_dev_placeholder_key_change_me}"
+      AURORA_HOST: "0.0.0.0"
+      AURORA_PORT: "8000"
+      AURORA_DATA_DIR: "/data/runtime"
+      AURORA_DB_PATH: "/data/runtime/aurora.db"
+      AURORA_HRTF_DIR: "/app/data/hrtf"
+      AURORA_MAX_UPLOAD_BYTES: "${AURORA_MAX_UPLOAD_BYTES:-524288000}"
+      AURORA_MAX_DURATION_SEC: "${AURORA_MAX_DURATION_SEC:-7200}"
+      AURORA_JOB_TIMEOUT_SEC: "${AURORA_JOB_TIMEOUT_SEC:-1800}"
+      AURORA_RETENTION_SEC: "${AURORA_RETENTION_SEC:-86400}"
+      AURORA_WORKER_CONCURRENCY: "${AURORA_WORKER_CONCURRENCY:-1}"
+      AURORA_LEASE_DURATION_SEC: "${AURORA_LEASE_DURATION_SEC:-30}"
+      AURORA_HEARTBEAT_INTERVAL_SEC: "${AURORA_HEARTBEAT_INTERVAL_SEC:-5}"
+      AURORA_CLEANUP_INTERVAL_SEC: "${AURORA_CLEANUP_INTERVAL_SEC:-60}"
+      AURORA_MAX_RETRIES: "${AURORA_MAX_RETRIES:-2}"
+    volumes:
+      - aurora_runtime:/data/runtime
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: aurora-binaural:p3-trixie
+    command: ["worker"]
+    environment:
+      AURORA_DATA_DIR: "/data/runtime"
+      AURORA_DB_PATH: "/data/runtime/aurora.db"
+      AURORA_HRTF_DIR: "/app/data/hrtf"
+      AURORA_JOB_TIMEOUT_SEC: "${AURORA_JOB_TIMEOUT_SEC:-1800}"
+      AURORA_RETENTION_SEC: "${AURORA_RETENTION_SEC:-86400}"
+      AURORA_WORKER_CONCURRENCY: "${AURORA_WORKER_CONCURRENCY:-1}"
+      AURORA_LEASE_DURATION_SEC: "${AURORA_LEASE_DURATION_SEC:-30}"
+      AURORA_HEARTBEAT_INTERVAL_SEC: "${AURORA_HEARTBEAT_INTERVAL_SEC:-5}"
+      AURORA_CLEANUP_INTERVAL_SEC: "${AURORA_CLEANUP_INTERVAL_SEC:-60}"
+      AURORA_WORKER_POLL_INTERVAL_SEC: "${AURORA_WORKER_POLL_INTERVAL_SEC:-0.15}"
+      AURORA_MAX_RETRIES: "${AURORA_MAX_RETRIES:-2}"
+    volumes:
+      - aurora_runtime:/data/runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  aurora_runtime:

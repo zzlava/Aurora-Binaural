@@ -453,6 +453,70 @@ def _cmd_job(args: argparse.Namespace) -> int:
     return int(ExitCode.OK)
 
 
+def _cmd_api(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from aurora_binaural.api import create_app
+    from aurora_binaural.config import ServiceConfig
+
+    cfg = ServiceConfig.from_env()
+    host = args.host or cfg.host
+    port = args.port or cfg.port
+    cfg = ServiceConfig(
+        api_key=cfg.api_key,
+        host=host,
+        port=port,
+        data_dir=cfg.data_dir,
+        db_path=cfg.db_path,
+        hrtf_dir=cfg.hrtf_dir,
+        max_upload_bytes=cfg.max_upload_bytes,
+        max_duration_sec=cfg.max_duration_sec,
+        job_timeout_sec=cfg.job_timeout_sec,
+        retention_sec=cfg.retention_sec,
+        worker_concurrency=cfg.worker_concurrency,
+        lease_duration_sec=cfg.lease_duration_sec,
+        heartbeat_interval_sec=cfg.heartbeat_interval_sec,
+        cleanup_interval_sec=cfg.cleanup_interval_sec,
+        worker_poll_interval_sec=cfg.worker_poll_interval_sec,
+        max_retries=cfg.max_retries,
+        worker_block_delay_ms=cfg.worker_block_delay_ms,
+        strict_ffmpeg=cfg.strict_ffmpeg,
+    )
+    app = create_app(cfg)
+    uvicorn.run(app, host=host, port=port, log_level="info")
+    return int(ExitCode.OK)
+
+
+def _cmd_worker(_args: argparse.Namespace) -> int:
+    import signal
+    from types import FrameType
+
+    from aurora_binaural.config import ServiceConfig
+    from aurora_binaural.worker import AuroraWorker
+
+    cfg = ServiceConfig.from_env()
+    worker = AuroraWorker(cfg)
+
+    def _handle_sig(_signum: int, _frame: FrameType | None) -> None:
+        worker.stop(timeout=2.0)
+
+    signal.signal(signal.SIGINT, _handle_sig)
+    signal.signal(signal.SIGTERM, _handle_sig)
+    worker.serve_forever()
+    return int(ExitCode.OK)
+
+
+def _cmd_openapi(args: argparse.Namespace) -> int:
+    from aurora_binaural.api import export_openapi_schema
+
+    out_path = Path(args.output) if args.output else None
+    schema = export_openapi_schema(out_path)
+    if out_path is not None:
+        log_stderr(f"Exported OpenAPI schema to {out_path}")
+    _emit_json_stdout(schema)
+    return int(ExitCode.OK)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct the `aurora` CLI argument parser."""
     parser = _AuroraArgumentParser(
@@ -631,6 +695,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_schema.add_argument("--output", "-o", default=None, help="Optional file path to write JSON Schema")
     p_schema.set_defaults(func=_cmd_schema)
 
+    # aurora openapi
+    p_openapi = subparsers.add_parser(
+        "openapi",
+        help="Export the FastAPI OpenAPI 3.1 JSON specification",
+    )
+    p_openapi.add_argument("--output", "-o", default=None, help="Optional file path to write OpenAPI JSON")
+    p_openapi.set_defaults(func=_cmd_openapi)
+
     # aurora timeline-verify
     p_timeline = subparsers.add_parser(
         "timeline-verify",
@@ -675,6 +747,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_job.add_argument("--server", required=True, help="Remote Aurora server URL")
     p_job.add_argument("--json", action="store_true", help="Output JSON (enabled by default)")
     p_job.set_defaults(func=_cmd_job)
+
+    # aurora api
+    p_api = subparsers.add_parser(
+        "api",
+        help="Start the Aurora Binaural FastAPI HTTP server",
+    )
+    p_api.add_argument("--host", default=None, help="Bind host (defaults to AURORA_HOST or 127.0.0.1)")
+    p_api.add_argument("--port", type=int, default=None, help="Bind port (defaults to AURORA_PORT or 8000)")
+    p_api.set_defaults(func=_cmd_api)
+
+    # aurora worker
+    p_worker = subparsers.add_parser(
+        "worker",
+        help="Start the Aurora Binaural persistent background Worker",
+    )
+    p_worker.set_defaults(func=_cmd_worker)
 
     return parser
 

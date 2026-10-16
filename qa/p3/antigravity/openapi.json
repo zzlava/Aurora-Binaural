@@ -1,0 +1,2058 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Aurora Binaural API",
+    "description": "Aurora Binaural spatial audio processing HTTP API (docs/plan.md Section 10). Provides streaming asset uploads, persistent SQLite asynchronous job queue with Idempotency-Key protection, block-boundary cancellation, and timeline-verified outputs.",
+    "version": "0.3.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Process liveness check",
+        "description": "Liveness check endpoint. Never exposes internal filesystem paths.",
+        "operationId": "get_health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponseModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Check task storage, worker heartbeat, and HRTF dataset readiness",
+        "description": "Readiness check verifying SQLite database, active Worker heartbeat, and HRTF data.",
+        "operationId": "get_ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponseModel"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponseModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/presets": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "List spatial presets, parameter ranges, and versions",
+        "description": "Return built-in spatial presets, parameter ranges, and version metadata.",
+        "operationId": "get_presets_v1_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetsResponseModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/assets": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Stream-upload an audio asset and return asset ID and probe metadata",
+        "description": "Stream-upload an audio asset, enforcing upload size and duration limits.",
+        "operationId": "upload_asset_v1_assets_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-asset-filename",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Asset-Filename"
+            }
+          },
+          {
+            "name": "x-asset-sha256",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Asset-Sha256"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadResponseModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/v1/jobs": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Create an asynchronous spatial rendering job (HTTP 202)",
+        "description": "Create an asynchronous job with `Idempotency-Key` deduplication and conflict protection.",
+        "operationId": "create_job_v1_jobs_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuroraParams"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusResponseModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/v1/jobs/{id}": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Query job status, progress, result metadata, and error",
+        "description": "Return current job status (`queued`, `running`, `succeeded`, `failed`, `canceled`).",
+        "operationId": "get_job_status_v1_jobs__id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusResponseModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs/{id}/cancel": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Cancel a queued or running job (idempotent)",
+        "description": "Idempotently cancel a job. Terminal jobs (`succeeded`, `failed`, `canceled`) remain unchanged.",
+        "operationId": "cancel_job_v1_jobs__id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusResponseModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs/{id}/result": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Download rendered output audio for a succeeded job",
+        "description": "Stream-download the rendered audio file, returning HTTP 410 if the result has expired.",
+        "operationId": "download_job_result_v1_jobs__id__result_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rendered binaural audio stream.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs/{id}/report": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Download JSON conversion report for a succeeded job",
+        "description": "Return the structured JSON `ConversionReport`, or HTTP 410 if expired.",
+        "operationId": "download_job_report_v1_jobs__id__report_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversionReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseModel"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AssetUploadResponseModel": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "title": "Ok",
+            "default": true
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "container": {
+            "type": "string",
+            "title": "Container"
+          },
+          "codec": {
+            "type": "string",
+            "title": "Codec"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "title": "Sample Rate"
+          },
+          "channels": {
+            "type": "integer",
+            "title": "Channels"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "title": "Duration Seconds"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "filename",
+          "sha256",
+          "size_bytes",
+          "format",
+          "container",
+          "codec",
+          "sample_rate",
+          "channels",
+          "samples",
+          "duration_seconds",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "AssetUploadResponseModel",
+        "description": "Response model for `POST /v1/assets`."
+      },
+      "AudioProbeInfo": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "File path inspected."
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256",
+            "description": "SHA-256 hex digest of the encoded file on disk."
+          },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "Audio format label (e.g. 'wav', 'aac', 'mp3')."
+          },
+          "container": {
+            "type": "string",
+            "title": "Container",
+            "description": "Container format name from ffprobe (e.g. 'wav', 'mov,mp4,m4a,3gp,3g2,mj2', 'mp3')."
+          },
+          "codec": {
+            "type": "string",
+            "title": "Codec",
+            "description": "Codec name from ffprobe (e.g. 'pcm_s24le', 'aac', 'mp3')."
+          },
+          "sample_rate": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Sample Rate",
+            "description": "Sample rate in Hz."
+          },
+          "channels": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Channels",
+            "description": "Number of audio channels."
+          },
+          "channel_layout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Layout",
+            "description": "Channel layout string if reported."
+          },
+          "samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Samples",
+            "description": "Exact decoded PCM sample frames per channel."
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Duration Seconds",
+            "description": "Exact duration in seconds (samples / sample_rate)."
+          },
+          "bit_depth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bit Depth",
+            "description": "Bits per sample for PCM formats, or None for lossy formats."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "description": "File size in bytes."
+          },
+          "initial_padding": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Initial Padding",
+            "description": "Encoder initial padding (priming) samples reported by stream headers.",
+            "default": 0
+          },
+          "trailing_padding": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Trailing Padding",
+            "description": "Encoder trailing padding samples reported by stream headers.",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "sha256",
+          "format",
+          "container",
+          "codec",
+          "sample_rate",
+          "channels",
+          "samples",
+          "duration_seconds",
+          "size_bytes"
+        ],
+        "title": "AudioProbeInfo",
+        "description": "Audio file metadata and stream properties from ffprobe + decoded verification."
+      },
+      "AuroraParams": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Api Version",
+            "description": "API and schema contract version.",
+            "default": "v1"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RenderMode",
+            "description": "Processing mode ('enhance' for V1 stereo/mono binaural enhancement).",
+            "default": "enhance"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InputSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional input asset or file reference (required for POST /v1/jobs)."
+          },
+          "preset": {
+            "$ref": "#/components/schemas/PresetSpec",
+            "description": "Spatial preset identifier and version."
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength",
+            "description": "Perceptual effect strength in [0.0, 1.0]. Mapped to upmix width, ambient ratio, early reflections, and DRR offset. Dry/wet mixing is forbidden. When 0.0, spatial DSP is bypassed. Defaults to the selected preset's default_strength."
+          },
+          "seed": {
+            "type": "integer",
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "description": "Explicit 32-bit unsigned seed for deterministic FDN delay lines and decorrelation filters.",
+            "default": 20261016
+          },
+          "output": {
+            "$ref": "#/components/schemas/OutputSpec",
+            "description": "Output format, container, sample rate, bit depth, and bitrate settings."
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingSpec",
+            "description": "Timeline synchronization mode and reverb tail handling policy."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AuroraParams",
+        "description": "Unified parameter model shared by CLI, Web GUI, and HTTP API (docs/plan.md Sections 9 & 10).\n\nSupports both standalone render parameter validation and full `POST /v1/jobs` payloads:\n```json\n{\n  \"api_version\": \"v1\",\n  \"mode\": \"enhance\",\n  \"input\": {\"asset_id\": \"asset_example\"},\n  \"preset\": {\"id\": \"room\", \"version\": \"1\"},\n  \"strength\": 0.4,\n  \"seed\": 20261016,\n  \"output\": {\"format\": \"wav\", \"sample_rate\": 48000, \"bit_depth\": 24},\n  \"timing\": {\"mode\": \"preserve\", \"tail\": \"trim\"}\n}\n```"
+      },
+      "ConversionReport": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "title": "Ok",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "const": "succeeded",
+            "title": "Status",
+            "default": "succeeded"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id",
+            "description": "Remote job identifier when processed via HTTP API/Worker."
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id",
+            "description": "Uploaded asset identifier when processed via HTTP API/Worker."
+          },
+          "input": {
+            "$ref": "#/components/schemas/AudioProbeInfo"
+          },
+          "output": {
+            "$ref": "#/components/schemas/AudioProbeInfo"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineMetadata"
+          },
+          "params": {
+            "$ref": "#/components/schemas/AuroraParams"
+          },
+          "timeline": {
+            "$ref": "#/components/schemas/TimelineVerification"
+          },
+          "loudness_before": {
+            "$ref": "#/components/schemas/LoudnessMetrics"
+          },
+          "loudness_after": {
+            "$ref": "#/components/schemas/LoudnessMetrics"
+          },
+          "elapsed_ms": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Elapsed Ms",
+            "description": "Total processing wall-clock time in milliseconds."
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempts",
+            "description": "Execution attempt number.",
+            "default": 1
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO-8601 UTC timestamp when report was finalized."
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "ISO-8601 UTC expiration timestamp for remote job artifacts."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input",
+          "output",
+          "engine",
+          "params",
+          "timeline",
+          "loudness_before",
+          "loudness_after",
+          "elapsed_ms",
+          "created_at"
+        ],
+        "title": "ConversionReport",
+        "description": "Complete conversion report returned by `aurora convert` and `GET /v1/jobs/{id}/report` (Section 10)."
+      },
+      "EngineMetadata": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Engine implementation name.",
+            "default": "aurora-stub-core"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Engine version string.",
+            "default": "0.2.0-p2-stub"
+          },
+          "git_commit": {
+            "type": "string",
+            "title": "Git Commit",
+            "description": "Git commit SHA of the repository."
+          },
+          "is_stub": {
+            "type": "boolean",
+            "title": "Is Stub",
+            "description": "True when running passthrough stub core.",
+            "default": true
+          },
+          "block_size_frames": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Block Size Frames",
+            "description": "Block size in frames used during block processing.",
+            "default": 1024
+          },
+          "internal_sample_rate": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Internal Sample Rate",
+            "description": "Engine processing sample rate in Hz.",
+            "default": 48000
+          },
+          "hrtf": {
+            "$ref": "#/components/schemas/HrtfDataInfo",
+            "description": "HRTF dataset metadata."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "git_commit"
+        ],
+        "title": "EngineMetadata",
+        "description": "Core rendering engine provenance metadata (docs/plan.md Section 10)."
+      },
+      "ErrorDetailModel": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Stable machine-readable error code."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable error description."
+          },
+          "exit_code": {
+            "type": "integer",
+            "title": "Exit Code",
+            "description": "Corresponding CLI exit code (2, 3, 4, 5, 130)."
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable",
+            "description": "Whether the client may retry the operation."
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details",
+            "description": "Additional structured error context."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "exit_code",
+          "retryable"
+        ],
+        "title": "ErrorDetailModel",
+        "description": "Structured error object returned by all HTTP error responses (Section 10)."
+      },
+      "ErrorResponseModel": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": false,
+            "title": "Ok",
+            "default": false
+          },
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetailModel"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponseModel",
+        "description": "Envelope for HTTP API error responses."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponseModel": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "title": "Ok",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "default": "ok"
+          },
+          "service": {
+            "type": "string",
+            "const": "aurora-binaural-api",
+            "title": "Service",
+            "default": "aurora-binaural-api"
+          },
+          "api_version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Api Version",
+            "default": "v1"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HealthResponseModel",
+        "description": "Response model for `GET /health` (strictly no internal paths)."
+      },
+      "HrtfDataInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "HRTF dataset identifier.",
+            "default": "none (P2 passthrough stub)"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "HRTF dataset version.",
+            "default": "0.0.0-stub"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256",
+            "description": "SHA-256 hash of the .sofa file."
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License",
+            "description": "Dataset license identifier."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HrtfDataInfo",
+        "description": "HRTF dataset provenance metadata (docs/plan.md Section 5.3 & 10)."
+      },
+      "InputSpec": {
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id",
+            "description": "Uploaded asset identifier for HTTP API jobs (e.g. 'asset_example')."
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path",
+            "description": "Local filesystem path for CLI / local worker jobs."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "InputSpec",
+        "description": "Input reference for HTTP API jobs or CLI invocations (docs/plan.md Section 10)."
+      },
+      "JobErrorSummaryModel": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "title": "JobErrorSummaryModel",
+        "description": "Error summary embedded in `JobStatusResponseModel` when `status == 'failed'`."
+      },
+      "JobResultMetadataModel": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "container": {
+            "type": "string",
+            "title": "Container"
+          },
+          "codec": {
+            "type": "string",
+            "title": "Codec"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "title": "Sample Rate"
+          },
+          "channels": {
+            "type": "integer",
+            "title": "Channels"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "title": "Duration Seconds"
+          },
+          "bit_depth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bit Depth"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format",
+          "container",
+          "codec",
+          "sample_rate",
+          "channels",
+          "samples",
+          "duration_seconds",
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "JobResultMetadataModel",
+        "description": "Metadata summary embedded in `JobStatusResponseModel` when `status == 'succeeded'`."
+      },
+      "JobStatusResponseModel": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "title": "Ok",
+            "default": true
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "canceled"
+            ],
+            "title": "Status"
+          },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested",
+            "description": "True if cancellation was requested (transitional sub-field when status='running')."
+          },
+          "canceling": {
+            "type": "boolean",
+            "title": "Canceling",
+            "description": "True when status=='running' and cancel_requested==True (Section 10 transitional sub-field)."
+          },
+          "progress": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Progress"
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempts"
+          },
+          "max_retries": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Retries"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "result_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobResultMetadataModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobErrorSummaryModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "asset_id",
+          "status",
+          "cancel_requested",
+          "canceling",
+          "progress",
+          "attempts",
+          "max_retries",
+          "created_at"
+        ],
+        "title": "JobStatusResponseModel",
+        "description": "Response model for `POST /v1/jobs`, `GET /v1/jobs/{id}`, and `POST /v1/jobs/{id}/cancel`."
+      },
+      "LoudnessMetrics": {
+        "properties": {
+          "integrated_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrated Lufs",
+            "description": "Integrated loudness in LUFS per ITU-R BS.1770-4 (None if silent)."
+          },
+          "loudness_range_lu": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Loudness Range Lu",
+            "description": "Loudness range (LRA) in LU.",
+            "default": 0.0
+          },
+          "true_peak_dbtp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "True Peak Dbtp",
+            "description": "Maximum true peak in dBTP (None if pure digital silence / -inf)."
+          },
+          "is_silent": {
+            "type": "boolean",
+            "title": "Is Silent",
+            "description": "True if signal is below absolute gating threshold (-70 LUFS / -inf dBTP).",
+            "default": false
+          },
+          "method": {
+            "type": "string",
+            "const": "ITU-R BS.1770-4 (ffmpeg ebur128)",
+            "title": "Method",
+            "default": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "integrated_lufs",
+          "true_peak_dbtp"
+        ],
+        "title": "LoudnessMetrics",
+        "description": "ITU-R BS.1770-4 loudness and true peak measurements via ffmpeg ebur128 filter."
+      },
+      "OutputContainer": {
+        "type": "string",
+        "enum": [
+          "wav",
+          "m4a",
+          "mp3"
+        ],
+        "title": "OutputContainer",
+        "description": "Supported output audio container formats (docs/plan.md Section 4.1)."
+      },
+      "OutputFormat": {
+        "type": "string",
+        "enum": [
+          "wav",
+          "m4a",
+          "mp3"
+        ],
+        "title": "OutputFormat",
+        "description": "Supported output audio formats (docs/plan.md Section 4.1 & 10)."
+      },
+      "OutputSpec": {
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "description": "Output format: 'wav' (PCM), 'm4a' (AAC-LC in M4A container), or 'mp3' (MPEG-1 Layer III).",
+            "default": "wav"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputContainer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Output container ('wav', 'm4a', 'mp3'). Automatically derived from format if omitted."
+          },
+          "sample_rate": {
+            "type": "integer",
+            "enum": [
+              44100,
+              48000,
+              96000
+            ],
+            "title": "Sample Rate",
+            "description": "Output sample rate in Hz (44100, 48000, or 96000). Internal engine runs at 48000 Hz.",
+            "default": 48000
+          },
+          "bit_depth": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  16,
+                  24,
+                  32
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bit Depth",
+            "description": "PCM bit depth for WAV output (16, 24, or 32). Ignored/null for lossy M4A/MP3 outputs.",
+            "default": 24
+          },
+          "bitrate_kbps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 512.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bitrate Kbps",
+            "description": "Target bitrate in kbps for lossy codecs (M4A/MP3). Defaults to 256 kbps when encoding lossy formats."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "OutputSpec",
+        "description": "Output encoding and container specification (docs/plan.md Section 4.1, 8, 10).\n\nExplicitly separates audio format/codec from container per Section 4.1.\nRaw .aac is not permitted as an output container because ADTS lacks edit-list\ngapless metadata; AAC output always uses the M4A (MP4) container."
+      },
+      "PresetId": {
+        "type": "string",
+        "enum": [
+          "room",
+          "surround",
+          "orbit"
+        ],
+        "title": "PresetId",
+        "description": "Built-in spatial preset identifiers (docs/plan.md Section 6.10)."
+      },
+      "PresetMetadata": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PresetId"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "default_strength": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Default Strength"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "algorithm_summary": {
+            "type": "string",
+            "title": "Algorithm Summary"
+          },
+          "max_orbit_deg_per_sec": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Orbit Deg Per Sec"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "default_strength",
+          "description",
+          "algorithm_summary"
+        ],
+        "title": "PresetMetadata",
+        "description": "Versioned preset metadata returned by `aurora presets` and `GET /v1/presets`."
+      },
+      "PresetSpec": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PresetId",
+            "description": "Preset identifier: 'room' (自然空间), 'surround' (包围感), or 'orbit' (缓慢环绕).",
+            "default": "room"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "pattern": "^[0-9]+(\\.[0-9]+)*$",
+            "title": "Version",
+            "description": "Explicit preset version string for deterministic reproduction.",
+            "default": "1"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PresetSpec",
+        "description": "Preset selection and version specification (docs/plan.md Section 6.10 & 10)."
+      },
+      "PresetsResponseModel": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "title": "Ok",
+            "default": true
+          },
+          "api_version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Api Version",
+            "default": "v1"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/PresetMetadata"
+            },
+            "type": "array",
+            "title": "Presets"
+          },
+          "parameter_ranges": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameter Ranges"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "presets",
+          "parameter_ranges"
+        ],
+        "title": "PresetsResponseModel",
+        "description": "Response model for `GET /v1/presets`."
+      },
+      "ReadyChecksModel": {
+        "properties": {
+          "database": {
+            "type": "boolean",
+            "title": "Database",
+            "description": "True if SQLite task store is reachable and initialized."
+          },
+          "worker": {
+            "type": "boolean",
+            "title": "Worker",
+            "description": "True if at least one Worker has an active heartbeat."
+          },
+          "hrtf_data": {
+            "type": "boolean",
+            "title": "Hrtf Data",
+            "description": "True if fixed-version HRTF .sofa data is present."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "database",
+          "worker",
+          "hrtf_data"
+        ],
+        "title": "ReadyChecksModel",
+        "description": "Individual subsystem readiness flags for `GET /ready`."
+      },
+      "ReadyResponseModel": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/ReadyChecksModel"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ok",
+          "status",
+          "checks"
+        ],
+        "title": "ReadyResponseModel",
+        "description": "Response model for `GET /ready` (strictly no internal paths)."
+      },
+      "RenderMode": {
+        "type": "string",
+        "enum": [
+          "enhance"
+        ],
+        "title": "RenderMode",
+        "description": "Job rendering mode (docs/plan.md Section 10)."
+      },
+      "TailPolicy": {
+        "type": "string",
+        "enum": [
+          "trim",
+          "preserve"
+        ],
+        "title": "TailPolicy",
+        "description": "Reverb tail handling policy (docs/plan.md Section 8 & 10)."
+      },
+      "TimelineVerification": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/TimingMode",
+            "description": "Configured timing synchronization mode."
+          },
+          "tail_policy": {
+            "$ref": "#/components/schemas/TailPolicy",
+            "description": "Configured reverb tail policy."
+          },
+          "engine_latency_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Engine Latency Samples",
+            "description": "Engine lookahead/processing latency compensated in samples."
+          },
+          "engine_tail_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Engine Tail Samples",
+            "description": "Engine reverb tail length in samples."
+          },
+          "extra_tail_samples_kept": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Extra Tail Samples Kept",
+            "description": "Extra reverb tail samples retained in output (0 when tail='trim')."
+          },
+          "input_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Input Samples",
+            "description": "Decoded input sample frames per channel."
+          },
+          "expected_output_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Output Samples",
+            "description": "Expected output sample frames per channel at output sample rate."
+          },
+          "decoded_readback_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Decoded Readback Samples",
+            "description": "Actual sample frames per channel decoded on default readback."
+          },
+          "raw_decoded_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Raw Decoded Samples",
+            "description": "Raw packet sample frames per channel when ignoring container edit-list / Xing tags."
+          },
+          "sample_diff": {
+            "type": "integer",
+            "title": "Sample Diff",
+            "description": "decoded_readback_samples - expected_output_samples (0 means exact timeline match)."
+          },
+          "raw_sample_diff": {
+            "type": "integer",
+            "title": "Raw Sample Diff",
+            "description": "raw_decoded_samples - expected_output_samples (includes raw priming + trailing padding)."
+          },
+          "codec_priming_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Codec Priming Samples",
+            "description": "Measured encoder/decoder start delay (priming) in raw stream before container compensation."
+          },
+          "codec_trailing_padding_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Codec Trailing Padding Samples",
+            "description": "Measured frame-completion trailing padding in raw stream before container compensation."
+          },
+          "residual_priming_shift_samples": {
+            "type": "integer",
+            "title": "Residual Priming Shift Samples",
+            "description": "Residual impulse/onset shift in samples after container gapless compensation."
+          },
+          "compensation_strategy": {
+            "type": "string",
+            "title": "Compensation Strategy",
+            "description": "Applied timeline and codec delay compensation strategy."
+          },
+          "tolerance_samples": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Tolerance Samples",
+            "description": "Allowed sample count deviation tolerance.",
+            "default": 0
+          },
+          "sync_within_tolerance": {
+            "type": "boolean",
+            "title": "Sync Within Tolerance",
+            "description": "True if abs(sample_diff) <= tolerance_samples and residual shift is within tolerance."
+          },
+          "sync_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Warning",
+            "description": "Warning message advising WAV 48kHz/24bit if sync tolerance is exceeded or FFmpeg < 7."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "tail_policy",
+          "engine_latency_samples",
+          "engine_tail_samples",
+          "extra_tail_samples_kept",
+          "input_samples",
+          "expected_output_samples",
+          "decoded_readback_samples",
+          "raw_decoded_samples",
+          "sample_diff",
+          "raw_sample_diff",
+          "codec_priming_samples",
+          "codec_trailing_padding_samples",
+          "residual_priming_shift_samples",
+          "compensation_strategy",
+          "sync_within_tolerance"
+        ],
+        "title": "TimelineVerification",
+        "description": "Timeline synchronization and codec priming/padding verification results (Section 8 & 10)."
+      },
+      "TimingMode": {
+        "type": "string",
+        "enum": [
+          "preserve"
+        ],
+        "title": "TimingMode",
+        "description": "Timeline synchronization mode (docs/plan.md Section 8 & 10)."
+      },
+      "TimingSpec": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/TimingMode",
+            "description": "Timeline synchronization mode. 'preserve' guarantees exact sample alignment.",
+            "default": "preserve"
+          },
+          "tail": {
+            "$ref": "#/components/schemas/TailPolicy",
+            "description": "Reverb tail strategy: 'trim' keeps exact input sample length with a short fade-out; 'preserve' appends tail_samples.",
+            "default": "trim"
+          },
+          "fade_out_ms": {
+            "type": "number",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Fade Out Ms",
+            "description": "Short fade-out duration in milliseconds applied at the end when tail='trim' to prevent clicks.",
+            "default": 10.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TimingSpec",
+        "description": "Timeline synchronization and reverb tail policy (docs/plan.md Section 8 & 10)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "description": "Bearer API Key read from AURORA_API_KEY",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
