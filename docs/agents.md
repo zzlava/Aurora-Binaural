@@ -4,8 +4,8 @@
 
 | 代理 | 用户说明 | 实测命令与版本 | 非交互参数 | 状态 |
 |---|---|---|---|---|
-| Cursor | 启动命令 `agent` | 2026.10.14-941492e（~/.local/bin/agent） | `agent -p --force --trust --output-format text "<任务书>"` | 参数已确认，待首次派单 |
-| Antigravity | 启动命令 `agy` | 1.0.9（/opt/homebrew/bin/agy） | `agy -p --dangerously-skip-permissions --print-timeout 3h "<任务书>"` | 参数已确认，待首次派单 |
+| Cursor | 启动命令 `agent` | 2026.10.14-941492e（~/.local/bin/agent） | `agent -p --force --trust --model auto --output-format text "<任务书>"`（免费计划只能用 Auto 模型） | 参数已确认，待首次派单 |
+| Antigravity | 启动命令 `agy` | 1.0.9（/opt/homebrew/bin/agy） | `agy --dangerously-skip-permissions --print-timeout 3h -p "<任务书>"`（`-p` 带参数，必须放在最后，否则后面的标志会被当成提示词） | 参数已确认，待首次派单 |
 
 ## 已知环境事实（2026-10-16）
 
