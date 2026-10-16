@@ -57,3 +57,8 @@
 主仓库和代理克隆都执行过 `git lfs install --local`，虚拟机里没有 git-lfs，直接运行 `git status` 会报 filter-process 错误。只读查看时使用：
 `git -c filter.lfs.process= -c filter.lfs.required=false -c filter.lfs.clean=cat -c filter.lfs.smudge=cat status`
 这样查看时，wav、sofa 文件显示的 `M` 是假阳性（虚拟机看到的是真实内容，而 Git 里存的是 LFS 指针）。虚拟机里不要 add 这类文件。
+
+## 事故记录与规则（2026-10-17）
+
+- 事故：Claude 在虚拟机里用 `git add qa docs` 提交了 `056bc21`。因为虚拟机的 clean 过滤器被设成了 `cat`，50 个 LFS 样片（约 130 MB）被当成普通文件写进了 main，并已推送到 GitHub。修复提交把它们恢复为 LFS 指针（只改暂存区，不动工作区）。这些原始大文件仍留在已推送的历史里（是否清理见 DECISIONS-PENDING U6）。
+- 规则：Claude 在虚拟机里提交时，**只 add 明确列出的文本文件路径**，不 add 目录；提交前必须运行 `tools/vm-git-guard.sh`，脚本报错就不能提交。
