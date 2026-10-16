@@ -90,6 +90,14 @@ do_setup_remote(){
   do_push
 }
 
+run_codex_owner(){ # prompt；Codex 作为应用层负责人（用户 2026-10-17 授权，接替额度用尽的 Antigravity）
+  command -v codex >/dev/null || { echo "找不到 Codex CLI: codex"; return 15; }
+  codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$PWD" \
+    "你是 Codex，负责 Aurora Binaural 的应用层（接替 Antigravity）。任务书中的所有规则（目录范围、只在当前分支提交、不推送）都适用于你。提交信息末尾使用 'Agent: Codex'。
+
+$1"
+}
+
 run_codex(){ # prompt；在当前目录（代理克隆）执行
   command -v codex >/dev/null || { echo "找不到 Codex CLI: codex"; return 15; }
   codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$PWD" \
@@ -128,6 +136,8 @@ do_agent(){ # agent task branch [model]
         run_codex "$prompt"; return $?
       fi
       rm -f "$tmp"; return "$rc" ;;
+    codex)
+      echo "[dispatch] codex (application layer owner)"; run_codex_owner "$prompt"; return $? ;;
     antigravity)
       command -v agy >/dev/null || { echo "找不到 Antigravity CLI: agy"; return 13; }
       agy --dangerously-skip-permissions --print-timeout 3h -p "$prompt" ;;
@@ -137,7 +147,7 @@ do_agent(){ # agent task branch [model]
 do_init_lfs(){
   command -v git-lfs >/dev/null || { echo "未安装 git-lfs"; return 30; }
   git -C "$ROOT" lfs install --local || return 31
-  for ag in cursor antigravity; do
+  for ag in cursor antigravity codex; do
     d="$ROOT/.agents/$ag"; [ -d "$d/.git" ] || continue
     git -C "$d" config lfs.storage ../../../.git/lfs
     git -C "$d" lfs install --local || return 31
@@ -210,7 +220,7 @@ handle(){
     setup-remote) do_setup_remote > "$out" 2>&1; code=$? ;;
     run-agent)
       ag="$(getf "$job" agent)"; task="$(getf "$job" task)"; branch="$(getf "$job" branch)"; model="$(getf "$job" model)"
-      case "$ag" in cursor|antigravity) ;; *) echo "非法 agent: $ag" > "$out"; code=20 ;; esac
+      case "$ag" in cursor|antigravity|codex) ;; *) echo "非法 agent: $ag" > "$out"; code=20 ;; esac
       if [ $code -eq 0 ] && [ -n "$model" ] && ! [[ "$model" =~ ^[A-Za-z0-9._-]+$ ]]; then echo "非法模型名：$model" > "$out"; code=25; fi
       if [ $code -eq 0 ]; then
         if ! [[ "$task" =~ ^docs/tasks/[A-Za-z0-9._-]+\.md$ ]] || [ ! -f "$ROOT/$task" ]; then echo "非法或不存在的任务书：$task" > "$out"; code=21; fi
@@ -223,18 +233,18 @@ handle(){
     init-lfs)     do_init_lfs > "$out" 2>&1; code=$? ;;
     prepare-agent)
       ag="$(getf "$job" agent)"; branch="$(getf "$job" branch)"
-      if [[ "$ag" =~ ^(cursor|antigravity)$ ]] && [[ "$branch" =~ ^agent/$ag/[A-Za-z0-9._-]+$ ]]; then
+      if [[ "$ag" =~ ^(cursor|antigravity|codex)$ ]] && [[ "$branch" =~ ^agent/$ag/[A-Za-z0-9._-]+$ ]]; then
         if agent_busy "$ag" "$id"; then echo "$ag 有任务在运行" > "$out"; code=23; else do_prepare_agent "$ag" "$branch" > "$out" 2>&1; code=$?; fi
       else echo "非法参数：$ag $branch" > "$out"; code=22; fi ;;
     merge)
       b="$(getf "$job" branch)"
-      if [[ "$b" =~ ^(agent/(cursor|antigravity)|qa)/[A-Za-z0-9._-]+$ ]]; then do_merge "$b" > "$out" 2>&1; code=$?; else echo "非法分支：$b" > "$out"; code=22; fi ;;
+      if [[ "$b" =~ ^(agent/(cursor|antigravity|codex)|qa)/[A-Za-z0-9._-]+$ ]]; then do_merge "$b" > "$out" 2>&1; code=$?; else echo "非法分支：$b" > "$out"; code=22; fi ;;
     tag)
       t="$(getf "$job" name)"
       if [[ "$t" =~ ^(p[0-9]+-accepted|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then do_tag "$t" > "$out" 2>&1; code=$?; else echo "非法标签：$t" > "$out"; code=22; fi ;;
     commit-agent)
       ag="$(getf "$job" agent)"; branch="$(getf "$job" branch)"
-      if [[ "$ag" =~ ^(cursor|antigravity)$ ]] && [[ "$branch" =~ ^agent/$ag/[A-Za-z0-9._-]+$ ]]; then
+      if [[ "$ag" =~ ^(cursor|antigravity|codex)$ ]] && [[ "$branch" =~ ^agent/$ag/[A-Za-z0-9._-]+$ ]]; then
         if agent_busy "$ag" "$id"; then echo "$ag 有任务在运行" > "$out"; code=23; else do_commit_agent "$ag" "$branch" > "$out" 2>&1; code=$?; fi
       else echo "非法参数：$ag $branch" > "$out"; code=22; fi ;;
     cancel)
