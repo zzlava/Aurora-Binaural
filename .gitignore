@@ -30,3 +30,7 @@ tmp/
 # Render outputs: only curated QA samples under qa/ are tracked (via LFS)
 outputs/
 renders/
+
+# Dispatcher runtime and agent clones
+.aurora/
+.agents/

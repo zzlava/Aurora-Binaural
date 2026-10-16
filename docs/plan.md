@@ -1,7 +1,7 @@
 # Aurora Binaural（空间听感音频工具）：可落地方案与执行任务书
 
 版本：v0.2.1
-项目名称：Aurora Binaural（仓库 `zzlava/aurora-binaural`，CLI 命令 `aurora`，Python 包 `aurora_binaural`）
+项目名称：Aurora Binaural（仓库 `zzlava/Aurora-Binaural`，CLI 命令 `aurora`，Python 包 `aurora_binaural`）
 修订日期：2026-10-16，Asia/Shanghai
 基于：v0.1《完整方案与 GitHub 调研》
 适用范围：Mac 本地使用、命令行、图形界面、Linux 远程部署、HTTP API，并为后续实时处理预留路线
@@ -450,10 +450,12 @@ AI 生成配音／音乐／音效 → 上传 asset → 创建 job → 轮询状�
 
 | 代理 | 拟定调用方式 | 备用方式 |
 |---|---|---|
-| Cursor | Cursor CLI（命令行代理，例如 `cursor-agent`，P0 核实名称、版本和非交互参数） | Claude 通过电脑控制在 Cursor 界面里粘贴任务书 |
-| Antigravity | 先查找是否有 CLI 或自动化接口 | Claude 通过电脑控制在 Antigravity 界面里粘贴任务书 |
+| Cursor | 命令 `agent`（用户确认），非交互模式 `agent -p --force`，经白名单派单器调用 | 用户手动执行 |
+| Antigravity | 命令 `agy`（用户确认），非交互参数待 doctor 输出确认，经白名单派单器调用 | 用户手动执行 |
 
-在实际调通之前，不得声称已经连接。如果只能通过界面操作，每次派单和收取交付都要截图或保存日志，作为记录。
+派单通道采用**白名单派单器** `tools/dispatch.sh`（用户在 macOS 终端启动）：Claude 用 `tools/enqueue.sh` 写入任务，派单器只执行 doctor／setup-remote／push／run-agent／cancel 五类动作，结果写入 `.aurora/results/`。原因：Claude 的 shell 运行在本机 Linux 虚拟机里，看不到 macOS 上的 CLI 与凭据；电脑控制对终端只开放点击。在实际完成一次往返派单前，不得声称已经连接。
+
+为什么用独立克隆而不是 git worktree：macOS 与虚拟机的绝对路径不同，worktree 元数据里的绝对路径会在其中一侧失效；`.agents/<代理>/` 下的克隆自带 .git，两侧都能正常使用。Claude 在虚拟机里用 `git fetch .agents/<代理> <分支>` 把代理的提交取回主仓库审查。
 
 ### 14.3 派单与交付
 
@@ -470,7 +472,7 @@ Claude 独立复现检查，不只转述代理的报告。发现问题时，提�
 
 ### 14.4 防冲突规则
 
-- 每个代理只在自己负责的目录里修改，并且在自己的 Git 工作树和分支上工作（见 14.5）。
+- 每个代理只在自己负责的目录里修改，并且在自己的独立克隆和分支上工作（见 14.5）。
 - 跨目录的修改（例如 `pyproject.toml`、CI 配置）由 Claude 协调，同一时间只允许一个代理修改。
 - 两个代理不能同时修改同一个分支。
 
@@ -481,15 +483,15 @@ Claude 独立复现检查，不只转述代理的报告。发现问题时，提�
 - 本地路径：`~/Desktop/leo/Aurora Binaural`（用户已指定；路径含空格，所有脚本必须给路径加引号）。
 - `git init`，主分支为 `main`；配置 `.gitignore`（排除构建产物、虚拟环境、临时渲染结果、`.env`）。
 - 用 **Git LFS** 管理 HRTF 数据（`.sofa`）、参考样片和验收音频；在 `.gitattributes` 里登记。
-- GitHub **私有**仓库 `zzlava/aurora-binaural` 作为远程备份。
+- GitHub **私有**仓库 `zzlava/Aurora-Binaural` 作为远程备份。
 - 需要用户在桌面应用里授予该文件夹访问权限，并**允许删除**。Git 在提交和切换分支时要删除锁文件和被替换的文件，没有删除权限时会留下 `.lock` 文件，导致后续操作失败。
 
 **分支与工作树**
 
 ```text
 main                        只合并已经通过 Claude 验收的内容
-agent/cursor/<任务编号>       Cursor 的工作分支（独立 git worktree）
-agent/antigravity/<任务编号>  Antigravity 的工作分支（独立 git worktree）
+agent/cursor/<任务编号>       Cursor 的工作分支（独立克隆 .agents/cursor/）
+agent/antigravity/<任务编号>  Antigravity 的工作分支（独立克隆 .agents/antigravity/）
 qa/<任务编号>                Claude 的验收脚本和记录
 ```
 
@@ -703,7 +705,7 @@ P0 只做准备工作，不实现完整功能：
 ## 20. 启动检查表
 
 - [x] 项目路径已确定并授予访问与删除权限
-- [ ] GitHub 私有仓库 `zzlava/aurora-binaural` 创建并首次推送
+- [ ] GitHub 私有仓库 `zzlava/Aurora-Binaural` 创建并首次推送
 - [ ] 用户指定离线 bundle 的备份目录
 - [ ] Claude 核实本机是否有 Rust 工具链、Python、ffmpeg、git-lfs、gh；缺少的由用户确认后安装
 - [ ] Claude 调通 Cursor 与 Antigravity 的调用方式（CLI 或界面），记录到 `docs/agents.md`
