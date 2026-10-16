@@ -34,3 +34,6 @@ renders/
 # Dispatcher runtime and agent clones
 .aurora/
 .agents/
+
+# Downloaded source originals of test assets (clips + source URLs/hashes are tracked instead)
+data/assets/src/
