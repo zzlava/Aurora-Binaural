@@ -66,6 +66,7 @@ class Processor:
         self._hrir_cache: dict[tuple[float, float], tuple[np.ndarray, np.ndarray]] = {}
         self.last_stats: dict = {}
         self._spatial_latency = 0
+        self._hrir_delay = 0
 
     def prepare(self, sample_rate: int, max_block: int, config: RenderConfig) -> None:
         if sample_rate != SAMPLE_RATE:
@@ -104,6 +105,8 @@ class Processor:
         self._hrir_cache.clear()
         self.last_stats = {}
         self._spatial_latency = 0
+        hl, hr = interpolate_hrir(self.ds, 0.0, 0.0)
+        self._hrir_delay = int(np.argmax(np.abs(hl) + np.abs(hr)))
 
     def set_params(self, params: StrengthParams) -> None:
         self.params = params
@@ -206,9 +209,12 @@ class Processor:
             spat = self._route_b(high)
         else:
             spat = self._route_c(high)
-        low_out = delay_buffer(low_out, self._spatial_latency)
+        # STFT delay plus the frontal HRIR peak. Without the peak, LR4's
+        # low and high arms meet about 0.5 ms apart and cancel near 150 Hz.
+        align = int(self._spatial_latency) + int(self._hrir_delay)
+        low_out = delay_buffer(low_out, align)
         mixed = spat + low_out
-        self._latency = int(self._spatial_latency)
+        self._latency = align
         if self.cfg.timbre_guard:
             mixed, info = timbre_guard(mixed, stereo, self.cfg.sample_rate)
             self.last_stats["timbre_guard"] = info
@@ -239,7 +245,7 @@ class Processor:
         self._spatial_latency = 0
         az = float(self.params.width_deg)
         direct = self._conv_mono(high[0], +az) + self._conv_mono(high[1], -az)
-        direct += self._side_feed(high)
+        direct += delay_buffer(self._side_feed(high), self._hrir_delay)
         mid = 0.5 * (high[0] + high[1])
         room = self._room_from_mid(mid)
         self.last_stats["rear_bus_rms"] = 0.0
@@ -284,7 +290,7 @@ class Processor:
         return image, rear_only
 
     def _delay_side(self, high: np.ndarray) -> np.ndarray:
-        return delay_buffer(self._side_feed(high), self._spatial_latency)
+        return delay_buffer(self._side_feed(high), self._spatial_latency + int(self._hrir_delay))
 
     def _decode_bed(self, bed: np.ndarray) -> np.ndarray:
         assert self.cfg and self.magls

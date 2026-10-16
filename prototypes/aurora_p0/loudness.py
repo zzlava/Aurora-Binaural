@@ -49,15 +49,14 @@ def equal_loudness_timbre(
     sr: int,
     target_lufs: float = -20.0,
 ) -> tuple[np.ndarray, float, float, dict]:
-    """Loudness-match, pull 1/3-octave power toward the dry file, match again.
+    """Loudness-match, pull 1/3-octave shape toward the dry file, match again.
 
-    The second match is a single gain. Correcting the whole 0.4–16 kHz
-    shape (not only the top octave) keeps that gain from tilting 4–16 kHz
-    back outside ±3 dB.
+    The second match is a single gain. The guard covers 40 Hz–16 kHz so a
+    crossover-region error is not left under the old 400 Hz fade.
     """
     wet1, before, _ = match_loudness(wet, sr, target_lufs)
     dry1, _, _ = match_loudness(dry, sr, target_lufs)
-    guarded, info = timbre_guard(wet1, dry1, sr, f_lo=400.0, f_hi=16000.0)
+    guarded, info = timbre_guard(wet1, dry1, sr, f_lo=40.0, f_hi=16000.0)
     final, _, after = match_loudness(guarded, sr, target_lufs)
     return final, before, after, info
 
@@ -66,25 +65,48 @@ def timbre_guard(
     wet: np.ndarray,
     dry: np.ndarray,
     sr: int,
-    f_lo: float = 400.0,
+    f_lo: float = 40.0,
     f_hi: float = 16000.0,
     max_db: float = 18.0,
 ) -> tuple[np.ndarray, dict]:
-    """Shared minimum-phase 1/3-octave EQ so ear-sum power tracks the dry signal.
+    """Minimum-phase 1/3-octave timbre EQ from 40 Hz to 16 kHz.
 
-    The same filter is applied to both ears, so ITD/ILD are unchanged.
-    Band gains use the same rectangular 1/3-octave edges as the QA metric.
+    A common gain (same on both ears) recenters level. Where decorrelation
+    has pushed the mono downmix and the ear-power sum more than 4 dB apart,
+    a little mid/side energy is moved so the two observations can both land
+    inside ±3 dB. ITD of the mid stays; only that band's side level changes.
     """
-    from scipy.fft import irfft, rfft
-    from scipy.signal import fftconvolve
-
     wet = np.asarray(wet, dtype=np.float64)
     dry = np.asarray(dry, dtype=np.float64)
-    # Two passes: a minimum-phase FIR only approximates the rectangular bands.
     info: dict = {}
     for _pass in range(3):
         wet, info = _timbre_guard_once(wet, dry, sr, f_lo, f_hi, max_db)
     return wet, info
+
+
+def _iso_centers(f_lo: float, f_hi: float) -> np.ndarray:
+    ks = np.arange(-20, 16)
+    centers = 1000.0 * (2.0 ** (ks / 3.0))
+    return centers[(centers >= f_lo * 0.99) & (centers <= f_hi * 1.01)]
+
+
+def _band_power_db(x: np.ndarray, centers: np.ndarray, nfft: int, sr: int, mode: str) -> np.ndarray:
+    """1/3-octave levels. ``ear`` sums ear power; ``mono`` uses (L+R)/2."""
+    n = x.shape[1]
+    freqs = np.fft.rfftfreq(nfft, d=1.0 / sr)
+    if mode == "mono":
+        mono = np.mean(np.asarray(x[:, :n], dtype=np.float64), axis=0)
+        spec = np.abs(np.fft.rfft(mono, n=nfft)) ** 2
+    else:
+        spec = np.zeros(nfft // 2 + 1, dtype=np.float64)
+        for ch in range(x.shape[0]):
+            spec += np.abs(np.fft.rfft(np.asarray(x[ch, :n], dtype=np.float64), n=nfft)) ** 2
+    out = np.zeros(centers.shape[0], dtype=np.float64)
+    for i, f in enumerate(centers):
+        lo, hi = f / 2.0 ** (1.0 / 6.0), f * 2.0 ** (1.0 / 6.0)
+        m = (freqs >= lo) & (freqs < hi)
+        out[i] = float(10.0 * np.log10(spec[m].mean() + 1e-20)) if np.any(m) else 0.0
+    return out
 
 
 def _timbre_guard_once(
@@ -99,51 +121,64 @@ def _timbre_guard_once(
     from scipy.signal import fftconvolve
 
     n = min(wet.shape[1], dry.shape[1])
-    nfft = 1 << (max(n, 2048) - 1).bit_length()
+    nfft = 1 << (max(n, 4096) - 1).bit_length()
     freqs = np.fft.rfftfreq(nfft, d=1.0 / sr)
-
-    def band_db(x: np.ndarray) -> list[tuple[float, float]]:
-        # Power sum of the ears, not L+R. A coherent sum confuses decorrelation
-        # with a timbre change and then loudness matching undoes the EQ.
-        spec = np.zeros(nfft // 2 + 1, dtype=np.float64)
-        for ch in range(x.shape[0]):
-            spec += np.abs(np.fft.rfft(np.asarray(x[ch, :n], dtype=np.float64), n=nfft)) ** 2
-        out = []
-        f = f_lo
-        while f < f_hi * 1.01:
-            lo, hi = f / 2.0 ** (1.0 / 6.0), f * 2.0 ** (1.0 / 6.0)
-            m = (freqs >= lo) & (freqs < hi)
-            level = float(10.0 * np.log10(spec[m].mean() + 1e-20)) if np.any(m) else 0.0
-            out.append((f, level))
-            f *= 2.0 ** (1.0 / 3.0)
-        return out
-
-    wd = band_db(wet[:, :n] if wet.shape[1] != n else wet)
-    dd = band_db(dry[:, :n] if dry.shape[1] != n else dry)
-    centers = np.array([c for c, _ in wd], dtype=np.float64)
-    delta = np.array([d[1] - w[1] for w, d in zip(wd, dd)], dtype=np.float64)
-    delta = np.clip(delta, -max_db, max_db)
-    # Interpolate band corrections onto FFT bins; 0 dB below one octave under f_lo.
-    gain_db = np.interp(freqs, centers, delta, left=0.0, right=float(delta[-1]) if len(delta) else 0.0)
+    centers = _iso_centers(f_lo, f_hi)
+    wet_n = wet[:, :n] if wet.shape[1] != n else wet
+    dry_n = dry[:, :n] if dry.shape[1] != n else dry
+    delta_ear = _band_power_db(dry_n, centers, nfft, sr, "ear") - _band_power_db(wet_n, centers, nfft, sr, "ear")
+    delta_mono = _band_power_db(dry_n, centers, nfft, sr, "mono") - _band_power_db(wet_n, centers, nfft, sr, "mono")
+    # Positive gap: mono is quiet relative to ear power, i.e. this band is
+    # more decorrelated than the dry file. Move just enough side energy onto
+    # the mid to leave a 4 dB gap, which the common gain then centers at ±2 dB.
+    gap = delta_mono - delta_ear
+    shift = np.where(np.abs(gap) > 4.0, gap - np.sign(gap) * 4.0, 0.0)
+    shift = np.clip(shift, -6.0, 6.0)
+    mid = 0.5 * (wet_n[0] + wet_n[1])
+    side = 0.5 * (wet_n[0] - wet_n[1])
+    pm = 10.0 ** (_band_power_db(mid[np.newaxis, :], centers, nfft, sr, "ear") / 10.0)
+    ps = 10.0 ** (_band_power_db(side[np.newaxis, :], centers, nfft, sr, "ear") / 10.0)
+    total = pm + ps
+    target_pm = pm * (10.0 ** (shift / 10.0))
+    target_pm = np.minimum(target_pm, total * 0.98)
+    target_ps = np.maximum(total - target_pm, total * 1e-6)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        gm = np.sqrt(np.maximum(target_pm, 1e-20) / np.maximum(pm, 1e-20))
+        gs = np.sqrt(np.maximum(target_ps, 1e-20) / np.maximum(ps, 1e-20))
+    gm = np.clip(gm, 10.0 ** (-max_db / 20.0), 10.0 ** (max_db / 20.0))
+    gs = np.clip(gs, 10.0 ** (-max_db / 20.0), 10.0 ** (max_db / 20.0))
+    common = np.clip(0.5 * (delta_mono - shift + delta_ear), -max_db, max_db)
+    gm_db = np.clip(20.0 * np.log10(gm) + common, -max_db, max_db)
+    gs_db = np.clip(20.0 * np.log10(gs) + common, -max_db, max_db)
     fade_lo = f_lo / 2.0
     fade = np.clip((freqs - fade_lo) / max(f_lo - fade_lo, 1.0), 0.0, 1.0)
-    gain_db = gain_db * fade
-    gain = 10.0 ** (gain_db / 20.0)
-    log_g = np.log(np.maximum(gain, 1e-8))
-    cep = irfft(log_g, n=nfft)
-    cep[1 : nfft // 2] *= 2.0
-    cep[nfft // 2 + 1 :] = 0.0
-    h = irfft(np.exp(rfft(cep, n=nfft)), n=nfft)
-    taps = 512
-    window = np.hanning(2 * taps)[taps:]
-    fir = h[:taps] * window
+
+    def _fir(gain_db_bands: np.ndarray) -> np.ndarray:
+        gain_db = np.interp(freqs, centers, gain_db_bands, left=0.0, right=float(gain_db_bands[-1]))
+        gain_db = gain_db * fade
+        log_g = np.log(np.maximum(10.0 ** (gain_db / 20.0), 1e-8))
+        cep = irfft(log_g, n=nfft)
+        cep[1 : nfft // 2] *= 2.0
+        cep[nfft // 2 + 1 :] = 0.0
+        h = irfft(np.exp(rfft(cep, n=nfft)), n=nfft)
+        taps = 2048
+        window = np.hanning(2 * taps)[taps:]
+        return h[:taps] * window
+
+    fir_m = _fir(gm_db)
+    fir_s = _fir(gs_db)
+    mid_f = fftconvolve(0.5 * (wet[0] + wet[1]), fir_m, mode="full")[: wet.shape[1]]
+    side_f = fftconvolve(0.5 * (wet[0] - wet[1]), fir_s, mode="full")[: wet.shape[1]]
     out = np.zeros_like(wet)
-    out[0] = fftconvolve(wet[0], fir, mode="full")[: wet.shape[1]]
-    out[1] = fftconvolve(wet[1], fir, mode="full")[: wet.shape[1]]
+    out[0] = mid_f + side_f
+    out[1] = mid_f - side_f
+    hi = np.abs(common[centers >= 4000.0])
     info = {
-        "max_abs_correction_db_4_16k": float(np.max(np.abs(delta))) if delta.size else 0.0,
-        "mean_correction_db_4_16k": float(np.mean(delta)) if delta.size else 0.0,
-        "band_correction_db": delta.tolist(),
+        "max_abs_correction_db_4_16k": float(np.max(hi)) if hi.size else 0.0,
+        "mean_correction_db_4_16k": float(np.mean(common[centers >= 4000.0])) if hi.size else 0.0,
+        "max_abs_correction_db_40_16k": float(np.max(np.abs(common))) if common.size else 0.0,
+        "max_abs_ms_shift_db": float(np.max(np.abs(shift))) if shift.size else 0.0,
+        "band_correction_db": common.tolist(),
     }
     return out, info
 

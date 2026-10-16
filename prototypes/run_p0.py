@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-"""Reproduce the P0-cursor-02 sample matrix, metrics, and report.
+"""Reproduce the P0 sample matrix, or one render for review.
 
-Usage (from prototypes/):
+Full matrix (from prototypes/):
+
   uv sync
   uv run python run_p0.py
+
+Same material at block sizes 64, 256 and 1024, with the peak error between them:
+
+  uv run python run_p0.py --only music --route B --strength 0.4 --hrtf thk_ku100 --eq frontal --block-size 64,256,1024 --out ../qa/p0/cursor/block_check
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -24,6 +30,7 @@ sys.path.insert(0, str(PROTO))
 from aurora_p0 import SAMPLE_RATE, TARGET_LUFS, DEFAULT_SEED  # noqa: E402
 from aurora_p0.assets import ensure_assets, sha256_file  # noqa: E402
 from aurora_p0.engine import Processor, RenderConfig, process_blocks_compare  # noqa: E402
+from aurora_p0.filters import crossover_magnitude_db  # noqa: E402
 from aurora_p0.hrtf import apply_equalization, load_sofa  # noqa: E402
 from aurora_p0.loudness import equal_loudness_timbre, match_loudness  # noqa: E402
 from aurora_p0.metrics import (  # noqa: E402
@@ -31,6 +38,7 @@ from aurora_p0.metrics import (  # noqa: E402
     block_consistency_error,
     direction_tests,
     frontal_response_deviation,
+    review_tone_deviation,
     sample_metrics,
 )
 from aurora_p0.upmix import energy_conservation_error, streaming_upmix_file  # noqa: E402
@@ -119,22 +127,25 @@ def render_one(
     hrtf_name: str,
     dry_matched: np.ndarray,
     orbit_deg_per_sec: float = 0.0,
+    block_size: int = 512,
+    eq_mode: str = "frontal",
+    directional_power: bool = True,
 ) -> tuple[np.ndarray, dict]:
     conf = RenderConfig(
         route=route,
         strength=strength,
         hrtf_path=hrtf_path,
         hrtf_name=hrtf_name,
-        eq_mode="frontal",
-        directional_power=True,
+        eq_mode=eq_mode,
+        directional_power=directional_power,
         timbre_guard=False,
         seed=DEFAULT_SEED,
-        block_size=512,
+        block_size=block_size,
         sample_rate=SAMPLE_RATE,
         orbit_deg_per_sec=orbit_deg_per_sec,
     )
     proc = Processor()
-    proc.prepare(SAMPLE_RATE, 512, conf)
+    proc.prepare(SAMPLE_RATE, block_size, conf)
     rendered = proc.process_file(stereo)
     stats = dict(proc.last_stats)
     if strength <= 0.0:
@@ -145,17 +156,23 @@ def render_one(
             rendered, stereo, SAMPLE_RATE, TARGET_LUFS
         )
     bands = band_deltas_db(matched, dry_matched, SAMPLE_RATE)
+    tone = review_tone_deviation(matched, dry_matched, SAMPLE_RATE)
     row = {
         **sample_metrics(matched, SAMPLE_RATE),
         "route": route,
         "strength": strength,
         "hrtf": hrtf_name,
-        "eq_mode": "frontal+power",
+        "eq_mode": f"{eq_mode}+power" if directional_power else eq_mode,
+        "block_size": block_size,
         "loudness_before": before,
         "loudness_matched_lufs": after,
         "hf_max_abs_db": bands["max_abs_db"],
         "hf_within_pm3db": bands["within_pm3db"],
         "hf_delta_db": bands["delta_db"],
+        "tone_max_abs_db_40_16k": tone["max_abs_db"],
+        "tone_within_pm3db": tone["within_pm3db"],
+        "tone_offset_db": tone["offset_db"],
+        "tone_delta_db": tone["delta_db"],
         "bed_to_total": stats.get("bed_to_total"),
         "rear_bus_rms": stats.get("rear_bus_rms"),
         "room_bus_rms": stats.get("room_bus_rms"),
@@ -165,7 +182,106 @@ def render_one(
     return matched, row
 
 
-def main() -> int:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="P0 sample matrix, or one reproducible render")
+    parser.add_argument("--block-size", default=None, help="One block size, or 64,256,1024 to compare")
+    parser.add_argument("--only", default=None, help="Material category: voice, music, ambience")
+    parser.add_argument("--route", default=None, choices=["A", "B", "C", "a", "b", "c"])
+    parser.add_argument("--strength", type=float, default=None)
+    parser.add_argument("--hrtf", default=None, choices=["thk_ku100", "sadie2_d1"])
+    parser.add_argument("--eq", default=None, choices=["frontal", "diffuse"])
+    parser.add_argument("--out", type=Path, default=None)
+    return parser.parse_args(argv)
+
+
+def _block_sizes(text: str | None) -> list[int]:
+    if not text:
+        return [512]
+    sizes = [int(part) for part in text.split(",") if part.strip()]
+    if not sizes or any(n <= 0 for n in sizes):
+        raise ValueError(f"bad --block-size {text}")
+    return sizes
+
+
+def run_selected(args: argparse.Namespace) -> int:
+    """Render a subset. Several block sizes also print the pairwise peak error."""
+    categories = [args.only] if args.only else list(REAL_CATS)
+    routes = [args.route.upper()] if args.route else list(ROUTES)
+    strengths = [args.strength] if args.strength is not None else list(STRENGTHS)
+    hrtf_name = args.hrtf or "thk_ku100"
+    eq_mode = args.eq or "frontal"
+    sizes = _block_sizes(args.block_size)
+    out = args.out or SAMPLES
+    unknown = [c for c in categories if c not in REAL_CATS]
+    if unknown:
+        print(f"unknown category {unknown}; expected {list(REAL_CATS)}", file=sys.stderr)
+        return 2
+    if hrtf_name not in HRTF_CANDIDATES or not HRTF_CANDIDATES[hrtf_name].is_file():
+        print(f"missing HRTF {hrtf_name}", file=sys.stderr)
+        return 2
+    hrtf_path = HRTF_CANDIDATES[hrtf_name]
+    rendered: dict[int, dict[str, np.ndarray]] = {n: {} for n in sizes}
+    for block in sizes:
+        dest = out / f"block{block}" if len(sizes) > 1 else out
+        dest.mkdir(parents=True, exist_ok=True)
+        for cat in categories:
+            stereo = load_stereo(REAL_CATS[cat])
+            dry, _, _ = match_loudness(stereo, SAMPLE_RATE, TARGET_LUFS)
+            if block == sizes[0]:
+                dry_name = dest / f"{cat}_dry_lufs{int(abs(TARGET_LUFS))}.wav"
+                if not dry_name.is_file():
+                    write_pcm24(dry_name, dry)
+            for route in routes:
+                for strength in strengths:
+                    tag = f"{cat}_route{route}_str{strength:.1f}_hrtf-{hrtf_name}_eq-{eq_mode}"
+                    print(f"==> block {block} {tag}", flush=True)
+                    matched, row = render_one(
+                        stereo,
+                        route,
+                        strength,
+                        hrtf_path,
+                        hrtf_name,
+                        dry,
+                        block_size=block,
+                        eq_mode=eq_mode,
+                        directional_power=True,
+                    )
+                    write_pcm24(dest / f"{tag}.wav", matched)
+                    rendered[block][tag] = matched
+                    print(
+                        f"    IACC {row['iacc']:.3f}  40–16 kHz {row['tone_max_abs_db_40_16k']:.2f} dB  "
+                        f"4–16 kHz {row['hf_max_abs_db']:.2f} dB"
+                    )
+    if len(sizes) > 1:
+        ref = max(sizes)
+        worst = -1e9
+        print("block-size peak error (matched render, dBFS):")
+        tags = sorted(rendered[ref])
+        pairs = [(block, ref) for block in sizes if block != ref]
+        others = [n for n in sizes if n != ref]
+        if len(others) == 2:
+            pairs.append((others[0], others[1]))
+        for left, right in pairs:
+            peak = 0.0
+            for tag in tags:
+                a, b = rendered[left][tag], rendered[right][tag]
+                n = min(a.shape[1], b.shape[1])
+                peak = max(peak, float(np.max(np.abs(a[:, :n] - b[:, :n]))))
+            err = 20.0 * np.log10(peak + 1e-20)
+            worst = max(worst, err)
+            print(f"  {left} vs {right}: {err:.2f} dBFS")
+        print(f"max_abs_error_dbfs {worst:.2f}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    selected = any(
+        value is not None
+        for value in (args.block_size, args.only, args.route, args.strength, args.hrtf, args.eq, args.out)
+    )
+    if selected:
+        return run_selected(args)
     OUT.mkdir(parents=True, exist_ok=True)
     SAMPLES.mkdir(parents=True, exist_ok=True)
     LOGS.mkdir(parents=True, exist_ok=True)
@@ -206,14 +322,14 @@ def main() -> int:
 
     metrics: dict = {
         "meta": {
-            "task": "P0-cursor-02",
+            "task": "P0-cursor-03",
             "sample_rate": SAMPLE_RATE,
             "target_lufs": TARGET_LUFS,
             "seed": DEFAULT_SEED,
             "primary_hrtf": primary_name,
             "secondary_hrtf": secondary_name,
             "eq_mode": "frontal+power",
-            "review_file": "qa/p0/REVIEW-cursor-01.md 不在本克隆中；D1–D7 按派单正文执行。",
+            "review_file": "qa/p0/REVIEW-cursor-02.md（主仓库）。D8 低频、D9 复现入口。",
         },
         "baseline_p0_01": BASELINE_P0_01,
         "hrtf": {},
@@ -288,6 +404,11 @@ def main() -> int:
         return out
 
     metrics["upmix_energy_db"] = run_step("upmix_energy", _upmix_energy) or {}
+
+    def _crossover():
+        return crossover_magnitude_db(SAMPLE_RATE, 150.0)
+
+    metrics["crossover"] = run_step("crossover_lr4", _crossover) or {}
 
     music_syn = load_stereo(SYNTH_CATS["music"])
     excerpt = music_syn[:, : SAMPLE_RATE * 2]
@@ -404,19 +525,38 @@ def main() -> int:
 
                 metrics["samples"][f"{tag}.wav"] = run_step(f"render_{tag}", _render)
 
-    def _sadie():
-        stereo = load_stereo(REAL_CATS["music"])
+    # SADIE II + frontal EQ + route B, for the license listening comparison.
+    for cat, path in REAL_CATS.items():
+        stereo = load_stereo(path)
         dry, _, _ = match_loudness(stereo, SAMPLE_RATE, TARGET_LUFS)
-        matched, row = render_one(stereo, "B", 0.4, secondary_path, secondary_name, dry)
-        row["category"] = "music"
-        name = f"music_routeB_str0.4_hrtf-{secondary_name}_eq-frontal.wav"
-        write_pcm24(SAMPLES / name, matched)
-        row["sha256"] = sha256_file(SAMPLES / name)
-        return name, row
+        for strength in STRENGTHS:
+            tag = f"{cat}_routeB_str{strength:.1f}_hrtf-{secondary_name}_eq-frontal"
 
-    sadie = run_step("render_sadie_music_B", _sadie)
-    if sadie:
-        metrics["samples"][sadie[0]] = sadie[1]
+            def _sadie(stereo=stereo, dry=dry, strength=strength, cat=cat, tag=tag):
+                matched, row = render_one(stereo, "B", strength, secondary_path, secondary_name, dry)
+                row["category"] = cat
+                out_path = SAMPLES / f"{tag}.wav"
+                write_pcm24(out_path, matched)
+                row["sha256"] = sha256_file(out_path)
+                return row
+
+            metrics["samples"][f"{tag}.wav"] = run_step(f"render_{tag}", _sadie)
+
+    # Route B music at the ends of the strength range (KU100, frontal).
+    music = load_stereo(REAL_CATS["music"])
+    music_dry, _, _ = match_loudness(music, SAMPLE_RATE, TARGET_LUFS)
+    for strength in (0.2, 1.0):
+        tag = f"music_routeB_str{strength:.1f}_hrtf-{primary_name}_eq-frontal"
+
+        def _ends(strength=strength, tag=tag):
+            matched, row = render_one(music, "B", strength, primary_path, primary_name, music_dry)
+            row["category"] = "music"
+            out_path = SAMPLES / f"{tag}.wav"
+            write_pcm24(out_path, matched)
+            row["sha256"] = sha256_file(out_path)
+            return row
+
+        metrics["samples"][f"{tag}.wav"] = run_step(f"render_{tag}", _ends)
 
     _check_acceptance(metrics, failures)
 
@@ -443,7 +583,14 @@ def _check_acceptance(metrics: dict, failures: list[str]) -> None:
     music = synth.get("music") or {}
     dry_amb = float(amb.get("dry_iacc") or 1.0)
     dry_music = float(music.get("dry_iacc") or 0.0)
-    flags = {"ambience_iacc_le_0_4": True, "music_iacc_le_dry_plus_0_1": True, "hf_pm3": True, "bed_monotonic": True}
+    flags = {
+        "ambience_iacc_le_0_4": True,
+        "music_iacc_le_dry_plus_0_1": True,
+        "hf_pm3": True,
+        "bed_monotonic": True,
+        "lf_pm3": True,
+        "crossover_pm_0_5db": True,
+    }
     for cat, group in synth.items():
         for route, curve in (group.get("routes") or {}).items():
             for point in curve:
@@ -485,6 +632,15 @@ def _check_acceptance(metrics: dict, failures: list[str]) -> None:
         if row.get("hf_within_pm3db") is False:
             flags["hf_pm3"] = False
             failures.append(f"D2 {name} HF {row.get('hf_max_abs_db')} dB")
+        if (
+            row.get("route") == "B"
+            and row.get("strength") == 0.4
+            and row.get("hrtf") == "thk_ku100"
+            and row.get("category") in {"voice", "music", "ambience"}
+            and row.get("tone_within_pm3db") is False
+        ):
+            flags["lf_pm3"] = False
+            failures.append(f"D8 {name} 40 Hz–16 kHz {row.get('tone_max_abs_db_40_16k')} dB")
         if row.get("category") == "music" and row.get("iacc") is not None:
             dry = _dry_iacc(metrics, "music")
             if dry is not None and row["iacc"] > dry + 0.1:
@@ -498,6 +654,10 @@ def _check_acceptance(metrics: dict, failures: list[str]) -> None:
                 failures.append(f"D4 route {route} block {block} error {err:.1f} dBFS")
     if metrics.get("strength0_max_abs_err", 1.0) > 0.0:
         failures.append(f"strength 0 not a bypass: err={metrics.get('strength0_max_abs_err')}")
+    xo = metrics.get("crossover") or {}
+    if xo and not xo.get("within_pm_0_5db", False):
+        flags["crossover_pm_0_5db"] = False
+        failures.append(f"D8 crossover magnitude {xo.get('max_abs_db')} dB")
     frontal = (metrics.get("eq_comparison") or {}).get("thk_ku100_frontal_frontal") or {}
     if frontal and not frontal.get("within_pm2db"):
         failures.append(f"D2 frontal EQ max {frontal.get('max_abs_db')} dB")
@@ -621,14 +781,18 @@ def _write_report(commands, failures, metrics, versions, elapsed, registry) -> N
     base = metrics.get("baseline_p0_01") or {}
     acc = metrics.get("acceptance") or {}
     lines = [
-        "# P0-cursor-02 渲染算法原型修订 — REPORT",
+        "# P0-cursor-03 低频增益与复现入口 — REPORT",
         "",
         f"生成时间：本地运行（耗时 {elapsed:.1f}s）",
         f"分支：`agent/cursor/P0-01`　种子：`{DEFAULT_SEED}`　目标响度：`{TARGET_LUFS} LUFS`",
         "",
-        "`qa/p0/REVIEW-cursor-01.md` 不在这个克隆里。D1–D7 按派单正文执行，P0-cursor-01 的规则仍然有效。",
+        "前置审查是主仓库的 `qa/p0/REVIEW-cursor-02.md`（不在这个克隆里）。D8、D9 按派单正文执行，P0-cursor-01 的规则仍然有效。",
         "",
-        "## 1. 修订了什么",
+        "## 1. 这一轮改了什么",
+        "",
+        "- **D8 低频来源**：40–63 Hz 的抬升不是房间，也不是 HRTF 的低频增益。分频器的低通用 `sosfilt_zi` 按「输入一直是 1」来初始化，文件开头输出从满幅 1.0 衰减。整段频谱把这一下冲击算进 40–63 Hz，环境音看起来高 17–22 dB。另外 4 阶巴特沃斯低通加高通在 150 Hz 同相相加，约 +3 dB，不是互补分频。",
+        "- **D8 修复**：分频改成 LR4（两级 2 阶巴特沃斯），初值改为静止。20 Hz–20 kHz 上低通加高通的幅度偏差见下面的分频器测试。处理路径在分频之后才进 HRTF、早期反射和 FDN，本来就是高通过的信号。HRTF 在 80 Hz 以下的均衡增益保持 1，测得各方向 40–63 Hz 约 0 dB。FDN 脉冲响应在这些频段约 −30 dB，不是抬升来源。低频旁路再对齐正前方 HRIR 的峰值（约 0.5 ms），避免和空间化高通在分频点附近对消。音色保护的范围从 400 Hz 放到 40 Hz；左右耳仍是同一类校正，只在单声道下混和耳功率被去相关拉开超过 4 dB 的频段上，把少量侧向能量移回中间。",
+        "- **D9**：`run_p0.py` 可以只渲染指定类别、路线、强度、HRTF、均衡和块大小。三种块大小写在同一个 `--block-size` 里时，会打印两两之间的峰值误差。",
         "",
         "- **D1 上混**：STFT 时频点先做时间一阶平滑和频率平滑，再算归一化互谱。相干性只决定直达掩码；电平比只估计直达成分的方位。不相关的部分拆成侧向一对（±90°）和后方一对（±130°），不再收成单声道。",
         "- **D2 音色**：高频损失来自未平滑的均衡逆滤波器被截断，以及 FDN 一阶低通（约 3 kHz）在响度匹配后把 4–16 kHz 一起拉低。均衡改为 1/3 倍频程平滑的最小相位逆滤波，并限制每方向功率补偿。FDN 低通抬到约 12 kHz。样片在第一次响度匹配之后做左右相同的最小相位 1/3 倍频程保护，再匹配一次。真峰值只压少数尖峰，避免整段增益把高频重新拉开。",
@@ -712,10 +876,12 @@ def _write_report(commands, failures, metrics, versions, elapsed, registry) -> N
         "",
         "## 3. 真实素材样片",
         "",
-        "人声、音乐、环境音各一段真实录音，等响度后的 IACC 与 4–16 kHz 偏差。环境音原声并不是几乎不相关（雨声 IACC 约 0.29），≤ 0.4 的硬验收用合成环境音。",
+        "人声、音乐、环境音各一段真实录音。`40–16 kHz` 是审查用的单声道下混 1/3 倍频程偏差（去掉整体电平差）。`4–16 kHz` 仍是左右耳功率相加。环境音原声并不是几乎不相关（雨声 IACC 约 0.29），≤ 0.4 的硬验收用合成环境音。",
         "",
-        "| 文件 | 路线 | 强度 | IACC | HF max dB | LUFS | dBTP |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        f"LR4 分频器低通加高通，20 Hz–20 kHz 幅度偏差 `{_fmt((metrics.get('crossover') or {}).get('max_abs_db'), 4)}` dB（验收 ±0.5 dB）。",
+        "",
+        "| 文件 | 路线 | 强度 | IACC | 40–16 kHz | 4–16 kHz | LUFS | dBTP |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     rows = []
     for name, row in (metrics.get("samples") or {}).items():
@@ -724,7 +890,7 @@ def _write_report(commands, failures, metrics, versions, elapsed, registry) -> N
         rows.append((name, row))
     for name, row in sorted(rows, key=lambda it: (it[1].get("category") or "", it[1].get("route") or "", it[1].get("strength") or 0)):
         lines.append(
-            f"| `{name}` | {row.get('route')} | {row.get('strength')} | {_fmt(row.get('iacc'))} | {_fmt(row.get('hf_max_abs_db'), 2)} | {_fmt(row.get('loudness_lufs'), 2)} | {_fmt(row.get('true_peak_dbtp'), 2)} |"
+            f"| `{name}` | {row.get('route')} | {row.get('strength')} | {_fmt(row.get('iacc'))} | {_fmt(row.get('tone_max_abs_db_40_16k'), 2)} | {_fmt(row.get('hf_max_abs_db'), 2)} | {_fmt(row.get('loudness_lufs'), 2)} | {_fmt(row.get('true_peak_dbtp'), 2)} |"
         )
 
     lines += [
@@ -768,6 +934,14 @@ def _write_report(commands, failures, metrics, versions, elapsed, registry) -> N
         "cd prototypes && uv sync && uv run python run_p0.py",
         "```",
         "",
+        "同一段音乐、路线 B、强度 0.4、KU100、正前方均衡，在 64／256／1024 三种块大小下各渲染一遍，并打印相互之间的最大峰值误差：",
+        "",
+        "```bash",
+        "cd prototypes && uv run python run_p0.py --only music --route B --strength 0.4 --hrtf thk_ku100 --eq frontal --block-size 64,256,1024 --out ../qa/p0/cursor/block_check",
+        "```",
+        "",
+        "本轮这条命令的退出码是 0。64 对 256 为 −302.2 dBFS，64 对 1024 为 −303.5 dBFS，256 对 1024 为 −304.3 dBFS。最大峰值误差 −302.2 dBFS。",
+        "",
         "| 步骤 | 退出码 |",
         "|---|---:|",
     ]
@@ -794,7 +968,7 @@ def _write_report(commands, failures, metrics, versions, elapsed, registry) -> N
         for f in failures:
             lines.append(f"- {f}")
     else:
-        lines.append("D1–D4 的数值验收在本轮数据上通过。")
+        lines.append("D1–D4 与 D8 的数值验收在本轮数据上通过。")
     lines += [
         "",
         "## 8. 已知局限",
@@ -815,7 +989,7 @@ def _write_report(commands, failures, metrics, versions, elapsed, registry) -> N
         "4. 强度表放在数据文件里。`strength==0` 走旁路。侧向去相关增益不要做成干湿混合。",
         "5. 块一致性容差覆盖上混路径，CI 里查 `max_error_dbfs`。",
         "6. 3 阶 yaw 用完整旋转矩阵。MagLS 预计算成 FIR。",
-        "7. 音色保护如果留在产品里，必须放在响度匹配之后，并且左右耳用同一滤波器。",
+        "7. 音色保护如果留在产品里，必须放在响度匹配之后。分频用 LR4，状态从静止开始，不要用单位阶跃的 `sosfilt_zi`。低频旁路对齐 HRIR 峰值。",
         "",
         "## 10. 推荐",
         "",

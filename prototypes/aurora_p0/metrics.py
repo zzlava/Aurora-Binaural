@@ -149,6 +149,53 @@ def frontal_response_deviation(
     }
 
 
+def review_tone_deviation(
+    processed: np.ndarray,
+    reference: np.ndarray,
+    sr: int,
+    f_lo: float = 40.0,
+    f_hi: float = 16000.0,
+) -> dict:
+    """1/3-octave deviation used by the P0 review.
+
+    Spectrum is the power of (L+R)/2. One median across 20 Hz–Nyquist is
+    removed so an overall level difference is not counted as coloration.
+    """
+    n = min(processed.shape[1], reference.shape[1])
+
+    def levels(x: np.ndarray) -> dict[float, float]:
+        mono = np.mean(np.asarray(x[:, :n], dtype=np.float64), axis=0)
+        spec = np.abs(np.fft.rfft(mono)) ** 2
+        freqs = np.fft.rfftfreq(mono.shape[0], d=1.0 / sr)
+        centers = 1000.0 * (2.0 ** (np.arange(-17, 15) / 3.0))
+        out: dict[float, float] = {}
+        for fc in centers:
+            if fc * 2.0 ** (1.0 / 6.0) >= sr / 2.0:
+                break
+            if fc < 20.0:
+                continue
+            sel = (freqs >= fc * 2.0 ** (-1.0 / 6.0)) & (freqs < fc * 2.0 ** (1.0 / 6.0))
+            if np.any(sel):
+                out[float(fc)] = float(10.0 * np.log10(np.mean(spec[sel]) + 1e-30))
+        return out
+
+    wet, dry = levels(processed), levels(reference)
+    dev = {fc: wet[fc] - dry[fc] for fc in wet if fc in dry}
+    if not dev:
+        return {"max_abs_db": float("nan"), "within_pm3db": False, "offset_db": 0.0, "delta_db": []}
+    offset = float(np.median(list(dev.values())))
+    band = [(fc, v - offset) for fc, v in dev.items() if f_lo <= fc <= f_hi]
+    deltas = [v for _, v in band]
+    max_abs = float(np.max(np.abs(deltas))) if deltas else float("nan")
+    return {
+        "centers_hz": [fc for fc, _ in band],
+        "delta_db": deltas,
+        "offset_db": offset,
+        "max_abs_db": max_abs,
+        "within_pm3db": bool(deltas and max_abs <= 3.0),
+    }
+
+
 def band_deltas_db(
     processed: np.ndarray,
     reference: np.ndarray,
