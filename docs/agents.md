@@ -36,3 +36,8 @@
 - 涉及工作区的操作由 macOS 上的派单器完成：prepare-agent（准备代理分支）、merge（合并到 main）、tag、push、init-lfs。
 - 两个代理克隆的 `lfs.storage` 指向主仓库的 `.git/lfs`，LFS 对象共用一份，取回分支时不会缺少对象。
 - 代理克隆的 origin 是相对路径 `../..`（即主仓库），macOS 和虚拟机两侧都能解析。
+
+## Cursor 账号与模型（2026-10-16）
+
+- 账号：已切换为 Premium 账号（`agent status` 显示 sevava0405@gmail.com）。之前登录的免费账号在 P0-cursor-01 运行中途撞到用量上限。
+- 模型选择（由 Claude 决定）：算法任务默认用 `gpt-5.6-sol-high`。理由：推理能力强，而且和验收方 Claude 不是同一模型家族，可以减少编码与审查出现相同盲点的风险。普通任务可以降到 `gpt-5.3-codex`。每次派单的模型都记录在 run-agent 日志的第一行。
