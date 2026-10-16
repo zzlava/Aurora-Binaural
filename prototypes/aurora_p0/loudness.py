@@ -43,25 +43,48 @@ def third_octave_centers(f_lo: float = 4000.0, f_hi: float = 16000.0) -> list[fl
     return centers
 
 
-def equal_loudness_timbre(
+def broadband_loudness_match(
+    stereo: np.ndarray, sr: int, target_lufs: float = -20.0, ceiling_dbtp: float = -1.0
+) -> tuple[np.ndarray, float, float, float]:
+    """One scalar gain. Loudness target, then a second scalar only if true-peak clips.
+
+    This is the only level match allowed on delivery samples. It does not
+    change spectral shape. Returns (audio, lufs_before, lufs_after, gain_db).
+    """
+    before = integrate_loudness(stereo, sr)
+    if not np.isfinite(before):
+        return stereo.copy(), before, before, 0.0
+    gain_db = target_lufs - before
+    out = np.asarray(stereo, dtype=np.float64) * (10.0 ** (gain_db / 20.0))
+    tp = true_peak_dbtp(out, sr)
+    if np.isfinite(tp) and tp > ceiling_dbtp:
+        trim = ceiling_dbtp - tp
+        gain_db += trim
+        out *= 10.0 ** (trim / 20.0)
+    after = integrate_loudness(out, sr)
+    return out, before, after, gain_db
+
+
+def diagnostic_equal_loudness_timbre(
     wet: np.ndarray,
     dry: np.ndarray,
     sr: int,
     target_lufs: float = -20.0,
 ) -> tuple[np.ndarray, float, float, dict]:
-    """Loudness-match, pull 1/3-octave shape toward the dry file, match again.
+    """DIAGNOSTIC ONLY. Do not use for delivery samples or reported metrics.
 
-    The second match is a single gain. The guard covers 40 Hz–16 kHz so a
-    crossover-region error is not left under the old 400 Hz fade.
+    Fits a minimum-phase 1/3-octave curve to this specific dry file. That
+    depends on the input signal, so it cannot run in the realtime engine.
+    Delivery timbre correction is the fixed filter inside ``Processor``.
     """
     wet1, before, _ = match_loudness(wet, sr, target_lufs)
     dry1, _, _ = match_loudness(dry, sr, target_lufs)
-    guarded, info = timbre_guard(wet1, dry1, sr, f_lo=40.0, f_hi=16000.0)
+    guarded, info = diagnostic_timbre_guard(wet1, dry1, sr, f_lo=40.0, f_hi=16000.0)
     final, _, after = match_loudness(guarded, sr, target_lufs)
     return final, before, after, info
 
 
-def timbre_guard(
+def diagnostic_timbre_guard(
     wet: np.ndarray,
     dry: np.ndarray,
     sr: int,
@@ -69,7 +92,10 @@ def timbre_guard(
     f_hi: float = 16000.0,
     max_db: float = 18.0,
 ) -> tuple[np.ndarray, dict]:
-    """Minimum-phase 1/3-octave timbre EQ from 40 Hz to 16 kHz.
+    """DIAGNOSTIC ONLY. Do not use for delivery samples or reported metrics.
+
+    Minimum-phase 1/3-octave timbre EQ from 40 Hz to 16 kHz, fit to this
+    dry file. Signal-dependent, so it is not part of the render chain.
 
     A common gain (same on both ears) recenters level. Where decorrelation
     has pushed the mono downmix and the ear-power sum more than 4 dB apart,

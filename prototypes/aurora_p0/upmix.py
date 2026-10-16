@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.fft import irfft, rfft
-from scipy.signal import lfilter
 
 
 N_FFT = 1024
@@ -40,6 +39,15 @@ class StreamingUpmixer:
         tau_s: float = 0.040,
         wide_deg: float = 90.0,
         rear_deg: float = 130.0,
+        coherence_floor: float = 0.22,
+        coherence_power: float = 2.0,
+        pan_gamma: float = 1.0,
+        direct_bleed: float = 0.0,
+        hf_pan_floor: float = 1.0,
+        hf_pan_start_hz: float = 3000.0,
+        hf_pan_end_hz: float = 8000.0,
+        hf_direct_start_hz: float = 0.0,
+        hf_direct_end_hz: float = 0.0,
     ):
         if hop <= 0 or n_fft < hop or (n_fft % hop) != 0:
             raise ValueError(f"n_fft {n_fft} must be a multiple of hop {hop}")
@@ -51,8 +59,26 @@ class StreamingUpmixer:
         self.ambient_mix = float(np.clip(ambient_mix, 0.0, 1.0))
         self.wide_deg = float(wide_deg)
         self.rear_deg = float(rear_deg)
+        self.coherence_floor = float(np.clip(coherence_floor, 0.0, 0.95))
+        self.coherence_power = float(max(coherence_power, 0.25))
+        self.pan_gamma = float(max(pan_gamma, 0.05))
+        self.direct_bleed = float(np.clip(direct_bleed, 0.0, 0.9))
+        self.hf_pan_floor = float(np.clip(hf_pan_floor, 0.0, 1.0))
+        self.hf_pan_start_hz = float(hf_pan_start_hz)
+        self.hf_pan_end_hz = float(hf_pan_end_hz)
+        self.hf_direct_start_hz = float(hf_direct_start_hz)
+        self.hf_direct_end_hz = float(hf_direct_end_hz)
         self.hann = _periodic_hann(self.n_fft)
         self.aw = np.sqrt(self.hann)
+        # Steady overlap of the synthesis window. The first window has a
+        # partial sum; dividing by it undoes the fade and turns any
+        # modified-spectrum edge sample into a click. That click is the
+        # whole high-frequency error on material that has no real HF.
+        probe = np.zeros(self.n_fft + self.hop * 8, dtype=np.float64)
+        for i in range(8):
+            start = i * self.hop
+            probe[start : start + self.n_fft] += self.hann
+        self._w_steady = float(np.max(probe))
         self.alpha = float(1.0 - np.exp(-self.hop / (tau_s * self.sr)))
         if self.width_deg < 5.0:
             self.sector_az = np.array([0.0], dtype=np.float64)
@@ -119,7 +145,16 @@ class StreamingUpmixer:
             pieces.append(self._synth(spec_l * m_amb))
             pieces.append(self._synth(spec_r * m_amb))
             mono = _mono_spectrum(spec_l * m_dir, spec_r * m_dir)
-            weights = _sector_weights(g, self.sector_az, self.width_deg)
+            weights = _sector_weights(
+                g,
+                self.sector_az,
+                self.width_deg,
+                self.pan_gamma,
+                sr=self.sr,
+                hf_floor=self.hf_pan_floor,
+                hf_start_hz=self.hf_pan_start_hz,
+                hf_end_hz=self.hf_pan_end_hz,
+            )
             for s in range(self.n_sectors):
                 pieces.append(self._synth(mono * weights[:, s]))
             stacked = np.stack(pieces, axis=0)
@@ -148,9 +183,13 @@ class StreamingUpmixer:
 
     def _masks(self, phi: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         # Single-frame coherence is identically 1; the smoother's noise floor
-        # for uncorrelated bins sits near ~0.2. Gate it, then square so only
-        # clearly coherent bins become direct.
-        m_dir = np.clip((phi - 0.22) / 0.78, 0.0, 1.0) ** 2
+        # for uncorrelated bins sits near ~0.2. ``coherence_floor`` (preset)
+        # is that gate. ``direct_bleed`` moves a strength-scaled fraction of
+        # the direct mask onto the rear bed so ambient_ratio actually widens
+        # coherent music, instead of only repartitioning the residual.
+        floor = self.coherence_floor
+        span = max(1.0 - floor, 1e-3)
+        m_dir = np.clip((phi - floor) / span, 0.0, 1.0) ** self.coherence_power
         if self._prev_mdir is None:
             self._prev_mdir = m_dir.copy()
         else:
@@ -158,8 +197,22 @@ class StreamingUpmixer:
             m_dir = self._prev_mdir + delta
             self._prev_mdir = m_dir
         incoh = 1.0 - m_dir
-        m_amb = incoh * self.ambient_mix
+        bleed = self.direct_bleed
+        m_amb = incoh * self.ambient_mix + m_dir * bleed
         m_wide = incoh * (1.0 - self.ambient_mix)
+        m_dir = m_dir * (1.0 - bleed)
+        # Above hf_direct_start_hz the mask fades to a frontal direct object.
+        # Lateral HRTFs darken a quiet top octave in the mono downmix; voice
+        # is already frontal there, so the fade only moves the incoherent bed.
+        # The ramp depends on bin frequency, not on the program spectrum.
+        start = self.hf_direct_start_hz
+        end = self.hf_direct_end_hz
+        if end > start + 1.0:
+            freqs = np.fft.rfftfreq(self.n_fft, 1.0 / self.sr)
+            t = np.clip((freqs - start) / (end - start), 0.0, 1.0)
+            m_dir = (1.0 - t) * m_dir + t
+            m_wide = m_wide * (1.0 - t)
+            m_amb = m_amb * (1.0 - t)
         return m_dir, m_wide, m_amb
 
     def _overlap(self, start: int, frames: np.ndarray) -> None:
@@ -193,7 +246,10 @@ class StreamingUpmixer:
                 continue
             w = self._w[local]
             if w > 1e-12:
-                out[:, i] = self._acc[:, local] / w
+                # Never divide by a partial overlap. Steady state is unchanged
+                # (w == _w_steady). The file edges keep the natural window fade
+                # instead of an amplified startup impulse.
+                out[:, i] = self._acc[:, local] / max(w, self._w_steady)
         self._read += n
         return out
 
@@ -231,6 +287,17 @@ def streaming_upmix_file(
     block: int,
     width_deg: float = 30.0,
     ambient_mix: float = 1.0,
+    wide_deg: float = 90.0,
+    rear_deg: float = 130.0,
+    coherence_floor: float = 0.22,
+    coherence_power: float = 2.0,
+    pan_gamma: float = 1.0,
+    direct_bleed: float = 0.0,
+    hf_pan_floor: float = 1.0,
+    hf_pan_start_hz: float = 3000.0,
+    hf_pan_end_hz: float = 8000.0,
+    hf_direct_start_hz: float = 0.0,
+    hf_direct_end_hz: float = 0.0,
     **kwargs,
 ) -> dict[str, np.ndarray | float]:
     """Run the streaming upmixer over ``left``/``right`` in fixed-size blocks."""
@@ -238,7 +305,23 @@ def streaming_upmix_file(
     right = np.asarray(right, dtype=np.float64).ravel()
     n = min(left.shape[0], right.shape[0])
     left, right = left[:n], right[:n]
-    up = StreamingUpmixer(sr, width_deg=width_deg, ambient_mix=ambient_mix, **kwargs)
+    up = StreamingUpmixer(
+        sr,
+        width_deg=width_deg,
+        ambient_mix=ambient_mix,
+        wide_deg=wide_deg,
+        rear_deg=rear_deg,
+        coherence_floor=coherence_floor,
+        coherence_power=coherence_power,
+        pan_gamma=pan_gamma,
+        direct_bleed=direct_bleed,
+        hf_pan_floor=hf_pan_floor,
+        hf_pan_start_hz=hf_pan_start_hz,
+        hf_pan_end_hz=hf_pan_end_hz,
+        hf_direct_start_hz=hf_direct_start_hz,
+        hf_direct_end_hz=hf_direct_end_hz,
+        **kwargs,
+    )
     parts: list[dict[str, np.ndarray]] = []
     for start in range(0, n, block):
         end = min(start + block, n)
@@ -261,20 +344,60 @@ def streaming_upmix_file(
     return out
 
 
+# Off the 5 ms and 8 ms autocorrelation peaks of the music side-signal
+# (92% of its power is 500 Hz–2 kHz). A pure delay longer than the ±1 ms
+# IACC window drops that correlation; cascaded Schroeder allpasses do not,
+# because their group-delay difference still lines up inside the window.
+# ``prepare`` overwrites this from the preset.
+DEFAULT_DELAYS_MS = (
+    3.2,
+    6.4,
+    10.0,
+    13.5,
+    4.4,
+    7.6,
+    11.2,
+    14.8,
+    3.8,
+    6.0,
+    9.2,
+    12.4,
+)
+_DELAYS_MS: tuple[float, ...] = DEFAULT_DELAYS_MS
+
+
+def set_decorrelation_delays(delays_ms: list[float] | tuple[float, ...]) -> None:
+    """Install the preset delay table. Fixed: seed and sample rate only."""
+    global _DELAYS_MS
+    vals = tuple(float(v) for v in delays_ms)
+    if not vals:
+        raise ValueError("decorrelation delay table is empty")
+    _DELAYS_MS = vals
+
+
 def decorrelate(x: np.ndarray, sr: int, seed: int, n_ap: int = 4) -> np.ndarray:
-    """Seeded cascaded allpass. Magnitude response is unity."""
-    rng = np.random.default_rng(seed)
-    y = np.asarray(x, dtype=np.float64).copy()
-    for _ in range(n_ap):
-        d = int(rng.integers(int(0.002 * sr), int(0.011 * sr)))
-        g = float(rng.uniform(0.4, 0.7))
-        b = np.zeros(d + 1)
-        a = np.zeros(d + 1)
-        b[0] = -g
-        b[d] = 1.0
-        a[0] = 1.0
-        a[d] = -g
-        y = lfilter(b, a, y)
+    """Seeded interaural delay. Magnitude is unity; the seed picks the tap.
+
+    ``n_ap`` is accepted so older call sites keep working. The allpass cascade
+    it used to select is gone: on this music it left the side-bus IACC at
+    about 0.47, so adding it did not widen the mix.
+
+    Not signal-dependent. Do not retune the delays from a delivery file.
+    """
+    del n_ap  # preset table, not a per-call allpass count
+    x = np.asarray(x, dtype=np.float64).ravel()
+    delays = _DELAYS_MS
+    ms = delays[int(seed) % len(delays)]
+    d = int(round(ms * 1e-3 * sr))
+    y = np.zeros(x.shape[0], dtype=np.float64)
+    if d <= 0:
+        y[:] = x
+    elif d < y.shape[0]:
+        y[d:] = x[:-d]
+    # Consecutive seeds (the L/R pair) land on opposite signs often enough
+    # that the mono sum is a difference, not a doubled comb peak.
+    if (int(seed) // 7) % 2 == 0:
+        y *= -1.0
     return y
 
 
@@ -308,15 +431,41 @@ def _mono_spectrum(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     return np.sqrt(power) * phase
 
 
-def _sector_weights(g: np.ndarray, centers: np.ndarray, width_deg: float) -> np.ndarray:
-    """Constant-power weights (n_bins, n_sectors) from pan index g in [-1, 1]."""
+def _sector_weights(
+    g: np.ndarray,
+    centers: np.ndarray,
+    width_deg: float,
+    pan_gamma: float = 1.0,
+    sr: int = 48_000,
+    hf_floor: float = 1.0,
+    hf_start_hz: float = 3000.0,
+    hf_end_hz: float = 8000.0,
+) -> np.ndarray:
+    """Constant-power weights (n_bins, n_sectors) from pan index g in [-1, 1].
+
+    ``pan_gamma`` < 1 expands small left/right imbalances toward the outer
+    sectors (still inside ±width). g = 0 stays at the center sector.
+
+    Above ``hf_start_hz`` the azimuth scale falls to ``hf_floor``. A wide
+    coherent sum is what lifts a quiet top octave; collapsing only that
+    region leaves the 500 Hz–2 kHz image, which is where IACC lives, alone.
+    """
     nbin = g.shape[0]
     n_sec = centers.shape[0]
     weights = np.zeros((nbin, n_sec), dtype=np.float64)
     if n_sec == 1 or width_deg < 5.0:
         weights[:, 0] = 1.0
         return weights
-    az = g * width_deg
+    gamma = float(max(pan_gamma, 0.05))
+    if hf_floor < 0.999:
+        freqs = np.fft.rfftfreq((nbin - 1) * 2, d=1.0 / float(sr))
+        if freqs.shape[0] != nbin:
+            freqs = np.linspace(0.0, float(sr) / 2.0, nbin)
+        span = max(float(hf_end_hz) - float(hf_start_hz), 1.0)
+        t = np.clip((freqs - float(hf_start_hz)) / span, 0.0, 1.0)
+        g = g * (1.0 - (1.0 - float(hf_floor)) * t)
+    g_map = np.sign(g) * (np.abs(g) ** gamma)
+    az = g_map * width_deg
     span = centers[-1] - centers[0]
     pos = (az - centers[0]) / (span / (n_sec - 1))
     i0 = np.clip(np.floor(pos).astype(int), 0, n_sec - 2)

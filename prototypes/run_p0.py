@@ -32,7 +32,7 @@ from aurora_p0.assets import ensure_assets, sha256_file  # noqa: E402
 from aurora_p0.engine import Processor, RenderConfig, process_blocks_compare  # noqa: E402
 from aurora_p0.filters import crossover_magnitude_db  # noqa: E402
 from aurora_p0.hrtf import apply_equalization, load_sofa  # noqa: E402
-from aurora_p0.loudness import equal_loudness_timbre, match_loudness  # noqa: E402
+from aurora_p0.loudness import broadband_loudness_match, match_loudness  # noqa: E402
 from aurora_p0.metrics import (  # noqa: E402
     band_deltas_db,
     block_consistency_error,
@@ -148,13 +148,9 @@ def render_one(
     proc.prepare(SAMPLE_RATE, block_size, conf)
     rendered = proc.process_file(stereo)
     stats = dict(proc.last_stats)
-    if strength <= 0.0:
-        matched, before, after = match_loudness(rendered, SAMPLE_RATE, TARGET_LUFS)
-        info = {}
-    else:
-        matched, before, after, info = equal_loudness_timbre(
-            rendered, stereo, SAMPLE_RATE, TARGET_LUFS
-        )
+    # Delivery samples: one broadband gain. No per-file timbre match.
+    matched, before, after, _gain_db = broadband_loudness_match(rendered, SAMPLE_RATE, TARGET_LUFS)
+    info = {}
     bands = band_deltas_db(matched, dry_matched, SAMPLE_RATE)
     tone = review_tone_deviation(matched, dry_matched, SAMPLE_RATE)
     row = {
@@ -702,58 +698,12 @@ def _license_guess(name: str) -> str:
 
 
 def _write_presets() -> None:
-    presets_dir = ROOT / "presets"
-    presets_dir.mkdir(parents=True, exist_ok=True)
-    content = """# Aurora Binaural presets (P0 draft)
-# Endpoints are strength=1. strength.py also applies a floor so that
-# strength 0.4 already clears the music IACC cap (dry + 0.1):
-# width starts at 48° (not 30°) and side_decor_gain starts at 2.05.
-# s=0 is still a full bypass. This is wider than the plan §6.8 example
-# (±30° → ±60°) because HRTF crossfeed at ±30–60° lifts music IACC.
+    """Presets live in presets/p0_draft.toml and are not regenerated here.
 
-version = 1
-
-[room]
-name = "自然空间"
-default_strength = 0.4
-width_deg_at_1 = 80.0
-ambient_ratio_at_1 = 1.0
-early_level_at_1 = 0.9
-late_level_at_1 = 0.7
-drr_offset_db_at_1 = -6.0
-side_decor_gain_at_1 = 2.4
-t60 = 0.35
-crossover_hz = 150.0
-eq_mode = "frontal"
-
-[surround]
-name = "包围感"
-default_strength = 0.5
-width_deg_at_1 = 90.0
-ambient_ratio_at_1 = 1.0
-early_level_at_1 = 1.0
-late_level_at_1 = 0.85
-drr_offset_db_at_1 = -8.0
-side_decor_gain_at_1 = 2.6
-t60 = 0.55
-crossover_hz = 150.0
-eq_mode = "frontal"
-
-[orbit]
-name = "缓慢环绕"
-default_strength = 0.3
-width_deg_at_1 = 70.0
-ambient_ratio_at_1 = 0.85
-early_level_at_1 = 0.6
-late_level_at_1 = 0.5
-drr_offset_db_at_1 = -4.0
-side_decor_gain_at_1 = 2.2
-orbit_deg_per_sec = 8.0
-t60 = 0.4
-crossover_hz = 150.0
-eq_mode = "frontal"
-"""
-    (presets_dir / "p0_draft.toml").write_text(content, encoding="utf-8")
+    P0-cursor-04 stores the strength curve and the fixed EQ in that file.
+    Rewriting it from this script would drop the correction coefficients.
+    """
+    return
 
 
 def _write_partial_report(commands, failures, t0):

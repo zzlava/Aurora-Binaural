@@ -6,16 +6,38 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from scipy.signal import fftconvolve
+from scipy.signal import butter, fftconvolve, sosfilt
+
+
+def _band_lift(rows: np.ndarray, sr: int, lo: float, hi: float, gain_db: float) -> np.ndarray:
+    """Add a band-limited copy so a bed can be lifted without touching the direct objects."""
+    gain = 10.0 ** (float(gain_db) / 20.0)
+    sos = butter(2, [float(lo), float(hi)], btype="band", fs=int(sr), output="sos")
+    out = np.empty_like(rows, dtype=np.float64)
+    for i in range(rows.shape[0]):
+        band = sosfilt(sos, np.asarray(rows[i], dtype=np.float64))
+        out[i] = rows[i] + (gain - 1.0) * band
+    return out
+
+
+def _high_shelf_rows(rows: np.ndarray, sr: int, hz: float, gain_db: float) -> np.ndarray:
+    """Approximate high shelf: unity below ``hz``, ``gain_db`` well above it."""
+    gain = 10.0 ** (float(gain_db) / 20.0)
+    sos = butter(2, float(hz), btype="high", fs=int(sr), output="sos")
+    out = np.empty_like(rows, dtype=np.float64)
+    for i in range(rows.shape[0]):
+        high = sosfilt(sos, np.asarray(rows[i], dtype=np.float64))
+        out[i] = rows[i] + (gain - 1.0) * high
+    return out
 
 from . import CROSSOVER_HZ, SAMPLE_RATE
 from .ambisonics import MagLSDecoder, encode_plane_wave, rotate_yaw
 from .filters import BlockCrossover, delay_buffer
+from .fixed_eq import apply_stereo, minphase_from_bands
 from .hrtf import HrtfDataset, apply_equalization, interpolate_hrir, load_sofa
-from .loudness import timbre_guard
 from .room import EarlyReflections, FDNReverb, RoomParams
 from .strength import StrengthParams, map_strength
-from .upmix import decorrelate, streaming_upmix_file
+from .upmix import decorrelate, set_decorrelation_delays, streaming_upmix_file
 
 # Process-wide caches (seeded / path-keyed) to keep the sample matrix tractable
 _HRTF_CACHE: dict[tuple, HrtfDataset] = {}
@@ -42,7 +64,11 @@ class RenderConfig:
     hrtf_name: str = "thk_ku100"
     eq_mode: str = "frontal"
     directional_power: bool = True
+    # Ignored. diagnostic_timbre_guard() fits each file to its own dry
+    # reference and must not run on the delivery path. Timbre correction is
+    # the fixed FIR from the preset (HRTF, eq mode, preset, strength).
     timbre_guard: bool = False
+    apply_fixed_eq: bool = True
     seed: int = 20261016
     block_size: int = 512
     sample_rate: int = SAMPLE_RATE
@@ -67,6 +93,7 @@ class Processor:
         self.last_stats: dict = {}
         self._spatial_latency = 0
         self._hrir_delay = 0
+        self._eq_fir: np.ndarray | None = None
 
     def prepare(self, sample_rate: int, max_block: int, config: RenderConfig) -> None:
         if sample_rate != SAMPLE_RATE:
@@ -81,9 +108,26 @@ class Processor:
             sample_rate,
             config.directional_power,
         )
-        self.params = map_strength(config.strength, config.preset)
-        self.xo = BlockCrossover(2, sample_rate, config.crossover_hz)
-        t60 = 0.35 if config.preset != "surround" else 0.55
+        self.params = map_strength(config.strength, config.preset, config.hrtf_name)
+        if self.params.delays_ms:
+            set_decorrelation_delays(self.params.delays_ms)
+        self._eq_fir = None
+        if (
+            config.apply_fixed_eq
+            and not self.params.bypass
+            and self.params.eq_gain_db
+            and self.params.eq_bands_hz
+        ):
+            self._eq_fir = minphase_from_bands(
+                np.asarray(self.params.eq_bands_hz),
+                np.asarray(self.params.eq_gain_db),
+                sample_rate,
+                taps=512,
+                nfft=8192,
+            )
+        crossover = self.params.crossover_hz or config.crossover_hz
+        self.xo = BlockCrossover(2, sample_rate, crossover)
+        t60 = self.params.t60
         room = RoomParams(seed=config.seed, t60=t60)
         self.er = EarlyReflections(sample_rate, room)
         self.fdn = FDNReverb(sample_rate, room)
@@ -134,6 +178,12 @@ class Processor:
 
     def _conv_mono(self, mono: np.ndarray, az: float, el: float = 0.0) -> np.ndarray:
         hl, hr = self._hrir(az, el)
+        # Near-frontal HRIRs only. A common post-EQ cannot lift a dark
+        # frontal mono-downmix without also lifting a bright lateral bed.
+        shelf_db = float(getattr(self.params, "frontal_hf_shelf_db", 0.0))
+        if abs(shelf_db) > 0.05 and abs(float(az)) <= float(getattr(self.params, "frontal_hf_shelf_az", 35.0)):
+            stacked = _high_shelf_rows(np.stack([hl, hr]), self.cfg.sample_rate, self.params.frontal_hf_shelf_hz, shelf_db)
+            hl, hr = stacked[0], stacked[1]
         n = mono.shape[0]
         yl = fftconvolve(mono, hl, mode="full")[:n]
         yr = fftconvolve(mono, hr, mode="full")[:n]
@@ -179,7 +229,20 @@ class Processor:
         side = 0.5 * (high[0] - high[1])
         d1 = decorrelate(side, self.cfg.sample_rate, self.cfg.seed + 11)
         d2 = decorrelate(side, self.cfg.sample_rate, self.cfg.seed + 12)
-        return np.stack([g * d1, g * d2], axis=0)
+        pair = np.stack([g * d1, g * d2], axis=0)
+        # Raised-cosine fade, zero phase. A minimum-phase lowpass moves the
+        # interaural delay back inside the ±1 ms IACC window and the mix
+        # collapses. The cutoff is a preset constant.
+        hz = float(self.params.side_lpf_hz)
+        if hz > 1000.0:
+            faded = []
+            for row in pair:
+                spec = np.fft.rfft(row)
+                freqs = np.fft.rfftfreq(row.shape[0], 1.0 / self.cfg.sample_rate)
+                weight = 1.0 - np.clip((freqs - (hz - 500.0)) / 1000.0, 0.0, 1.0)
+                faded.append(np.fft.irfft(spec * weight, n=row.shape[0]))
+            pair = np.stack(faded, axis=0)
+        return pair
 
     def _run_upmix(self, high: np.ndarray) -> dict:
         assert self.cfg and self.params
@@ -190,6 +253,17 @@ class Processor:
             block=self.cfg.block_size,
             width_deg=self.params.width_deg,
             ambient_mix=self.params.ambient_ratio,
+            wide_deg=self.params.wide_deg,
+            rear_deg=self.params.rear_deg,
+            coherence_floor=self.params.coherence_floor,
+            coherence_power=self.params.coherence_power,
+            pan_gamma=self.params.pan_gamma,
+            direct_bleed=self.params.direct_bleed,
+            hf_pan_floor=self.params.hf_pan_floor,
+            hf_pan_start_hz=self.params.hf_pan_start_hz,
+            hf_pan_end_hz=self.params.hf_pan_end_hz,
+            hf_direct_start_hz=self.params.hf_direct_start_hz,
+            hf_direct_end_hz=self.params.hf_direct_end_hz,
         )
 
     def process_file(self, stereo: np.ndarray) -> np.ndarray:
@@ -213,11 +287,24 @@ class Processor:
         # low and high arms meet about 0.5 ms apart and cancel near 150 Hz.
         align = int(self._spatial_latency) + int(self._hrir_delay)
         low_out = delay_buffer(low_out, align)
-        mixed = spat + low_out
+        # The high image is already scaled by the DRR gain inside each route.
+        # The bypassed bass has to take the same gain, or strength reads as a
+        # bass shelf once the median level is removed.
+        drr_lin = 10 ** (self.params.drr_offset_db / 20.0)
+        mixed = spat + low_out * drr_lin
+        # The delay drops the input tail and the unwindowed 1/3-octave
+        # metric reads that new endpoint as a high-frequency error. Crossfade
+        # the last few milliseconds back to the input at the same DRR gain.
+        # Fixed length, not a timbre match.
+        n_tail = min(128, mixed.shape[1] // 8)
+        if n_tail > 8 and stereo.shape[1] == mixed.shape[1]:
+            fade = np.linspace(0.0, 1.0, n_tail)
+            tail = stereo[:, -n_tail:] * drr_lin
+            mixed[:, -n_tail:] = mixed[:, -n_tail:] * (1.0 - fade) + tail * fade
         self._latency = align
-        if self.cfg.timbre_guard:
-            mixed, info = timbre_guard(mixed, stereo, self.cfg.sample_rate)
-            self.last_stats["timbre_guard"] = info
+        if self._eq_fir is not None:
+            mixed = apply_stereo(mixed, self._eq_fir)
+            self.last_stats["fixed_eq_max_db"] = float(np.max(np.abs(self.params.eq_gain_db)))
         total = float(np.sqrt(np.mean(mixed**2)) + 1e-12)
         rear = float(self.last_stats.get("rear_bus_rms", 0.0))
         room = float(self.last_stats.get("room_bus_rms", 0.0))
@@ -260,6 +347,12 @@ class Processor:
         self._spatial_latency = int(up["latency"])
         self.last_stats["coherence_mean"] = float(up["coherence_mean"])
         sectors = np.asarray(up["sectors"])
+        # Fixed shelf on the direct objects only. Incoherent beds stay put,
+        # so a quiet coherent top octave can be lifted without brightening
+        # an ambience bed that is already hot there.
+        shelf_db = float(self.params.direct_hf_shelf_db)
+        if abs(shelf_db) > 0.05:
+            sectors = _high_shelf_rows(sectors, self.cfg.sample_rate, self.params.direct_hf_shelf_hz, shelf_db)
         azs = np.asarray(up["sector_azimuths"], dtype=np.float64)
         direct = np.zeros((2, high.shape[1]), dtype=np.float64)
         for s, az in enumerate(azs):
@@ -286,6 +379,15 @@ class Processor:
             rear_only = self._conv_mono(amb_l, rear_deg) + self._conv_mono(amb_r, -rear_deg)
             rear_bi = wide_bi + rear_only
         self.last_stats["rear_bus_rms"] = float(np.sqrt(np.mean(rear_only**2)))
+        peak_db = float(self.params.bed_peak_db)
+        if abs(peak_db) > 0.05:
+            rear_bi = _band_lift(
+                rear_bi,
+                self.cfg.sample_rate,
+                self.params.bed_peak_lo_hz,
+                self.params.bed_peak_hi_hz,
+                peak_db,
+            )
         image = direct + rear_bi + self._delay_side(high)
         return image, rear_only
 
