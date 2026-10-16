@@ -105,3 +105,53 @@ OrbStack 上的 `rust:1.99` 容器（`linux/arm64`）执行了 `cargo test -p au
 - `cargo fmt --all -- --check` 通过
 - `cargo clippy --all-targets -- -D warnings` 通过
 - `cargo test -p aurora-dsp --lib`：31 passed
+
+## P1a-cursor-02：HRIR pack 改走 Git LFS
+
+日期：2026-10-17。分支 `agent/cursor/P1a-01`。
+
+`data/hrtf/ku100_frontal.ahrp`（11,153,925 字节）和 `data/hrtf/sadie_d1_frontal.ahrp`（36,334,725 字节）原来在 `103b079` 里是普通 Git 对象。`.gitattributes` 增加了：
+
+```text
+*.ahrp filter=lfs diff=lfs merge=lfs -text
+```
+
+这条规则现在和其他二进制规则放在一起。`git lfs migrate` 会把它追加到被改写范围里最早那个提交的 `.gitattributes` 末尾，随后的提交再把它挪到二进制规则旁边。
+
+迁移命令：
+
+```text
+git lfs migrate import --include="*.ahrp" --include-ref=refs/heads/agent/cursor/P1a-01 --exclude-ref=refs/remotes/origin/main
+```
+
+不带 `--exclude-ref` 时，`--include-ref=refs/heads/agent/cursor/P1a-01` 会改写这个引用能到达的全部 35 个提交，`refs/heads/main` 和 `refs/heads/agent/cursor/P0-01` 也被一起更新。这两个引用已放回 `99b9055cd0965f6f087365a8b84d0f7b6bde499c` 和 `2420e16fb9bf4ad2f00083c7572bb935425a57c6`。`refs/remotes/origin/*` 没有变化。
+
+排除 `origin/main` 之后，只改写了本分支上尚未推送的 4 个提交。最老的那个提交的父提交仍是 `fd31dadd501ac0fcbde86250235eb478c1e4717c`（`origin/main`）。
+
+| 原提交 | 新提交 | 说明 |
+|---|---|---|
+| `3ecb5b2` | `3cac5c0` | `.gitattributes` 末尾加上 `*.ahrp` 规则 |
+| `103b079` | `1e4e210` | 两个 pack 换成 LFS 指针 |
+| `688012f` | `107c032` | 相对父提交的差异与原来相同 |
+| `b6cacaf` | `ea309b0` | 把 `*.ahrp` 规则挪到其他二进制规则旁边 |
+
+`git lfs ls-files`：
+
+```text
+0633b4df32 * data/hrtf/ku100_frontal.ahrp
+9c3482d6a5 * data/hrtf/sadie_d1_frontal.ahrp
+```
+
+`1e4e210` 的 `git log --stat` 里，这两个文件各是 3 行指针：
+
+```text
+data/hrtf/ku100_frontal.ahrp    | 3 +++
+data/hrtf/sadie_d1_frontal.ahrp | 3 +++
+```
+
+指针：
+
+- `ku100_frontal.ahrp`：`oid sha256:0633b4df3254a28d2c2b6365fbab18e0bdc18a3f6b16034b40ece374d3815da6`，`size 11153925`
+- `sadie_d1_frontal.ahrp`：`oid sha256:9c3482d6a53351bb9deba559ab4638cc8ba920e77731896b28cbe1e42e5526de`，`size 36334725`
+
+工作区文件已用 `git lfs checkout` 还原，SHA-256 与上面的 oid 一致。没有推送。
