@@ -29,3 +29,10 @@
 - macOS 26.7.1；Apple Git 2.50.1；gh 2.101.0，已登录 zzlava（https）；Python 3.14.7；uv；ffmpeg 9.0.2（Homebrew）
 - 缺少：git-lfs、Rust 工具链（rustup／cargo）
 - 远程：origin = https://github.com/zzlava/Aurora-Binaural.git，2026-10-16 首次推送 main 成功
+
+## LFS 与 Git 操作的分工（重要）
+
+- Claude 所在的虚拟机没有 git-lfs。为避免 LFS 文件被写成指针文本，虚拟机里只做只读的 Git 操作（log、diff、show、fetch）和纯文本文档的提交；不在虚拟机里 checkout、merge 或 add 任何 LFS 文件。
+- 涉及工作区的操作由 macOS 上的派单器完成：prepare-agent（准备代理分支）、merge（合并到 main）、tag、push、init-lfs。
+- 两个代理克隆的 `lfs.storage` 指向主仓库的 `.git/lfs`，LFS 对象共用一份，取回分支时不会缺少对象。
+- 代理克隆的 origin 是相对路径 `../..`（即主仓库），macOS 和虚拟机两侧都能解析。

@@ -10,6 +10,10 @@
 #   setup-remote  关联私有仓库 zzlava/Aurora-Binaural 并推送（远程已有提交时只抓取、不覆盖）
 #   push          推送 main、标签、agent/* 与 qa/* 分支（禁止 force）
 #   run-agent     在 .agents/<agent>/ 克隆中，用 docs/tasks/ 下的任务书调用代理 CLI
+#   init-lfs      在主仓库与代理克隆中安装 LFS 钩子，克隆共享主仓库的 LFS 存储
+#   prepare-agent 在 .agents/<agent>/ 克隆中基于最新 main 切出 agent/<agent>/* 分支（克隆必须干净）
+#   merge         把 agent/* 或 qa/* 分支以 --no-ff 合并到 main（主仓库必须干净；冲突则中止）
+#   tag           打阶段标签 pN-accepted 或 vX.Y.Z（不覆盖已有标签）
 #   cancel        结束指定任务
 # 结果写入 .aurora/results/<id>.log 与 <id>.status。
 # 本脚本修改后不会自动生效，需要用户重新启动（修改会出现在 git 提交里，便于审查）。
@@ -20,7 +24,7 @@ A="$ROOT/.aurora"; Q="$A/queue"; RUN="$A/running"; RES="$A/results"; DONE="$A/do
 mkdir -p "$Q" "$RUN" "$RES" "$DONE"
 REPO_SLUG="zzlava/Aurora-Binaural"
 POLL=5
-export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
+export PATH="$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.cursor/bin:$PATH"
 
 log(){ printf '%s %s\n' "$(date '+%F %T')" "$*"; }
 getf(){ sed -n "s/^$2=//p" "$1" | head -n1; }
@@ -97,6 +101,50 @@ do_agent(){ # agent task branch
   esac
 }
 
+do_init_lfs(){
+  command -v git-lfs >/dev/null || { echo "未安装 git-lfs"; return 30; }
+  git -C "$ROOT" lfs install --local || return 31
+  for ag in cursor antigravity; do
+    d="$ROOT/.agents/$ag"; [ -d "$d/.git" ] || continue
+    git -C "$d" config lfs.storage ../../../.git/lfs
+    git -C "$d" lfs install --local || return 31
+  done
+  echo "lfs ok"
+}
+
+do_prepare_agent(){ # agent branch
+  ag="$1"; branch="$2"; d="$ROOT/.agents/$ag"
+  [ -d "$d/.git" ] || git clone -q "$ROOT" "$d" || return 40
+  git -C "$d" remote set-url origin ../..
+  [ -z "$(git -C "$d" status --porcelain)" ] || { echo "克隆有未提交的修改，拒绝切换"; git -C "$d" status --short; return 41; }
+  git -C "$d" fetch -q origin || return 42
+  if git -C "$d" rev-parse --verify -q "refs/heads/$branch" >/dev/null; then
+    git -C "$d" checkout -q "$branch" || return 43
+    echo "已切换到已有分支 $branch（未重置）"
+  else
+    git -C "$d" checkout -q -b "$branch" origin/main || return 43
+    echo "已基于 origin/main 创建 $branch"
+  fi
+  git -C "$d" log --oneline -n1
+}
+
+do_merge(){ # branch
+  b="$1"
+  [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "主仓库不在 main"; return 50; }
+  [ -z "$(git -C "$ROOT" status --porcelain)" ] || { echo "主仓库有未提交修改，拒绝合并"; git -C "$ROOT" status --short; return 51; }
+  git -C "$ROOT" rev-parse --verify -q "refs/heads/$b" >/dev/null || { echo "分支不存在：$b"; return 52; }
+  if ! git -C "$ROOT" merge --no-ff --no-edit -m "merge: $b (accepted by Claude)" "$b"; then
+    git -C "$ROOT" merge --abort; echo "合并冲突，已中止"; return 53
+  fi
+  git -C "$ROOT" log --oneline -n3
+}
+
+do_tag(){ # name
+  t="$1"
+  git -C "$ROOT" rev-parse --verify -q "refs/tags/$t" >/dev/null && { echo "标签已存在：$t"; return 60; }
+  git -C "$ROOT" tag -a "$t" -m "$t" main && echo "已打标签 $t"
+}
+
 agent_busy(){ # agent self_id
   for j in "$RUN"/*.job; do
     [ -e "$j" ] || continue
@@ -127,6 +175,18 @@ handle(){
       fi
       if [ $code -eq 0 ] && agent_busy "$ag" "$id"; then echo "$ag 已有任务在运行" > "$out"; code=23; fi
       if [ $code -eq 0 ]; then log "[$id] 派单 $ag ← $task ($branch)"; do_agent "$ag" "$task" "$branch" > "$out" 2>&1; code=$?; fi ;;
+    init-lfs)     do_init_lfs > "$out" 2>&1; code=$? ;;
+    prepare-agent)
+      ag="$(getf "$job" agent)"; branch="$(getf "$job" branch)"
+      if [[ "$ag" =~ ^(cursor|antigravity)$ ]] && [[ "$branch" =~ ^agent/$ag/[A-Za-z0-9._-]+$ ]]; then
+        if agent_busy "$ag" "$id"; then echo "$ag 有任务在运行" > "$out"; code=23; else do_prepare_agent "$ag" "$branch" > "$out" 2>&1; code=$?; fi
+      else echo "非法参数：$ag $branch" > "$out"; code=22; fi ;;
+    merge)
+      b="$(getf "$job" branch)"
+      if [[ "$b" =~ ^(agent/(cursor|antigravity)|qa)/[A-Za-z0-9._-]+$ ]]; then do_merge "$b" > "$out" 2>&1; code=$?; else echo "非法分支：$b" > "$out"; code=22; fi ;;
+    tag)
+      t="$(getf "$job" name)"
+      if [[ "$t" =~ ^(p[0-9]+-accepted|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then do_tag "$t" > "$out" 2>&1; code=$?; else echo "非法标签：$t" > "$out"; code=22; fi ;;
     cancel)
       target="$(getf "$job" target)"
       if [[ "$target" =~ ^[A-Za-z0-9._-]+$ ]] && [ -f "$RES/$target.pid" ]; then
