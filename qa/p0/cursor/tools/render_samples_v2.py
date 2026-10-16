@@ -4,7 +4,7 @@
 The engine output is level-matched with one broadband gain (and a second
 scalar only if the true peak would pass -1 dBTP). No timbre guard.
 
-    prototypes/.venv/bin/python qa/tools/render_samples_v2.py
+    prototypes/.venv/bin/python qa/p0/cursor/tools/render_samples_v2.py
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from prototypes.aurora_p0.engine import Processor, RenderConfig  # noqa: E402

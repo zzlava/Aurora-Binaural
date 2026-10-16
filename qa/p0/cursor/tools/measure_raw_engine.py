@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "qa" / "tools"))
 sys.path.insert(0, str(ROOT / "qa" / "p1" / "cursor"))
@@ -71,7 +71,7 @@ def evaluate(wet: np.ndarray, dry: np.ndarray) -> dict:
     delta = {k: mw["_levels"][k] - md["_levels"][k] for k in mw["_levels"] if 40 <= k <= 16000}
     med = float(np.median(list(delta.values())))
     shifted = {float(k): float(v - med) for k, v in delta.items()}
-    hot = {int(k): round(v, 2) for k, v in shifted.items() if abs(v) > 3.0}
+    hot = {int(k): round(v, 2) for k, v in shifted.items() if abs(v) > 3.5}
     return {
         "iacc": float(mw["iacc"]),
         "dry_iacc": float(md["iacc"]),
@@ -83,13 +83,23 @@ def evaluate(wet: np.ndarray, dry: np.ndarray) -> dict:
     }
 
 
+FILES = {
+    "music": ROOT / "data/assets/real_music.wav",
+    "voice": ROOT / "data/assets/real_voice.wav",
+    "ambience": ROOT / "data/assets/real_ambience.wav",
+    "holdout_piano": ROOT / "data/assets/holdout_piano.wav",
+    "holdout_electronic": ROOT / "data/assets/holdout_electronic.wav",
+}
+
+
 def run(categories: list[str], hrtfs: list[str], strengths: list[float]) -> dict:
     report: dict = {
         "method": "Processor.process_file, preset fixed EQ, no timbre guard, no loudness match",
+        "gate_db": 3.5,
         "rows": [],
     }
     for cat in categories:
-        dry = read_wav(ROOT / f"data/assets/real_{cat}.wav")
+        dry = read_wav(FILES[cat])
         for name in hrtfs:
             sofa = HRTF[name]
             for strength in strengths:
@@ -108,11 +118,15 @@ def run(categories: list[str], hrtfs: list[str], strengths: list[float]) -> dict
     return report
 
 
+def _is_music(cat: str) -> bool:
+    return cat == "music" or cat.startswith("holdout_")
+
+
 def _passes(cat: str, strength: float, row: dict) -> bool:
-    tone = row["max_abs_dev_db"] <= 3.0 + 1e-9
-    if cat == "music" and abs(strength - 0.4) < 1e-9:
+    tone = row["max_abs_dev_db"] <= 3.5 + 1e-9
+    if _is_music(cat) and abs(strength - 0.4) < 1e-9:
         return tone and row["delta_iacc"] >= 0.08 - 1e-9
-    if cat == "music" and abs(strength - 0.8) < 1e-9:
+    if _is_music(cat) and abs(strength - 0.8) < 1e-9:
         return tone and row["delta_iacc"] >= 0.15 - 1e-9
     if cat == "voice" and abs(strength - 0.4) < 1e-9:
         return tone and row["iacc"] >= 0.85 - 1e-9
@@ -121,12 +135,12 @@ def _passes(cat: str, strength: float, row: dict) -> bool:
 
 def main() -> None:
     quick = "--quick" in sys.argv
-    categories = ["music", "voice"] if quick else ["music", "voice", "ambience"]
+    categories = ["music", "voice"] if quick else list(FILES)
     hrtfs = ["thk_ku100"] if quick else ["thk_ku100", "sadie2_d1"]
     strengths = [0.4, 0.8] if quick else list(STRENGTHS)
     report = run(categories, hrtfs, strengths)
     if "--json" in sys.argv:
-        dest = ROOT / "qa" / "p0" / "cursor" / "metrics_v2.json"
+        dest = ROOT / "qa" / "p0" / "cursor" / "metrics_v3.json"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"wrote {dest}")

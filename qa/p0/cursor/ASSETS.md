@@ -12,3 +12,7 @@
 | A08 | `real_voice.wav` | voice | Animyth Productions, Brittany Lauda | CC BY 3.0 | https://upload.wikimedia.org/wikipedia/commons/2/27/Brittany_Lauda_Sample.ogg | `41d733d17b632f943cfdc883ed6c150ceb33de667b7946a94c022e2b4f69a3a1` | Voice-actor sample, trimmed to the full 9.1 s source, 48 kHz stereo |
 | A09 | `real_music.wav` | music | Kevin MacLeod (incompetech.com) | CC BY 3.0 | https://upload.wikimedia.org/wikipedia/commons/2/2e/Luminous_Rain_%28ISRC_USUAN1100169%29.mp3 | `daa390ce27ef10fc5d828f0a1573336bc55900ba1c25516b56c14922d545af41` | Piano piece Luminous Rain, 20 s excerpt starting at 5 s, 48 kHz stereo |
 | A10 | `real_ambience.wav` | ambience | PB (Wikimedia Commons user Buddpaul) | CC0-1.0 | https://upload.wikimedia.org/wikipedia/commons/8/81/Rain_clip.theora.ogv | `5651e59f0ad0fd0f0f4288feb13cc60dc5832e459cbbb67eccf69f99d5afa94d` | Field recording of rainfall, full 8.7 s audio extracted from the CC0 video |
+| H01 | `holdout_piano.wav` | music / holdout | Kevin MacLeod (incompetech.com) | CC BY 3.0 | https://upload.wikimedia.org/wikipedia/commons/2/2e/Luminous_Rain_%28ISRC_USUAN1100169%29.mp3 | `adb810e732824fb905f5ac5c705d4f9a20e16143ff54df1773dfb731d6eb7b78` | 同一首钢琴曲，70–100 秒。训练集用的是 5–25 秒。只用于验证 |
+| H02 | `holdout_electronic.wav` | music / holdout | T_3，人声 admiralbob77 | CC BY 3.0 | http://ccmixter.org/files/T_3/62058 | `ab36ce72e20d0241a8fcbeb27b4e6c4ccf3a332177d756064de9aa2ed848a039` | 《Fish in the Sea》，鼓、合成器和男声。从 12 秒起 25 秒。只用于验证 |
+
+人声源 `brittany.ogg` 长 9.079 秒，雨声源 `rain.ogv` 长 8.733 秒，两段都已经整段进了训练集，没有剩下可用的片段。

@@ -117,5 +117,35 @@
     "sample_rate": 48000,
     "duration_s": 8.684,
     "note": "Field recording of rainfall, full 8.7 s audio extracted from the CC0 video"
+  },
+  "holdout_piano": {
+    "file": "holdout_piano.wav",
+    "path": "data/assets/holdout_piano.wav",
+    "category": "music",
+    "role": "holdout",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Luminous_Rain_%28ISRC_USUAN1100169%29.mp3",
+    "page": "https://commons.wikimedia.org/wiki/File:Luminous_Rain_(ISRC_USUAN1100169).mp3",
+    "author": "Kevin MacLeod (incompetech.com)",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "sha256": "adb810e732824fb905f5ac5c705d4f9a20e16143ff54df1773dfb731d6eb7b78",
+    "sample_rate": 48000,
+    "duration_s": 30.0,
+    "note": "Same piano piece as real_music, 30 s starting at 70 s. Training used 5–25 s. Validation only; not used to design the fixed EQ."
+  },
+  "holdout_electronic": {
+    "file": "holdout_electronic.wav",
+    "path": "data/assets/holdout_electronic.wav",
+    "category": "music",
+    "role": "holdout",
+    "source": "https://ccmixter.org/content/T_3/T_3_-_Fish_in_the_Sea.mp3",
+    "page": "http://ccmixter.org/files/T_3/62058",
+    "author": "T_3, vocals by admiralbob77 (Admiral Bob)",
+    "license": "CC BY 3.0",
+    "license_url": "https://creativecommons.org/licenses/by/3.0",
+    "sha256": "ab36ce72e20d0241a8fcbeb27b4e6c4ccf3a332177d756064de9aa2ed848a039",
+    "sample_rate": 48000,
+    "duration_s": 25.0,
+    "note": "Fish in the Sea: rock/electronic with drums, synthesizer and male vocals. 25 s starting at 12 s. Validation only; not used to design the fixed EQ."
   }
 }
