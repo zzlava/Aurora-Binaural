@@ -1,0 +1,51 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aurora 空间感校准</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--mut:#78716c;--card:#fff;--bd:#e7e5e4;--acc:#4f46e5}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--mut:#a8a29e;--card:#292524;--bd:#44403c;--acc:#818cf8}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"PingFang SC",sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:22px;margin:0 0 4px}.mut{color:var(--mut);font-size:13px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:16px 0}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:middle}
+th{font-size:12px;color:var(--mut);font-weight:500}
+button{font:inherit;border:1px solid var(--bd);background:var(--bg);color:var(--fg);border-radius:8px;padding:4px 10px;cursor:pointer}
+button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+select{font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px}
+textarea{width:100%;min-height:160px;font:12px/1.5 ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:8px;box-sizing:border-box}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style></head><body><main>
+<h1>Aurora Binaural · 空间感校准</h1>
+<p class="mut">请戴耳机。目的是确定你想要的“空间感”属于哪一类。C／D／E 是 Claude 用经典方法快速做的参照，不是最终产品；音色可能不够好，请主要判断<b>空间感的类型和程度</b>。所有版本已按 BS.1770 匹配到同一响度。打分：1 = 不想要，5 = 就是这种感觉。打完点最下方“生成结果”，把文字复制给 Claude，也欢迎在备注里写“想要 C 的头外感，但再宽一点”之类。</p>
+<div class="row"><label><input type="checkbox" id="blind"> 盲听（隐藏名称，随机排序）</label>
+<label>耳机型号 <input id="hp" placeholder="例如 AirPods Pro 2" style="font:inherit"></label></div>
+<div id="app"></div>
+<section><div class="row"><button id="gen">生成结果</button><span class="mut">生成后复制下面的文字发给 Claude</span></div><textarea id="out" readonly></textarea></section>
+</main>
+<script>
+const G={"music": {"label": "音乐（钢琴）", "items": [{"id": "dry", "name": "原声（参照）", "file": "../cursor/samples_v2/music_dry_lufs20.wav"}, {"id": "B", "name": "B 当前引擎 · 强度 1.0 · KU100", "file": "../cursor/samples_v2/music_routeB_str1.0_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "C", "name": "C 虚拟音箱 ±30° + 明显房间感（头外化）", "file": "music_C_speakers_room.wav"}, {"id": "D", "name": "D 宽声场包围：侧方 + 侧后方 + 大房间", "file": "music_D_wide_surround.wav"}, {"id": "E", "name": "E 8D 环绕：整体绕头旋转（8 秒一圈）", "file": "music_E_8d_orbit.wav"}]}, "voice": {"label": "人声", "items": [{"id": "dry", "name": "原声（参照）", "file": "../cursor/samples_v2/voice_dry_lufs20.wav"}, {"id": "B", "name": "B 当前引擎 · 强度 1.0 · KU100", "file": "../cursor/samples_v2/voice_routeB_str1.0_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "C", "name": "C 虚拟音箱 ±30° + 明显房间感（头外化）", "file": "voice_C_speakers_room.wav"}, {"id": "D", "name": "D 宽声场包围：侧方 + 侧后方 + 大房间", "file": "voice_D_wide_surround.wav"}, {"id": "E", "name": "E 8D 环绕：整体绕头旋转（8 秒一圈）", "file": "voice_E_8d_orbit.wav"}]}, "ambience": {"label": "环境音（雨声）", "items": [{"id": "dry", "name": "原声（参照）", "file": "../cursor/samples_v2/ambience_dry_lufs20.wav"}, {"id": "B", "name": "B 当前引擎 · 强度 1.0 · KU100", "file": "../cursor/samples_v2/ambience_routeB_str1.0_hrtf-thk_ku100_eq-frontal.wav"}, {"id": "C", "name": "C 虚拟音箱 ±30° + 明显房间感（头外化）", "file": "ambience_C_speakers_room.wav"}, {"id": "D", "name": "D 宽声场包围：侧方 + 侧后方 + 大房间", "file": "ambience_D_wide_surround.wav"}, {"id": "E", "name": "E 8D 环绕：整体绕头旋转（8 秒一圈）", "file": "ambience_E_8d_orbit.wav"}]}};const BASE="";
+const audios={};let cur=null,curAudio=null;
+function getAudio(f){if(!audios[f]){const a=new Audio();a.preload='auto';a.src=BASE+f;audios[f]=a;a.onended=()=>{if(curAudio===a&&cur){cur.classList.remove('on');cur.textContent='播放'}}}return audios[f]}
+const crit=[['space','空间感程度'],['want','是否想要这种效果'],['tone','音色可接受'],['fatigue','不疲劳']];
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function render(){const blind=document.getElementById('blind').checked;const app=document.getElementById('app');app.innerHTML='';
+ for(const [cat,g] of Object.entries(G)){const s=document.createElement('section');s.innerHTML='<h2 style="font-size:17px;margin:0 0 8px">'+g.label+'</h2>';
+  const t=document.createElement('table');t.innerHTML='<tr><th>版本</th><th></th>'+crit.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr>';
+  let items=g.items;if(blind){const dry=items[0];items=[dry].concat(shuffle(items.slice(1)))}
+  items.forEach((it,i)=>{const tr=document.createElement('tr');const nm=blind&&it.id!=='dry'?('版本 '+String.fromCharCode(64+i)):it.name;
+   tr.innerHTML='<td>'+nm+'</td><td><button data-f="'+it.file+'">播放</button></td>'+(it.id==='dry'?crit.map(()=>'<td class="mut">参照</td>').join(''):crit.map(c=>'<td><select data-k="'+cat+'|'+it.id+'|'+c[0]+'"><option></option>'+[1,2,3,4,5].map(v=>'<option>'+v+'</option>').join('')+'</select></td>').join(''));
+   t.appendChild(tr)});s.appendChild(t);
+  const n=document.createElement('div');n.innerHTML='<input data-note="'+cat+'" placeholder="备注（可选，例如：低频发闷、方向偏左）" style="width:100%;margin-top:8px;font:inherit;box-sizing:border-box">';s.appendChild(n);app.appendChild(s)}
+ app.querySelectorAll('button[data-f]').forEach(b=>b.onclick=()=>{const f=b.dataset.f;const a=getAudio(f);
+  if(cur===b&&curAudio&&!curAudio.paused){curAudio.pause();b.classList.remove('on');b.textContent='播放';return}
+  let t=0;const sameCat=curAudio&&cur&&cur.dataset.f.split('_')[0]===f.split('_')[0];
+  if(curAudio){t=curAudio.currentTime||0;curAudio.pause()}
+  const start=()=>{try{a.currentTime=sameCat?Math.min(t,(a.duration||t)):0}catch(e){} const pr=a.play();if(pr&&pr.catch)pr.catch(err=>console.warn('play failed',err))};
+  if(a.readyState>=1)start();else a.addEventListener('loadedmetadata',start,{once:true});
+  app.querySelectorAll('button.on').forEach(x=>{x.classList.remove('on');x.textContent='播放'});b.classList.add('on');b.textContent='暂停';cur=b;curAudio=a})}
+document.getElementById('blind').onchange=render;render();
+document.getElementById('gen').onclick=()=>{const r={headphones:document.getElementById('hp').value,blind:document.getElementById('blind').checked,scores:{},notes:{}};
+ document.querySelectorAll('select[data-k]').forEach(s=>{if(s.value){const [c,id,k]=s.dataset.k.split('|');(r.scores[c+'|'+id]??={})[k]=+s.value}});
+ document.querySelectorAll('input[data-note]').forEach(i=>{if(i.value)r.notes[i.dataset.note]=i.value});
+ document.getElementById('out').value='AURORA-CALIBRATION '+JSON.stringify(r)};
+</script></body></html>

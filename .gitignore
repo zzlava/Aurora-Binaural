@@ -37,3 +37,6 @@ renders/
 
 # Downloaded source originals of test assets (clips + source URLs/hashes are tracked instead)
 data/assets/src/
+
+# Claude calibration anchors (reproducible via qa/tools/calibration_anchors.py)
+qa/p0/calibration/*.wav
