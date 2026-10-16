@@ -41,3 +41,9 @@
 
 - 账号：已切换为 Premium 账号（`agent status` 显示 sevava0405@gmail.com）。之前登录的免费账号在 P0-cursor-01 运行中途撞到用量上限。
 - 模型选择（由 Claude 决定）：原计划用 `gpt-5.6-sol-high`。实测发现，这个账号本周额度只覆盖 Grok 系列：GPT-5.6 Sol、Claude Opus 5.5、Codex 5.3 都提示"不在每周用量内"，需要另外购买额度（未购买）。因此 P0-cursor-02 改用 `grok-4.7-high`。理由：推理能力强，而且和验收方 Claude 不是同一模型家族，可以减少编码与审查出现相同盲点的风险。普通任务可以降到 `gpt-5.3-codex`。每次派单的模型都记录在 run-agent 日志的第一行。
+
+## 额度不足时的后备执行方（用户规则，2026-10-16）
+
+- 规则：Cursor 因额度用完失败时，同一份任务交给 **Codex CLI** 完成。
+- 实现：run-agent（agent=cursor）在输出里检测到 "usage limit / not included in your weekly usage / Buy credits" 时，自动在同一个克隆 `.agents/cursor/`、同一个分支上运行 `codex exec --dangerously-bypass-approvals-and-sandbox`。目录所有权不变，仍然是 Cursor 负责的模块；提交信息标注 `Agent: Codex (for Cursor)`。
+- 待验证：Mac 上 codex 的路径、版本、登录状态，以及 `exec` 子命令的参数，要在派单器重启后由 doctor 确认。确认之前，这条后备路径视为未验证。

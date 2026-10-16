@@ -42,7 +42,7 @@ do_doctor(){
   echo "== date"; date
   echo "== sw_vers"; sw_vers 2>&1
   echo "== tools"
-  for t in git git-lfs gh agent agy cargo rustc python3 uv ffmpeg brew; do
+  for t in git git-lfs gh agent agy codex cargo rustc python3 uv ffmpeg brew; do
     printf '%-8s ' "$t"; command -v "$t" || echo MISSING
   done
   echo "== versions"
@@ -55,6 +55,9 @@ do_doctor(){
   echo "== agent models"; agent models 2>&1 | head -n 80
   echo "== agent --help"; agent --help 2>&1 | head -n 100
   echo "== agy --help"; agy --help 2>&1 | head -n 100
+  echo "== codex --version"; codex --version 2>&1 | head -n 3
+  echo "== codex login status"; codex login status 2>&1 | head -n 5
+  echo "== codex exec --help"; codex exec --help 2>&1 | head -n 80
 }
 
 do_push(){
@@ -86,6 +89,14 @@ do_setup_remote(){
   do_push
 }
 
+run_codex(){ # prompt；在当前目录（代理克隆）执行
+  command -v codex >/dev/null || { echo "找不到 Codex CLI: codex"; return 15; }
+  codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$PWD" \
+    "你是 Codex，本次代替 Cursor 执行下面的任务书。所有规则（目录范围、只在当前分支提交、不推送）都适用于你。提交信息末尾使用 'Agent: Codex (for Cursor)'。
+
+$1"
+}
+
 do_agent(){ # agent task branch [model]
   ag="$1"; task="$2"; branch="$3"; model="${4:-auto}"
   dir="$ROOT/.agents/$ag"
@@ -97,7 +108,16 @@ do_agent(){ # agent task branch [model]
   case "$ag" in
     cursor)
       command -v agent >/dev/null || { echo "找不到 Cursor CLI: agent"; return 13; }
-      echo "[dispatch] cursor model=$model"; agent -p --force --trust --model "$model" --output-format text "$prompt" ;;
+      echo "[dispatch] cursor model=$model"
+      tmp="$RES/.cursor-$$.out"
+      agent -p --force --trust --model "$model" --output-format text "$prompt" 2>&1 | tee "$tmp"
+      rc=${PIPESTATUS[0]}
+      if [ "$rc" -ne 0 ] && grep -Eqi 'usage limit|not included in your weekly usage|Buy credits' "$tmp"; then
+        rm -f "$tmp"
+        echo "[dispatch] Cursor 额度不足，按用户规则改由 Codex CLI 在同一克隆与分支上执行"
+        run_codex "$prompt"; return $?
+      fi
+      rm -f "$tmp"; return "$rc" ;;
     antigravity)
       command -v agy >/dev/null || { echo "找不到 Antigravity CLI: agy"; return 13; }
       agy --dangerously-skip-permissions --print-timeout 3h -p "$prompt" ;;
