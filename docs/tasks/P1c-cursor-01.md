@@ -1,6 +1,6 @@
 # P1c-cursor-01：路线 V 低频不足——余量管理与低频平衡
 
-状态：已编写；在 P1b-cursor-01 合并后派发
+状态：已派发（2026-10-17，P1b 验收通过后）
 执行方：Cursor（grok-4.7-high）　分支：`agent/cursor/P1c-01`（基于最新 main）
 时间上限 120 分钟；每完成一个子项就先提交一次。允许改 core/ 和 presets/；本任务允许输出改变，但必须给出前后对比。
 
@@ -24,3 +24,5 @@ real_music（安静的母带，峰值 −10 dBFS）不触发限幅器，40 Hz �
 
 ## 交付
 qa/p1/cursor/REPORT-P1c.md：附上述表格的前后对比、限幅器增益衰减统计、各频带曲线（PNG）、时延、fuzz 结果。
+
+6. 小修复：`set_controls` 遇到未知的键时抛出 ValueError，不要静默忽略。
