@@ -62,3 +62,5 @@
 
 - 事故：Claude 在虚拟机里用 `git add qa docs` 提交了 `056bc21`。因为虚拟机的 clean 过滤器被设成了 `cat`，50 个 LFS 样片（约 130 MB）被当成普通文件写进了 main，并已推送到 GitHub。修复提交把它们恢复为 LFS 指针（只改暂存区，不动工作区）。这些原始大文件仍留在已推送的历史里（是否清理见 DECISIONS-PENDING U6）。
 - 规则：Claude 在虚拟机里提交时，**只 add 明确列出的文本文件路径**，不 add 目录；提交前必须运行 `tools/vm-git-guard.sh`，脚本报错就不能提交。
+
+- 2026-10-17 P0-cursor-07：(1) 派单器会同时取走队列里的所有任务，紧挨着入队的 prepare-agent 会把同一代理后面的 run-agent 当成“正在运行”而失败。prepare-agent 必须单独入队，等它完成后再入队 run-agent。(2) 代理在克隆里的提交不会自动出现在主仓库；合并前在 VM 执行 `git fetch .agents/<ag> <sha>` 并建立分支（只涉及 ref 和文本）。(3) 用户放在仓库根目录的音频会挡住合并，已在 .gitignore 加入 `/*.wav`、`/*.flac`。(4) P1b-01 基于 71f54f7，不含 P0-07 的元数据，验收前需要先合入 main。
