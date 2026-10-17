@@ -130,3 +130,21 @@ def test_16bit_tpdf_and_24bit_no_dither(tmp_path: Path) -> None:
             assert counts[-1] / len(samples) == pytest.approx(0.125, abs=0.015)
         else:
             assert np.count_nonzero(samples) == 0
+
+
+@pytest.mark.parametrize(('rate', 'fmt', 'depth', 'codec'), [
+    (48000, 'wav', '32f', 'pcm_f32le'), (48000, 'flac', 24, 'pcm_s24le'),
+    (96000, 'aiff', 24, 'pcm_s24le'), (192000, 'alac', 24, 'pcm_s24le'),
+])
+def test_stub_is_bit_exact_including_final_samples(
+    tmp_path: Path, rate: int, fmt: str, depth: Any, codec: str,
+) -> None:
+    source = tmp_path / 'source.wav'
+    make_source(source, rate=rate, frames=rate + 37, codec=codec)
+    spec = OutputSpec.model_validate({'format': fmt, 'bit_depth': depth})
+    output = tmp_path / f'stub.{spec.extension}'
+    report = convert_audio(source, output, AuroraParams(output=spec), renderer=StubRenderer())
+    before, _, _ = decode_to_f32le(source)
+    after, _, _ = decode_to_f32le(output)
+    assert after == before
+    assert report.loudness_before == report.loudness_after

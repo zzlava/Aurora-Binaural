@@ -548,9 +548,12 @@ class RendererStreamProcessor:
         self.extra_tail_kept: int = 0
 
         self._is_trim = params.timing.tail == TailPolicy.TRIM
+        # A genuine bypass must preserve every sample, including the final 10 ms.
+        # DelayTestRenderer still exercises the audible-tail trimming policy.
+        passthrough = params.effective_strength == 0.0 or type(renderer) is StubRenderer
         self._fade_frames: int = (
             max(1, int(round(params.timing.fade_out_ms * sample_rate / 1000.0)))
-            if (self._is_trim and params.timing.fade_out_ms > 0.0)
+            if (self._is_trim and params.timing.fade_out_ms > 0.0 and not passthrough)
             else 0
         )
         self._in_Staging: FloatBlock = np.zeros((0, input_channels), dtype=np.float32)
