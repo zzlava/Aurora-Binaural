@@ -1,11 +1,11 @@
 {
   "ok": true,
   "status": "succeeded",
-  "job_id": "job_93eb42a7fc7f4971",
-  "asset_id": "asset_d7a65ab20d3441b3",
+  "job_id": "job_44b409f8e7224285",
+  "asset_id": "asset_62d49074be424607",
   "preview": null,
   "input": {
-    "path": "asset://asset_d7a65ab20d3441b3/holdout_electronic.wav",
+    "path": "asset://asset_62d49074be424607/holdout_electronic.wav",
     "sha256": "ab36ce72e20d0241a8fcbeb27b4e6c4ccf3a332177d756064de9aa2ed848a039",
     "format": "wav",
     "container": "wav",
@@ -21,7 +21,7 @@
     "trailing_padding": 0
   },
   "output": {
-    "path": "result://job_93eb42a7fc7f4971.wav",
+    "path": "result://job_44b409f8e7224285.wav",
     "sha256": "1d7f3e97b5ab3ded2260260360f4e48c055da42fe62f796136765d836fb8fa66",
     "format": "wav",
     "container": "wav",
@@ -39,7 +39,7 @@
   "engine": {
     "name": "aurora_core",
     "version": "0.1.0",
-    "git_commit": "6d274aa3e0fb",
+    "git_commit": "bde27c526133",
     "is_stub": false,
     "route": "V",
     "block_size_frames": 1024,
@@ -56,7 +56,7 @@
     "api_version": "v1",
     "mode": "enhance",
     "input": {
-      "asset_id": "asset_d7a65ab20d3441b3",
+      "asset_id": "asset_62d49074be424607",
       "path": null
     },
     "preset": {
@@ -112,8 +112,8 @@
     "is_silent": false,
     "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
   },
-  "elapsed_ms": 2740.66,
+  "elapsed_ms": 2636.92,
   "attempts": 1,
-  "created_at": "2026-10-17T02:57:10.317210+00:00",
-  "expires_at": "2026-10-18T02:57:10.317210+00:00"
+  "created_at": "2026-10-17T03:00:53.893631+00:00",
+  "expires_at": "2026-10-18T03:00:53.893631+00:00"
 }

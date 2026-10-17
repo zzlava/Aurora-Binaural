@@ -1,8 +1,8 @@
 {
   "ok": true,
   "status": "succeeded",
-  "job_id": "job_eccf971b21954424",
-  "asset_id": "asset_cc8cbab34a7e4135",
+  "job_id": "job_6e3ae4e94f4c4957",
+  "asset_id": "asset_6bf97487d7cb48ba",
   "preview": {
     "start_seconds": 1.0,
     "requested_duration_seconds": 10.0,
@@ -12,7 +12,7 @@
     "sample_rate": 48000,
     "timeline_strategy": "render-from-source-origin",
     "original": {
-      "path": "result://job_eccf971b21954424.original.wav",
+      "path": "result://job_6e3ae4e94f4c4957.original.wav",
       "sha256": "8885b3457f2ab4abf7ab8f7132850b6912a2dae2771b57c929847ebeffcd9845",
       "format": "wav",
       "container": "wav",
@@ -41,7 +41,7 @@
     "match_status": "matched"
   },
   "input": {
-    "path": "asset://asset_cc8cbab34a7e4135/real_music.wav",
+    "path": "asset://asset_6bf97487d7cb48ba/real_music.wav",
     "sha256": "daa390ce27ef10fc5d828f0a1573336bc55900ba1c25516b56c14922d545af41",
     "format": "wav",
     "container": "wav",
@@ -57,7 +57,7 @@
     "trailing_padding": 0
   },
   "output": {
-    "path": "result://job_eccf971b21954424.wav",
+    "path": "result://job_6e3ae4e94f4c4957.wav",
     "sha256": "2711c7b175f4515ea1a2382b6993b5a45d9c4e0b253ce52dc4c17bdadab4d20d",
     "format": "wav",
     "container": "wav",
@@ -75,7 +75,7 @@
   "engine": {
     "name": "aurora_core",
     "version": "0.1.0",
-    "git_commit": "6d274aa3e0fb",
+    "git_commit": "bde27c526133",
     "is_stub": false,
     "route": "V",
     "block_size_frames": 1024,
@@ -95,7 +95,7 @@
     "api_version": "v1",
     "mode": "enhance",
     "input": {
-      "asset_id": "asset_cc8cbab34a7e4135",
+      "asset_id": "asset_6bf97487d7cb48ba",
       "path": null
     },
     "preset": {
@@ -151,8 +151,8 @@
     "is_silent": false,
     "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
   },
-  "elapsed_ms": 2070.0475410558283,
+  "elapsed_ms": 1968.6377921607345,
   "attempts": 1,
-  "created_at": "2026-10-17T02:56:59.345296+00:00",
-  "expires_at": "2026-10-18T02:56:59.345296+00:00"
+  "created_at": "2026-10-17T03:00:43.886851+00:00",
+  "expires_at": "2026-10-18T03:00:43.886851+00:00"
 }

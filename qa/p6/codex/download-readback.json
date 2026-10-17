@@ -8,7 +8,7 @@
     "sha256": "5c5c1b8eecdfd3b1c5b5972762477225728c47c9c455080bc7a65aea8eda4955",
     "true_peak_dbtp": -9.4,
     "peak_method": "ITU-R BS.1770-4 (ffmpeg ebur128)",
-    "conversion_elapsed_ms": 2281.14
+    "conversion_elapsed_ms": 2195.36
   },
   {
     "file": "downloads/holdout_electronic.V2.wav",
@@ -19,6 +19,6 @@
     "sha256": "1d7f3e97b5ab3ded2260260360f4e48c055da42fe62f796136765d836fb8fa66",
     "true_peak_dbtp": -1.4,
     "peak_method": "ITU-R BS.1770-4 (ffmpeg ebur128)",
-    "conversion_elapsed_ms": 2740.66
+    "conversion_elapsed_ms": 2636.92
   }
 ]

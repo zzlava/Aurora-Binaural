@@ -1,0 +1,28 @@
+
+> aurora-binaural-web@0.1.0 test:e2e:rust
+> playwright test --config playwright.rust.config.ts
+
+[WebServer] [aurora] Aurora GUI: http://127.0.0.1:8776 （Ctrl-C 退出）
+[WebServer] [aurora] [worker_84524_d8a0ca80] Worker started (concurrency=1, lease=30.0s, max_retries=2)
+
+Running 1 test using 1 worker
+
+(node:84525) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [aurora] [worker_84524_d8a0ca80] Claimed job 'job_6e3ae4e94f4c4957' (attempt 1/3)
+[WebServer] [aurora] [worker_84524_d8a0ca80] Claimed job 'job_ed988a07baf7475e' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-84522/assets/asset_6bf97487d7cb48ba.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-84522/assets/asset_6bf97487d7cb48ba.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=0.5, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 2195.4 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-84522/tmp/attempt_job_ed988a07baf7475e_1_lease_f3087b955507414cbd0b1766e2af3c8d/staged_out.wav
+[WebServer] [aurora] [worker_84524_d8a0ca80] Claimed job 'job_6bcaabb2990343ac' (attempt 1/3)
+[WebServer] [aurora] [worker_84524_d8a0ca80] Claimed job 'job_44b409f8e7224285' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-84522/assets/asset_62d49074be424607.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-84522/assets/asset_62d49074be424607.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=0.5, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 2636.9 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-84522/tmp/attempt_job_44b409f8e7224285_1_lease_b319009db86e4061a763e7d92efdd524/staged_out.wav
+  ✓  1 tests/rust-workflow.spec.ts:8:1 › 真实音乐 → Rust V2 试听与同步 A/B → WAV 导出下载；四种主题视口 (13.7s)
+
+  1 passed (14.4s)

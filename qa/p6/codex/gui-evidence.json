@@ -25,13 +25,13 @@
       "comparison": {
         "totalSources": 4,
         "a": {
-          "when": 7.331666666666667,
+          "when": 6.4303333333333335,
           "offset": 0,
           "length": 480000,
           "sampleRate": 48000
         },
         "b": {
-          "when": 7.331666666666667,
+          "when": 6.4303333333333335,
           "offset": 0,
           "length": 480000,
           "sampleRate": 48000
