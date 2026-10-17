@@ -133,13 +133,24 @@ expected, effect_count, final_count = (len(v) // 2 for v in (input_pcm, effect_p
 max_mux_error = max((abs(a-b) for a, b in zip(effect_pcm, final_pcm)), default=0)
 input_onset, effect_onset, final_onset = (first_event(v) for v in (input_pcm, effect_pcm, final_pcm))
 event_deltas = []
+flash_frames = []
+flash_offsets = []
 fps = Fraction(video_stream["avg_frame_rate"])
 event_tolerance = math.ceil(rate / fps)  # Frame-level A/V tolerance, not sample-exact DSP onset.
 if args.demo:
-    for second in (1, 3, 5):
-        start, end = second * rate - event_tolerance, second * rate + event_tolerance
+    # Decode the final video to locate the actual white frames, rather than relying
+    # solely on the generation recipe or container duration metadata.
+    gray = command(["ffmpeg", "-v", "error", "-i", final, "-map", "0:v:0", "-pix_fmt", "gray",
+                    "-f", "rawvideo", "pipe:1"], capture=True)
+    pixels = int(final_video["width"]) * int(final_video["height"])
+    flash_frames = [i for i in range(len(gray) // pixels)
+                    if sum(gray[i*pixels:(i+1)*pixels]) / pixels > 245]
+    for frame in flash_frames:
+        event_sample = round(frame * rate / fps)
+        start, end = event_sample - event_tolerance, event_sample + event_tolerance
         before, after = first_event(input_pcm, start, end), first_event(final_pcm, start, end)
         event_deltas.append(None if before is None or after is None else after - before)
+        flash_offsets.append(None if after is None else after - event_sample)
 onset_delta = None if input_onset is None or final_onset is None else final_onset - input_onset
 frame_count = int(video_stream["nb_read_frames"])
 final_frames = int(final_video["nb_read_frames"])
@@ -149,8 +160,9 @@ checks = {"sample_count_exact": expected == effect_count == final_count,
           "mux_pcm_exact": max_mux_error == 0 and effect_count == final_count,
           "video_frames_exact": frame_count == final_frames,
           "start_timestamps_zero": audio_start == video_start == 0,
+          "demo_flash_frames_exact": not args.demo or flash_frames == [25, 75, 125],
           "demo_events_within_one_video_frame": not args.demo or all(
-              d is not None and abs(d) <= event_tolerance for d in event_deltas)}
+              d is not None and abs(d) <= event_tolerance for d in flash_offsets)}
 result = {"ok": all(checks.values()), "fixture": "synthetic flash/click" if args.demo else "user AI audio/video",
           "engine": report["engine"], "sample_rate": rate, "input_samples": expected,
           "spatial_samples": effect_count, "final_decoded_samples": final_count,
@@ -161,6 +173,7 @@ result = {"ok": all(checks.values()), "fixture": "synthetic flash/click" if args
           "final_onset_sample": final_onset, "onset_shift_samples": onset_delta,
           "onset_shift_video_frames": None if onset_delta is None else float(onset_delta * fps / rate),
           "demo_event_shifts_samples": event_deltas, "mux_max_abs_pcm_error": max_mux_error,
+          "demo_flash_frames": flash_frames, "demo_audio_minus_flash_samples": flash_offsets,
           "event_tolerance_samples": event_tolerance,
           "event_tolerance_basis": "one video frame; DSP onset may shift even when sample counts match",
           "loudness_after": report["loudness_after"], "checks": checks,

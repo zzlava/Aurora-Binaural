@@ -1,0 +1,17 @@
+{
+  "port": 18766,
+  "static_html_served": true,
+  "local_session_bootstrap": true,
+  "ready": {
+    "ok": true,
+    "status": "ready",
+    "checks": {
+      "database": true,
+      "worker": true,
+      "hrtf_data": true
+    }
+  },
+  "browser_opened": false,
+  "visual_ui_qa_performed": false,
+  "exit_code": 130
+}

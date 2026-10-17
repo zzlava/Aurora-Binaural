@@ -1,0 +1,39 @@
+{
+  "unauthorized": {
+    "http": 401,
+    "code": "UNAUTHORIZED"
+  },
+  "idempotent_replay": {
+    "http": 202,
+    "job_id": "job_0a51167b7a3e4e5d"
+  },
+  "idempotency_conflict": {
+    "http": 409,
+    "code": "IDEMPOTENCY_KEY_CONFLICT"
+  },
+  "local_path_rejected": {
+    "http": 422,
+    "code": "INVALID_PARAMETERS"
+  },
+  "unknown_job": {
+    "http": 404,
+    "code": "JOB_NOT_FOUND"
+  },
+  "queued_cancel": {
+    "job_id": "job_f1041d3c62d54dbc",
+    "first": "canceled",
+    "second": "canceled",
+    "download_http": 409,
+    "download_error": "JOB_NOT_SUCCEEDED"
+  },
+  "preview": {
+    "job_id": "job_17e705bab5cc49e1",
+    "engine": "aurora_core",
+    "samples": 96000,
+    "start_sample": 48000,
+    "match_status": "matched",
+    "loudness_diff_lu": 0.0,
+    "original_sha256_verified": true,
+    "effect_sha256_verified": true
+  }
+}

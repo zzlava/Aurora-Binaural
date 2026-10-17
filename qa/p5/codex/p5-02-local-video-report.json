@@ -5,7 +5,7 @@
   "asset_id": null,
   "preview": null,
   "input": {
-    "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-video-final/input-48k.wav",
+    "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-local-av/input-48k.wav",
     "sha256": "1be7aaeb4383e683fcd811164425e1705c247876484a6f49dbb142614437be04",
     "format": "wav",
     "container": "wav",
@@ -21,7 +21,7 @@
     "trailing_padding": 0
   },
   "output": {
-    "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-video-final/spatial.wav",
+    "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-local-av/spatial.wav",
     "sha256": "f7535bd4af05a197807456a4afd346e9da48b04f481516242c1dd3d5e0cf848d",
     "format": "wav",
     "container": "wav",
@@ -39,7 +39,7 @@
   "engine": {
     "name": "aurora_core",
     "version": "0.1.0",
-    "git_commit": "27367249ddee",
+    "git_commit": "02ae5474430b",
     "is_stub": false,
     "block_size_frames": 1024,
     "internal_sample_rate": 48000,
@@ -108,8 +108,8 @@
     "is_silent": false,
     "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
   },
-  "elapsed_ms": 484.36,
+  "elapsed_ms": 510.76,
   "attempts": 1,
-  "created_at": "2026-10-17T02:00:31.359301+00:00",
+  "created_at": "2026-10-17T02:07:45.952300+00:00",
   "expires_at": null
 }

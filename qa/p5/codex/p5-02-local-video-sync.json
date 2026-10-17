@@ -4,7 +4,7 @@
   "engine": {
     "name": "aurora_core",
     "version": "0.1.0",
-    "git_commit": "27367249ddee",
+    "git_commit": "02ae5474430b",
     "is_stub": false,
     "block_size_frames": 1024,
     "internal_sample_rate": 48000,
@@ -36,6 +36,16 @@
     -102
   ],
   "mux_max_abs_pcm_error": 0.0,
+  "demo_flash_frames": [
+    25,
+    75,
+    125
+  ],
+  "demo_audio_minus_flash_samples": [
+    -101,
+    -101,
+    -101
+  ],
   "event_tolerance_samples": 1920,
   "event_tolerance_basis": "one video frame; DSP onset may shift even when sample counts match",
   "loudness_after": {
@@ -50,8 +60,9 @@
     "mux_pcm_exact": true,
     "video_frames_exact": true,
     "start_timestamps_zero": true,
+    "demo_flash_frames_exact": true,
     "demo_events_within_one_video_frame": true
   },
-  "final": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-video-final/final.mov",
-  "report": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-video-final/aurora-report.json"
+  "final": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-local-av/final.mov",
+  "report": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-local-av/aurora-report.json"
 }

@@ -1,0 +1,21 @@
+{
+  "backup_command_passed": true,
+  "archive_size_bytes": 16058255,
+  "archive_sha256": "29b7741f5cd628c94066f119bed5155a472730c3ec4c4c9ea9e2e78ca758f06a",
+  "archive_members": 17,
+  "contains_database": true,
+  "contains_results": true,
+  "ready_after_restart": {
+    "ok": true,
+    "status": "ready",
+    "checks": {
+      "database": true,
+      "worker": true,
+      "hrtf_data": true
+    }
+  },
+  "persisted_job_id": "job_0a51167b7a3e4e5d",
+  "result_sha256_after_restart": "3313299d5619775e869c65aa71859b349e3a8f404b7a67bb309e6b6f1a1222cb",
+  "result_hash_unchanged": true,
+  "restore_test_performed": false
+}

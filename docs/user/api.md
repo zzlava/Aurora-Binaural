@@ -86,6 +86,15 @@ curl --fail-with-body -sS -H "Authorization: Bearer $AURORA_API_KEY" \
 
 试听 start_seconds ≥0，duration_seconds >0 且 ≤20，起点必须小于素材时长，结尾截在素材末尾。固定输出 48 kHz float32 stereo WAV，轮询成功后 result 是效果、original 是原音；report.preview 包含原音摘要、增益、响度差、match_status 和原始时间位置。
 
+将试听响应的 job_id 保存为 `preview_job_id`，轮询成功后分别下载：
+
+```bash
+curl --fail-with-body -sS -H "Authorization: Bearer $AURORA_API_KEY" \
+  "$AURORA_SERVER/v1/jobs/$preview_job_id/original" -o outputs/api/original.wav
+curl --fail-with-body -sS -H "Authorization: Bearer $AURORA_API_KEY" \
+  "$AURORA_SERVER/v1/jobs/$preview_job_id/result" -o outputs/api/effect.wav
+```
+
 ## 幂等、轮询与过期
 
 `Idempotency-Key` 作用于创建 job/preview，同 key + 归一化后相同参数返回原 job；不同参数（包括不同 asset_id）返回 409。上传没有幂等保证：重试可能留下额外素材，由 TTL 清理；已知 asset_id 时直接复用。重启客户端应持久保存 key、asset_id、请求正文和 job_id。重试网络错误、429 或可重试 5xx 时保留相同请求；401/409/410/422 先修正原因。不要用新的上传 asset_id 重放旧 key。

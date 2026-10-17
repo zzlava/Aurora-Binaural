@@ -133,8 +133,11 @@ class Client:
                 raw = exc.read(65536)
                 exc.close()
                 try:
-                    detail = json.loads(raw).get("error", {})
-                except (ValueError, AttributeError):
+                    payload = json.loads(raw)
+                    detail = payload.get("error", {}) if isinstance(payload, dict) else {}
+                except ValueError:
+                    detail = {}
+                if not isinstance(detail, dict):
                     detail = {}
                 retryable = exc.code in (429, 500, 502, 503, 504) and detail.get("retryable", True)
                 if not retryable or attempt == self.retries:
@@ -189,6 +192,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     else:
         state = {"identity": identity, "idempotency_key": args.idempotency_key or str(uuid.uuid4())}
         save_json(state_path, state)
+    saved_key = state.get("idempotency_key")
+    if not isinstance(saved_key, str) or not saved_key.strip() or any(c in saved_key for c in "\r\n"):
+        raise ClientError("state contains an invalid idempotency key")
     if "asset_id" not in state:
         uploaded = client.request("POST", "/v1/assets", upload=source, upload_sha=source_sha)
         if uploaded["sha256"] != source_sha or uploaded["size_bytes"] != source.stat().st_size:
@@ -252,6 +258,9 @@ def main() -> int:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--require-rust", action="store_true")
     args = parser.parse_args()
+    if args.idempotency_key is not None and (not args.idempotency_key.strip()
+                                             or any(c in args.idempotency_key for c in "\r\n")):
+        parser.error("--idempotency-key must be nonempty and contain no line breaks")
     if (not math.isfinite(args.strength) or not 0 <= args.strength <= 1
             or not 0 <= args.seed <= 4294967295 or not 0 <= args.retries <= 10
             or any(not math.isfinite(v) or v <= 0 for v in

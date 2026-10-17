@@ -1,0 +1,41 @@
+{
+  "checked_at": "2026-10-17T02:16:37.480598+00:00",
+  "branch": "agent/codex/P5-02",
+  "baseline": "b716a6a",
+  "pytest": {
+    "passed": 104,
+    "warning_count": 1,
+    "elapsed_seconds": 26.56
+  },
+  "client_final_targeted_pytest": {
+    "passed": 6
+  },
+  "ruff_src_tests": "passed",
+  "ruff_examples": "passed",
+  "mypy_source_files": 32,
+  "mypy": "passed",
+  "uv_lock_check": "passed",
+  "npm_ci": "passed",
+  "web_build": "passed",
+  "bash_syntax": "passed",
+  "command_help_count": 12,
+  "document_links": "passed",
+  "allowed_paths_only": true,
+  "compose_build": "passed (native build layer cached)",
+  "compose_up_and_real_client": "passed",
+  "true_peak_target_passed": false,
+  "measured_true_peak_dbtp": -0.6,
+  "output_samples": 1200000,
+  "local_and_api_video_sync": "passed at one-video-frame event tolerance",
+  "core_click_onset_shift_samples": -102,
+  "mux_pcm_error": 0,
+  "final_state": {
+    "compose_down": true,
+    "volume_preserved": "aurora-p5-02_aurora_runtime",
+    "test_ports_closed": [
+      18765,
+      18766
+    ]
+  },
+  "pushed": false
+}
