@@ -1,7 +1,7 @@
 """Unified Pydantic v2 parameter models for Aurora Binaural CLI, GUI, and HTTP API.
 
 Implements docs/plan.md Sections 6.8, 6.10, 8, 9, and 10:
-- preset: PresetSpec (room / surround / orbit, versioned)
+- preset: PresetSpec (TOML catalog, versioned; default V2)
 - strength: perceptual spatial intensity in [0.0, 1.0] (dry/wet mixing forbidden)
 - seed: explicit PRNG seed for deterministic FDN reverb and decorrelation
 - output: OutputSpec (wav / m4a / mp3, separated format & container, sample_rate, bit_depth, bitrate)
@@ -140,6 +140,8 @@ class OutputSpec(BaseModel):
 
     @model_validator(mode="after")
     def _validate_and_normalize_output(self) -> OutputSpec:
+        if self.format == OutputFormat.MP3 and self.sample_rate == 96000:
+            raise ValueError("MP3 supports 44100 or 48000 Hz output; 96000 Hz requires WAV or M4A.")
         expected_container = OutputContainer(self.format.value)
         if self.container is None:
             self.container = expected_container

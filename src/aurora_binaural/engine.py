@@ -1,4 +1,4 @@
-"""Core engine Protocol (`Renderer`), numpy-based `StubRenderer`, and `DelayTestRenderer`.
+"""Core engine protocol, Rust adapter, explicit stub and timeline processing.
 
 Implements ADR 0002 & docs/plan.md Sections 7 & 8:
 - `Renderer` Protocol:
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import importlib.metadata
 import inspect
 import os
 from collections.abc import Callable, Iterator
@@ -52,11 +53,14 @@ def engine_status(engine: str | None = None) -> dict[str, Any]:
     if choice != "rust":
         raise ProcessingError("AURORA_ENGINE must be rust or stub.", error_code="INVALID_ENGINE")
     try:
-        importlib.import_module("aurora_core")
+        module = importlib.import_module("aurora_core")
     except ImportError:
         return {"name": "rust", "is_stub": False, "available": False,
                 "message": "Rust 核心未安装。请运行 bash scripts/build-core.sh；测试流程可显式设置 AURORA_ENGINE=stub（桩）。"}
-    return {"name": "rust", "is_stub": False, "available": True, "message": "效果引擎：Rust"}
+    supports_route = "route" in inspect.signature(module.Renderer).parameters
+    return {"name": "rust", "is_stub": False, "available": True,
+            "supported_routes": ["B", "V"] if supports_route else ["B"],
+            "message": "效果引擎：Rust" if supports_route else "效果引擎：Rust（当前核心仅支持经典 room）"}
 
 
 @dataclass(frozen=True)
@@ -149,6 +153,7 @@ class RustRenderer:
         self._max_block = 1024
         self._prepared = False
         self._flushed = False
+        self._selection: tuple[str, Path] | None = None
         self.hrtf_source = self._hrtf_dir / "sadie2_d1/D1_48K_24bit_256tap_FIR_SOFA.sofa"
         self.hrtf_pack = self._hrtf_dir / "sadie_d1_frontal.ahrp"
 
@@ -161,19 +166,25 @@ class RustRenderer:
             raise ProcessingError("Simulated latency/tail require AURORA_ENGINE=stub.")
         self._sample_rate, self._max_block, self._config = sample_rate, max_block, config
         self._native = None
+        self._selection = None
         self._prepared, self._flushed = True, False
 
     def set_params(self, params: AuroraParams) -> None:
         if not self._prepared:
             raise ProcessingError("prepare before set_params.")
+        entry = CATALOG[str(params.preset.id)]
+        if params.preset.version != entry.version:
+            raise ProcessingError("Unsupported preset version.", error_code="UNSUPPORTED_PRESET_VERSION")
+        selection = (entry.route, entry.preset_path)
         if self._native is not None:
+            if self._selection != selection:
+                raise ProcessingError("prepare again before changing renderer route or preset file.")
             try:
                 self._native.set_params(params)
             except Exception as exc:
                 raise ProcessingError(f"Rust set_params failed: {exc}", error_code="CORE_ERROR") from exc
             return
         preset_id = str(params.preset.id)
-        entry = CATALOG[preset_id]
         route, preset_path = entry.route, entry.preset_path
         kwargs: dict[str, Any] = {
             "strength": params.effective_strength, "seed": params.seed, "preset": preset_id,
@@ -190,6 +201,7 @@ class RustRenderer:
             self._native = self._module.Renderer(str(self.hrtf_pack), str(self.hrtf_source), str(preset_path), **kwargs)
             self._native.prepare(self._sample_rate, self._max_block, self._config)
             self._native.set_params(params)
+            self._selection = selection
         except Exception as exc:
             self._native = None
             raise ProcessingError(f"Rust prepare failed: {exc}", error_code="CORE_ERROR") from exc
@@ -218,10 +230,16 @@ class RustRenderer:
         return self._validate_output(output, len(stereo))
 
     def latency_samples(self) -> int:
-        return int(self._require_native().latency_samples())
+        count = int(self._require_native().latency_samples())
+        if count < 0:
+            raise ProcessingError("Rust core reported negative latency.", error_code="CORE_CONTRACT_ERROR")
+        return count
 
     def tail_samples(self) -> int:
-        return int(self._require_native().tail_samples())
+        count = int(self._require_native().tail_samples())
+        if count < 0:
+            raise ProcessingError("Rust core reported negative tail.", error_code="CORE_CONTRACT_ERROR")
+        return count
 
     def flush(self) -> FloatBlock:
         native = self._require_native()
@@ -265,8 +283,12 @@ def renderer_metadata(renderer: Renderer, *, git_commit: str, block_size: int, s
     if isinstance(renderer, RustRenderer):
         with renderer.hrtf_source.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
+        try:
+            version = importlib.metadata.version("aurora_core")
+        except importlib.metadata.PackageNotFoundError:
+            version = str(getattr(renderer._module, "__version__", "unknown"))
         return EngineMetadata(
-            **common, name="aurora_core", version=str(getattr(renderer._module, "__version__", "unversioned")),
+            **common, name="aurora_core", version=version,
             is_stub=False, hrtf=HrtfDataInfo(name="SADIE II D1", version="D1-48K-256tap",
                                            sha256=digest, license="Apache-2.0"),
         )
@@ -656,7 +678,7 @@ def run_offline_block_pipeline(
     cancel_check: Callable[[], bool] | None = None,
     renderer: Renderer | None = None,
 ) -> tuple[bytes, int, int, int, int]:
-    """Run an in-memory float32le buffer block-by-block through a `Renderer` (default `StubRenderer`).
+    """Run an in-memory float32le buffer block-by-block through the selected `Renderer` (default Rust, explicit stub).
 
     Returns:
         (output_pcm_f32le, output_channels, output_sample_frames, latency_compensated, extra_tail_kept)

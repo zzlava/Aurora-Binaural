@@ -65,14 +65,15 @@ COPY --chown=aurora:aurora src/ ./src/
 COPY --chown=aurora:aurora data/hrtf/sadie2_d1/ ./data/hrtf/sadie2_d1/
 COPY --chown=aurora:aurora data/hrtf/sadie_d1_frontal.ahrp ./data/hrtf/sadie_d1_frontal.ahrp
 COPY --chown=aurora:aurora presets/ ./presets/
-COPY --chown=aurora:aurora deploy/licenses/ ./licenses/
-COPY --chown=aurora:aurora deploy/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
+COPY --chown=aurora:aurora deploy/licenses/ ./deploy/licenses/
+COPY --chown=aurora:aurora deploy/THIRD_PARTY_NOTICES.md ./deploy/THIRD_PARTY_NOTICES.md
 
 COPY --from=web-build --chown=aurora:aurora /web/dist/ ./web/dist/
 
 # Install aurora_binaural and its runtime dependencies (FastAPI, Uvicorn, Pydantic, NumPy)
 COPY --from=core-build /wheels/ /wheels/
 RUN pip install --no-cache-dir . /wheels/*.whl && rm -rf /wheels \
+    && cp -a deploy/licenses ./licenses && cp deploy/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md \
     && python -c 'import aurora_core'
 
 USER aurora

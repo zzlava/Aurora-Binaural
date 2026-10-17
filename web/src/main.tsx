@@ -926,7 +926,11 @@ function App() {
                   <select
                     value={format}
                     disabled={!active || pending}
-                    onChange={(event) => setFormat(event.currentTarget.value)}
+                    onChange={(event) => {
+                      const next = event.currentTarget.value;
+                      setFormat(next);
+                      if (next === "mp3" && rate === 96000) setRate(48000);
+                    }}
                   >
                     <option value="wav">WAV · 24 bit</option>
                     <option value="m4a">M4A · AAC 256 kbps</option>
@@ -944,7 +948,9 @@ function App() {
                   >
                     <option value="44100">44.1 kHz</option>
                     <option value="48000">48 kHz</option>
-                    <option value="96000">96 kHz</option>
+                    <option value="96000" disabled={format === "mp3"}>
+                      96 kHz
+                    </option>
                   </select>
                 </label>
                 <label>
@@ -1028,7 +1034,8 @@ function App() {
                         {lufs(entry.report.loudness_before.integrated_lufs)} →{" "}
                         {lufs(entry.report.loudness_after.integrated_lufs)} ·
                         HRTF：
-                        {entry.report.engine.hrtf.name.includes("SADIE")
+                        {entry.report.engine.is_stub &&
+                        entry.report.engine.hrtf.name.includes("SADIE")
                           ? "SADIE II（桩未应用）"
                           : entry.report.engine.hrtf.name}
                         <span>
