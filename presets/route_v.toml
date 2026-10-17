@@ -1,7 +1,20 @@
-# Route V presets. V2 is the default: anchor G (wide field, four height
-# speakers, ceiling reflections) with the voice kept closer than the room.
-# V1 is that same space with the voice farther, so the closeness can be
-# checked. V3 is V2 with a stronger height layer.
+# Route V presets. V3 is the product default: anchor G with a stronger
+# height layer. Listening round 3 picked V3 at strength 1.0. V2 is that
+# anchor (wide field, four height speakers, ceiling reflections) with the
+# voice kept closer than the room. V1 is the same space with the voice
+# farther, so the closeness can be checked.
+#
+# Catalog metadata. Both DSP loaders ignore these fields. Codex's preset
+# catalog reads them:
+#   default_preset = "<id>"
+#       Root string. The one product default. It must name a preset table.
+#   name = "<label>"
+#       User-facing label on that preset table.
+#   description = "<one sentence>"
+#       User-facing sentence on that preset table.
+#   default_strength = <number from 0 to 1>
+#       Slider default for that preset. Omit it and the catalog keeps 0.5.
+# None of these four fields is a speaker, room, or EQ parameter.
 #
 # strength scales wide / surround / height / early / late gains linearly
 # and opens front_az from 30 degrees to front_az. strength 0 bypasses.
@@ -20,6 +33,7 @@
 # preset only writes what it changes.
 
 version = 1
+default_preset = "V3"
 
 [engine]
 decorrelator_delays_ms = [3.2, 6.4, 10.0, 13.5, 4.4, 7.6, 11.2, 14.8, 3.8, 6.0, 9.2, 12.4]
@@ -63,16 +77,20 @@ near_lf_max_db = 4.0
 near_ild_scale = 1.0
 
 [V2]
-name = "G，人声更近"
+name = "沉浸·人声贴近"
+description = "宽声场和头顶都在，人声贴在近处，高度比推荐档轻一些。"
 
 [V1]
-name = "V2，人声更远"
+name = "开阔·人声稍远"
+description = "同一套空间，人声站得稍远，声场听起来更开。"
 center_distance_m = 2.20
 center_spread_deg = 45.0
 direct_room_send_db = 0.0
 
 [V3]
-name = "V2，高度更强"
+name = "沉浸·头顶环绕（推荐）"
+description = "人声贴近，头顶和四周更明显，建议从满强度开始听。"
+default_strength = 1.0
 height_db = -2.0
 height_el = 55.0
 ceiling_db = 6.0
