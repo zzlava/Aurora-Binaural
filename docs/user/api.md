@@ -11,6 +11,12 @@ API 与 Worker 共用持久化 SQLite 和文件目录。`aurora api` 不自动�
 | `GET /health` | 200：ok/status/service/api_version |
 | `GET /ready` | 200 或 503：ok/status/checks（database/worker/hrtf_data） |
 | `GET /v1/presets` | 200：ok/api_version/engine/default_preset/presets/parameter_ranges |
+| `GET /v1/user-presets` | 200：我的预设列表，含 user_preset_id/name/preset/controls/created_at/updated_at |
+| `POST /v1/user-presets` | 201：保存基础预设版本和五个控件，返回保存记录 |
+| `PATCH /v1/user-presets/{identity}` | 200：以 `{"name":"新名称"}` 重命名 |
+| `DELETE /v1/user-presets/{identity}` | 200：`{"deleted":true}` |
+| `GET /v1/user-presets/export` | 200：schema_version=1 的预设 JSON 包 |
+| `POST /v1/user-presets/import` | 201：原子导入预设 JSON 包，返回新记录列表 |
 | `POST /v1/assets` | 201：asset_id、文件摘要和音频元数据 |
 | `POST /v1/jobs` | 202：任务状态（含幂等重放） |
 | `POST /v1/previews` | 202：最多 20 秒等响度原音／效果试听任务 |
@@ -74,6 +80,41 @@ PY
 输入支持 FLAC、WAV、ALAC（M4A）、AIFF、AAC、MP3。上传支持 multipart 的 `file` 字段，也支持 `Content-Type: application/octet-stream` 加 `--data-binary @FILE`；原始上传用 `X-Asset-Filename: voice.wav` 指定文件名，可附 `X-Asset-Sha256` 校验内容。文件名会清理，服务器不接收本地路径或 URL 抓取。上传响应字段为 ok/asset_id/filename/sha256/size_bytes/format/container/codec/sample_rate/channels/samples/duration_seconds/created_at/expires_at。
 
 任务请求字段：api_version 固定 v1，mode 固定 enhance，input 必须含 asset_id 且禁止 path；preset 为 id/version，strength 0–1，seed 为 uint32。output 为 format/container/sample_rate/bit_depth/bitrate_kbps；timing 为 mode=preserve、tail=trim|preserve、fade_out_ms（默认 10）。字段默认与约束见 [CLI](cli.md) 或 schema；未知字段会拒绝。默认使用真实 Rust 路线 V 与 SADIE II D1；省略 preset 时读取 route_v.toml 的 default_preset，缺失时警告并退回该文件第一个预设。`room` 是经典路线 B，需要时显式选择。旧核心报 `CORE_ROUTE_UNSUPPORTED` 时重新构建核心并重启服务。
+
+job 和 preview 均可传入部分或全部 `controls`，省略项从对应 TOML `[Vx.controls]` 读取。例如：
+
+```json
+{
+  "input": {"asset_id": "asset_example"},
+  "preset": {"id": "V3", "version": "1"},
+  "controls": {"strength": 0.8, "width": 0.8, "height": 0.7, "room": 0.3, "voice_distance": 0.1}
+}
+```
+
+五个键分别表示整体空间强度、声场左右展开、上方扬声器层、混响量与长度、人声远近（0 最近）。HTTP 使用归一化数值，不接受 `%` 字符串。有限越界值截断到 `[0,1]`，日志及报告 `params.control_clipping` 记录 `{control,requested,applied}`；NaN/Inf、未知控件拒绝。同名平铺参数与 `controls` 内参数不同会返回 422，应只在一处传值。
+
+报告顶层 `controls` 和 `effective_params` 是原生路线 V 实际读回；归一化请求在 `params.controls`。经典 B 只生效 strength，其余四项列入 `ignored_controls`；桩忽略全部五项。两者 `effective_params=null`，`controls_note` 说明原因。控件及截断事件参与任务幂等摘要。
+
+## 我的预设 JSON
+
+`POST /v1/user-presets` 的正文为下例 `presets` 中的单项；`POST /v1/user-presets/import` 接受完整包，`GET /v1/user-presets/export` 返回相同包格式：
+
+```json
+{
+  "schema_version": 1,
+  "presets": [{
+    "name": "夜听空间",
+    "preset": {"id": "V3", "version": "1"},
+    "controls": {"strength": 0.8, "width": 0.8, "height": 0.7, "room": 0.3, "voice_distance": 0.1}
+  }]
+}
+```
+
+仅接受支持全部五项控件的路线 V 基础预设及当前版本。名称去首尾空白，长度 1–80。空白名称、未知键、包内重名返回 422；与数据库重名返回 409 `USER_PRESET_NAME_CONFLICT` 且整批回滚。数据库启动时迁移新表，原素材/任务保留，TTL 清理不删除个人预设。API 不限制每包预设数量；GUI 导入文件最多 256 KB，更大的集合可拆分或通过 API 导入。
+
+预设管理端点使用 API 自己的 SQLite，不接受任意数据库路径。`identity` 可为记录 ID 或名称；不存在返回 404 `USER_PRESET_NOT_FOUND`。客户端创建渲染任务时发送选中记录的 `preset` 和 `controls`。本地 GUI 连接远程渲染时仍在本机管理这些记录；任务传参不要求远程数据库有相同预设 ID。
+
+## 试听与格式
 
 试听示例（复用已上传的 asset_id）：
 

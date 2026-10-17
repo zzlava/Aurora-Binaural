@@ -120,6 +120,13 @@ class ServiceConfig:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     @classmethod
+    def for_local_gui(cls) -> ServiceConfig:
+        """Share the local GUI database location with CLI saved-preset selection."""
+        env = dict(os.environ)
+        env.setdefault("AURORA_DATA_DIR", str(Path.home() / "Library" / "Caches" / "AuroraBinaural"))
+        return cls.from_env(env)
+
+    @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> ServiceConfig:
         """Load `ServiceConfig` from `os.environ` (or an explicit mapping for tests)."""
         env = environ if environ is not None else os.environ

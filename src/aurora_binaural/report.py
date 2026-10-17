@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -180,6 +180,10 @@ class ConversionReport(BaseModel):
     output: AudioProbeInfo
     engine: EngineMetadata
     params: AuroraParams
+    controls: dict[str, float] = Field(default_factory=dict, description="Actually applied macro controls read back from the engine.")
+    effective_params: dict[str, Any] | None = Field(default=None, description="Native expanded route V parameters; null when unsupported.")
+    ignored_controls: list[str] = Field(default_factory=list)
+    controls_note: str = ""
     timeline: TimelineVerification
     loudness_before: LoudnessMetrics
     loudness_after: LoudnessMetrics

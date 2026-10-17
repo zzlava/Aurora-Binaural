@@ -77,10 +77,18 @@ def test_route_aware_binding_receives_toml_route_before_prepare() -> None:
             super().__init__()
             calls.update(route=route, preset_path=preset_path, strength=strength, seed=seed, preset=preset)
 
+        def set_controls(self, controls: dict[str, float]) -> None:
+            assert self._prepared
+            calls["controls"] = controls
+
+        def effective_params(self) -> dict[str, object]:
+            return {"controls": calls["controls"]}
+
     with patch("aurora_binaural.engine.importlib.import_module", return_value=SimpleNamespace(Renderer=RouteAwareCore)):
         renderer = RustRenderer()
     renderer.prepare(48000, 256, RenderConfig())
     renderer.set_params(AuroraParams(strength=0.7, seed=123))
     assert calls == {"route": "V", "preset_path": str(CATALOG[DEFAULT_PRESET_ID].preset_path),
-                     "strength": 0.7, "seed": 123, "preset": DEFAULT_PRESET_ID}
+                     "strength": 0.7, "seed": 123, "preset": DEFAULT_PRESET_ID,
+                     "controls": AuroraParams(strength=0.7).resolved_controls}
     assert renderer.latency_samples() == 0

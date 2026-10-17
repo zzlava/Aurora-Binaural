@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Api, ApiError, serverAddress } from "./api";
 import { ABPlayer } from "./player";
-import type { Asset, EngineStatus, Job, Preset, QueueEntry, Report } from "./types";
+import type { Asset, ControlKey, Controls, EngineStatus, Job, Preset, QueueEntry, Report, UserPreset } from "./types";
 import "./style.css";
 
 const statuses: Record<Job["status"], string> = {
@@ -20,6 +20,13 @@ const lufs = (value: number | null | undefined) =>
   value == null ? "静音" : `${value.toFixed(1)} LUFS`;
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试。";
+const controlLabels: { key: ControlKey; label: string; hint: string }[] = [
+  { key: "strength", label: "空间强度", hint: "整体空间感；0% 为直通" },
+  { key: "width", label: "宽度", hint: "声场左右展开" },
+  { key: "height", label: "头顶感", hint: "上方扬声器层" },
+  { key: "room", label: "房间感", hint: "混响量与长度" },
+  { key: "voice_distance", label: "人声距离", hint: "人声远近；0% 最近" },
+];
 function readSession(key: string): string {
   try {
     return sessionStorage.getItem(key) ?? "";
@@ -48,11 +55,17 @@ function App() {
   );
   const [key, setKey] = useState(readSession("aurora.key"));
   const [api, setApi] = useState<Api | null>(null);
+  const [presetApi, setPresetApi] = useState<Api | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [preset, setPreset] = useState("");
-  const [strength, setStrength] = useState(0.5);
+  const [controls, setControls] = useState<Controls>({});
+  const strength = controls.strength ?? 0;
+  const [controlRelease, setControlRelease] = useState(0);
+  const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
+  const [userPresetId, setUserPresetId] = useState("");
+  const [presetName, setPresetName] = useState("");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [queue, setQueue] = useState<QueueEntry[]>([]);
@@ -74,7 +87,12 @@ function App() {
   const [side, setSide] = useState<0 | 1>(0);
   const player = useRef(new ABPlayer());
   const epoch = useRef(0);
+  const previewGeneration = useRef(0);
+  const refreshTimer = useRef<number | undefined>(undefined);
+  const currentPreview = useRef<{ asset: Asset; start: number; duration: number } | null>(null);
+  const previewLoads = useRef(new Map<string, { generation: number; preserve: boolean }>());
   const fileInput = useRef<HTMLInputElement>(null);
+  const presetInput = useRef<HTMLInputElement>(null);
   const active = assets.find((asset) => asset.asset_id === selectedId);
   const selectedPreset = presets.find((item) => item.id === preset);
   const pending = busy.length > 0;
@@ -104,12 +122,20 @@ function App() {
   }
   function resetConnection() {
     epoch.current++;
+    previewGeneration.current++;
+    window.clearTimeout(refreshTimer.current);
+    currentPreview.current = null;
+    previewLoads.current.clear();
     setApi(null);
+    setPresetApi(null);
     setEngine(null);
     setAssets([]);
     setSelectedId("");
     setQueue([]);
     setPresets([]);
+    setUserPresets([]);
+    setUserPresetId("");
+    setPresetName("");
     player.current.dispose();
     setLoaded(null);
     setPlaying(false);
@@ -156,9 +182,20 @@ function App() {
         result.presets[0];
       if (chosen) {
         setPreset(chosen.id);
-        setStrength(chosen.default_strength);
+        setControls(chosen.default_controls);
       }
+      // A locally launched GUI keeps personal presets in its own SQLite,
+      // even when audio rendering is delegated to a remote service.
+      let presetClient = client;
+      if (nextMode === "remote") {
+        const session = await fetch("/gui/session", { headers: { "X-Aurora-GUI": "1" }, cache: "no-store" });
+        if (session.ok) presetClient = new Api("", (await session.json()).api_key, log);
+      }
+      const savedPresets = await presetClient.request<UserPreset[]>("/v1/user-presets");
+      if (epoch.current !== connectionEpoch) return;
       setApi(client);
+      setPresetApi(presetClient);
+      setUserPresets(savedPresets);
       setNotice("连接成功，可以导入音频。");
       log("连接成功");
     } catch (failure) {
@@ -251,9 +288,80 @@ function App() {
     );
     if (ready) {
       setAutoLoadId("");
-      void loadPreview(ready);
+      const options = previewLoads.current.get(ready.job.job_id);
+      if (options && options.generation === previewGeneration.current)
+        void loadPreview(ready, options.preserve, options.generation);
     }
   }, [queue, autoLoadId]);
+  useEffect(() => {
+    if (!controlRelease || !currentPreview.current || !api) return;
+    const timer = window.setTimeout(() => void createJob(true, false, true), 300);
+    refreshTimer.current = timer;
+    return () => window.clearTimeout(timer);
+  }, [controlRelease]);
+
+  function changeControl(control: ControlKey, value: number) {
+    window.clearTimeout(refreshTimer.current);
+    previewGeneration.current++;
+    setAutoLoadId("");
+    setControls((previous) => ({ ...previous, [control]: value }));
+    setUserPresetId("");
+  }
+  function choosePreset(item: Preset) {
+    previewGeneration.current++;
+    setAutoLoadId("");
+    setPreset(item.id);
+    setControls(item.default_controls);
+    setUserPresetId("");
+    setControlRelease((value) => value + 1);
+  }
+
+  function chooseUserPreset(identity: string) {
+    const item = userPresets.find((row) => row.user_preset_id === identity);
+    if (!item) { setUserPresetId(""); return; }
+    previewGeneration.current++;
+    setAutoLoadId("");
+    setPreset(item.preset.id);
+    setControls(item.controls);
+    setUserPresetId(identity);
+    setPresetName(item.name);
+    setControlRelease((value) => value + 1);
+    setNotice(`已应用“${item.name}”，试听、导出和批量处理将使用这组控件。`);
+  }
+  async function saveUserPreset() {
+    if (!presetApi || !selectedPreset || !presetName.trim()) return;
+    await perform("preset-save", async () => {
+      const saved = await presetApi.json<UserPreset>("/v1/user-presets", {
+        name: presetName.trim(), preset: { id: preset, version: selectedPreset.version }, controls,
+      });
+      setUserPresets(await presetApi.request<UserPreset[]>("/v1/user-presets"));
+      setUserPresetId(saved.user_preset_id);
+      setNotice(`“${saved.name}”已保存到 SQLite。`);
+    });
+  }
+  async function manageUserPreset(action: "rename" | "delete") {
+    if (!presetApi || !userPresetId) return;
+    await perform(`preset-${action}`, async () => {
+      await presetApi.request(`/v1/user-presets/${userPresetId}`, {
+        method: action === "rename" ? "PATCH" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        ...(action === "rename" ? { body: JSON.stringify({ name: presetName.trim() }) } : {}),
+      });
+      setUserPresets(await presetApi.request<UserPreset[]>("/v1/user-presets"));
+      if (action === "delete") { setUserPresetId(""); setPresetName(""); }
+      setNotice(action === "rename" ? "预设已重命名。" : "预设已删除，当前控件仍保留，可另存。" );
+    });
+  }
+  async function importUserPresets(file: File) {
+    if (!presetApi) return;
+    await perform("preset-import", async () => {
+      if (file.size > 256 * 1024) throw new Error("预设 JSON 不能超过 256 KB。请拆分后导入。");
+      const bundle = JSON.parse(await file.text());
+      const imported = await presetApi.json<UserPreset[]>("/v1/user-presets/import", bundle);
+      setUserPresets(await presetApi.request<UserPreset[]>("/v1/user-presets"));
+      setNotice(`已导入 ${imported.length} 个预设。可在“我的预设”中选择。`);
+    });
+  }
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (
@@ -319,21 +427,25 @@ function App() {
         );
     });
   }
-  async function createJob(preview: boolean, all = false) {
+  async function createJob(preview: boolean, all = false, refresh = false) {
     if (!api || !active || !selectedPreset) return;
     const client = api,
       connectionEpoch = epoch.current;
+    const selection = refresh ? currentPreview.current : null;
+    const previewStart = selection?.start ?? start;
+    const previewDuration = selection?.duration ?? duration;
+    const generation = preview ? ++previewGeneration.current : previewGeneration.current;
     await perform(preview ? "preview" : "export", async () => {
-      const targets = all ? assets : [active];
+      const targets = all ? assets : [selection?.asset ?? active];
       for (const asset of targets) {
         if (
           preview &&
-          (!Number.isFinite(start) ||
-            !Number.isFinite(duration) ||
-            start < 0 ||
-            start >= asset.duration_seconds ||
-            duration <= 0 ||
-            duration > 20)
+          (!Number.isFinite(previewStart) ||
+            !Number.isFinite(previewDuration) ||
+            previewStart < 0 ||
+            previewStart >= asset.duration_seconds ||
+            previewDuration <= 0 ||
+            previewDuration > 20)
         ) {
           throw new ApiError(
             "试听起点必须在音频内，时长需大于 0 且不超过 20 秒。",
@@ -341,7 +453,7 @@ function App() {
         }
         const settings = {
           preset: { id: preset, version: selectedPreset.version },
-          strength,
+          controls,
           seed: 20261016,
         };
         const job = await client.json<Job>(
@@ -349,8 +461,8 @@ function App() {
           preview
             ? {
                 asset_id: asset.asset_id,
-                start_seconds: start,
-                duration_seconds: duration,
+                start_seconds: previewStart,
+                duration_seconds: previewDuration,
                 ...settings,
               }
             : {
@@ -369,7 +481,11 @@ function App() {
           { job, filename: asset.filename },
           ...previous,
         ]);
-        if (preview) setAutoLoadId(job.job_id);
+        if (preview && generation === previewGeneration.current) {
+          currentPreview.current = { asset, start: previewStart, duration: previewDuration };
+          previewLoads.current.set(job.job_id, { generation, preserve: refresh });
+          setAutoLoadId(job.job_id);
+        }
       }
       setNotice(
         preview
@@ -378,27 +494,34 @@ function App() {
       );
     });
   }
-  async function loadPreview(entry: QueueEntry) {
+  async function loadPreview(entry: QueueEntry, preserve = false, generation = ++previewGeneration.current) {
     if (!api) return;
     const client = api,
       connectionEpoch = epoch.current;
     await perform("player", async () => {
-      player.current.pause();
-      setPlaying(false);
-      setLoaded(null);
+      if (!preserve) {
+        player.current.pause();
+        setPlaying(false);
+      }
       const [original, effect] = await Promise.all([
         client.request<Blob>(`/v1/jobs/${entry.job.job_id}/original`, {}, true),
         client.request<Blob>(`/v1/jobs/${entry.job.job_id}/result`, {}, true),
       ]);
       if (epoch.current !== connectionEpoch) return;
-      await player.current.load(original, effect);
-      if (epoch.current !== connectionEpoch) {
-        player.current.dispose();
-        return;
+      const applied = await player.current.load(original, effect, {
+        preserveProgress: preserve,
+        isCurrent: () => epoch.current === connectionEpoch && generation === previewGeneration.current,
+      });
+      if (!applied) return;
+      if (!preserve) {
+        player.current.switchTo(0);
+        setSide(0);
       }
-      player.current.switchTo(0);
-      setSide(0);
-      setPosition(0);
+      setPosition(player.current.position);
+      setPlaying(player.current.playing);
+      const asset = assets.find((item) => item.asset_id === entry.job.asset_id);
+      if (asset && entry.job.preview)
+        currentPreview.current = { asset, start: entry.job.preview.start_seconds, duration: entry.job.preview.duration_seconds };
       setLoaded(entry);
       setNotice(
         entry.report?.engine.is_stub
@@ -739,8 +862,7 @@ function App() {
                     value={item.id}
                     checked={preset === item.id}
                     onChange={() => {
-                      setPreset(item.id);
-                      setStrength(item.default_strength);
+                      choosePreset(item);
                     }}
                   />
                   <strong>
@@ -763,13 +885,66 @@ function App() {
               value={strength}
               disabled={!api}
               onInput={(event) =>
-                setStrength(Number(event.currentTarget.value))
+                changeControl("strength", Number(event.currentTarget.value))
               }
+              onChange={() => setControlRelease((value) => value + 1)}
             />
             <div class="range-endpoints">
               <span>轻柔</span>
               <span>鲜明</span>
             </div>
+            <details class="advanced-controls">
+              <summary>高级 <span>调整五个空间控件</span></summary>
+              <div class="macro-controls">
+                {controlLabels.map(({ key: control, label, hint }) => (
+                  <div class="macro-control" key={control}>
+                    <div class="strength-row">
+                      <label for={`control-${control}`}>{label}</label>
+                      <output for={`control-${control}`}>{controls[control] == null ? "—" : `${Math.round(controls[control]! * 100)}%`}</output>
+                    </div>
+                    <input id={`control-${control}`} type="range" min="0" max="1" step="0.01"
+                      value={controls[control] ?? 0}
+                      disabled={!api || (selectedPreset?.route !== "V" && control !== "strength")}
+                      aria-describedby={`hint-${control}`}
+                      onInput={(event) => changeControl(control, Number(event.currentTarget.value))}
+                      onChange={() => setControlRelease((value) => value + 1)} />
+                    <p class="helper" id={`hint-${control}`}>{hint}</p>
+                  </div>
+                ))}
+              </div>
+              <div class="advanced-footer">
+                <button class="quiet" disabled={!selectedPreset || !api} onClick={() => selectedPreset && choosePreset(selectedPreset)}>恢复预设默认</button>
+                <p class="helper" role="status">{engine?.is_stub ? "桩引擎忽略全部空间控件。" : selectedPreset?.route === "B" ? "经典路线仅支持空间强度，其余四项忽略。" : "松开滑块后自动更新当前试听，保留 A/B 进度。"}</p>
+              </div>
+            </details>
+            <section class="user-presets" aria-labelledby="user-presets-title">
+              <div class="section-heading">
+                <h3 id="user-presets-title">我的预设</h3>
+                <span>{userPresets.length} 个已保存</span>
+              </div>
+              <label>
+                选用我的预设
+                <select value={userPresetId} disabled={!api || pending || !userPresets.length}
+                  onChange={(event) => chooseUserPreset(event.currentTarget.value)}>
+                  <option value="">{userPresets.length ? "当前自定义设置" : "还没有保存的预设"}</option>
+                  {userPresets.map((item) => <option key={item.user_preset_id} value={item.user_preset_id}>{item.name} · {item.preset.id}</option>)}
+                </select>
+              </label>
+              <div class="preset-name-row">
+                <label>预设名称<input type="text" maxLength={80} value={presetName} placeholder="例如：宽声场 · 近人声"
+                  disabled={!api || pending} onInput={(event) => setPresetName(event.currentTarget.value)} /></label>
+                <button disabled={!api || pending || !presetName.trim() || selectedPreset?.route !== "V"} onClick={() => void saveUserPreset()}>保存为新预设</button>
+              </div>
+              <div class="preset-actions">
+                <button class="quiet" disabled={!userPresetId || pending || !presetName.trim()} onClick={() => void manageUserPreset("rename")}>重命名</button>
+                <button class="quiet" disabled={!userPresetId || pending} onClick={() => void manageUserPreset("delete")}>删除预设</button>
+                <button class="quiet" disabled={!presetApi || pending || !userPresets.length} onClick={() => void perform("preset-export", async () => { await presetApi?.download("/v1/user-presets/export", "aurora-user-presets.json"); })}>导出预设 JSON</button>
+                <button class="quiet" disabled={!api || pending} onClick={() => presetInput.current?.click()}>导入预设 JSON</button>
+                <input ref={presetInput} type="file" accept=".json,application/json" aria-label="导入预设 JSON 文件" hidden
+                  onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importUserPresets(file); event.currentTarget.value = ""; }} />
+              </div>
+              <p class="helper">保存基础预设和五个控件；选用后同时用于试听、完整导出与全部素材的批量处理。</p>
+            </section>
             <div class="preview-settings">
               <label>
                 起始位置（秒）
@@ -814,6 +989,7 @@ function App() {
             </p>
             <section
               class="player"
+              data-loaded-job={loaded?.job.job_id ?? ""}
               aria-label="等响度 A/B 播放器"
               aria-busy={busy.includes("player")}
             >

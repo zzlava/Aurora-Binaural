@@ -112,6 +112,262 @@
         ]
       }
     },
+    "/v1/user-presets": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "List User Presets",
+        "operationId": "list_user_presets_v1_user_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserPreset"
+                  },
+                  "type": "array",
+                  "title": "Response List User Presets V1 User Presets Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Save User Preset",
+        "operationId": "save_user_preset_v1_user_presets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPresetSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/user-presets/export": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Export User Presets",
+        "operationId": "export_user_presets_v1_user_presets_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPresetBundle"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/user-presets/import": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Import User Presets",
+        "operationId": "import_user_presets_v1_user_presets_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPresetBundle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserPreset"
+                  },
+                  "type": "array",
+                  "title": "Response Import User Presets V1 User Presets Import Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/user-presets/{identity}": {
+      "patch": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Rename User Preset",
+        "operationId": "rename_user_preset_v1_user_presets__identity__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identity"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPresetName"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Delete User Preset",
+        "operationId": "delete_user_preset_v1_user_presets__identity__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Delete User Preset V1 User Presets  Identity  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/assets": {
       "post": {
         "tags": [
@@ -1063,6 +1319,74 @@
       },
       "AuroraParams": {
         "properties": {
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength",
+            "description": "Perceptual effect strength in [0.0, 1.0]. Mapped to upmix width, ambient ratio, early reflections, and DRR offset. Dry/wet mixing is forbidden. When 0.0, spatial DSP is bypassed. Defaults to TOML controls.strength; finite outliers are clamped."
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "voice_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Distance"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          },
+          "control_clipping": {
+            "items": {
+              "$ref": "#/components/schemas/ControlClipping"
+            },
+            "type": "array",
+            "title": "Control Clipping"
+          },
           "preview": {
             "anyOf": [
               {
@@ -1100,20 +1424,6 @@
             "$ref": "#/components/schemas/PresetSpec",
             "description": "Spatial preset identifier and version."
           },
-          "strength": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strength",
-            "description": "Perceptual effect strength in [0.0, 1.0]. Mapped to upmix width, ambient ratio, early reflections, and DRR offset. Dry/wet mixing is forbidden. When 0.0, spatial DSP is bypassed. Defaults to the selected preset's default_strength."
-          },
           "seed": {
             "type": "integer",
             "maximum": 4294967295.0,
@@ -1135,6 +1445,39 @@
         "type": "object",
         "title": "AuroraParams",
         "description": "Unified parameter model shared by CLI, Web GUI, and HTTP API (docs/plan.md Sections 9 & 10).\n\nSupports both standalone render parameter validation and full `POST /v1/jobs` payloads:\n```json\n{\n  \"api_version\": \"v1\",\n  \"mode\": \"enhance\",\n  \"input\": {\"asset_id\": \"asset_example\"},\n  \"preset\": {\"id\": \"room\", \"version\": \"1\"},\n  \"strength\": 0.4,\n  \"seed\": 20261016,\n  \"output\": {\"format\": \"wav\", \"sample_rate\": 48000, \"bit_depth\": 24},\n  \"timing\": {\"mode\": \"preserve\", \"tail\": \"trim\"}\n}\n```"
+      },
+      "ControlClipping": {
+        "properties": {
+          "control": {
+            "type": "string",
+            "enum": [
+              "strength",
+              "width",
+              "height",
+              "room",
+              "voice_distance"
+            ],
+            "title": "Control"
+          },
+          "requested": {
+            "type": "number",
+            "title": "Requested"
+          },
+          "applied": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Applied"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "control",
+          "requested",
+          "applied"
+        ],
+        "title": "ControlClipping"
       },
       "ConversionReport": {
         "properties": {
@@ -1195,6 +1538,39 @@
           },
           "params": {
             "$ref": "#/components/schemas/AuroraParams"
+          },
+          "controls": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Controls",
+            "description": "Actually applied macro controls read back from the engine."
+          },
+          "effective_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Params",
+            "description": "Native expanded route V parameters; null when unsupported."
+          },
+          "ignored_controls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ignored Controls"
+          },
+          "controls_note": {
+            "type": "string",
+            "title": "Controls Note",
+            "default": ""
           },
           "timeline": {
             "$ref": "#/components/schemas/TimelineVerification"
@@ -1928,6 +2304,13 @@
             "minimum": 0.0,
             "title": "Default Strength"
           },
+          "default_controls": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Default Controls"
+          },
           "description": {
             "type": "string",
             "title": "Description"
@@ -1953,6 +2336,7 @@
           "name",
           "version",
           "default_strength",
+          "default_controls",
           "description",
           "algorithm_summary",
           "route"
@@ -2129,6 +2513,71 @@
       },
       "PreviewRequest": {
         "properties": {
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "voice_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Distance"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          },
+          "control_clipping": {
+            "items": {
+              "$ref": "#/components/schemas/ControlClipping"
+            },
+            "type": "array",
+            "title": "Control Clipping"
+          },
           "start_seconds": {
             "type": "number",
             "minimum": 0.0,
@@ -2150,19 +2599,6 @@
           },
           "preset": {
             "$ref": "#/components/schemas/PresetSpec"
-          },
-          "strength": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strength"
           },
           "seed": {
             "type": "integer",
@@ -2264,6 +2700,69 @@
         ],
         "title": "RenderMode",
         "description": "Job rendering mode (docs/plan.md Section 10)."
+      },
+      "SpatialControls": {
+        "properties": {
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "voice_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Distance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SpatialControls",
+        "description": "Partial overrides; omitted values come from the selected TOML preset."
       },
       "TailPolicy": {
         "type": "string",
@@ -2483,6 +2982,108 @@
         "type": "object",
         "title": "TimingSpec",
         "description": "Timeline synchronization and reverb tail policy (docs/plan.md Section 8 & 10)."
+      },
+      "UserPreset": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/PresetSpec"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          },
+          "user_preset_id": {
+            "type": "string",
+            "title": "User Preset Id"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "preset",
+          "controls",
+          "user_preset_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserPreset"
+      },
+      "UserPresetBundle": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/UserPresetSpec"
+            },
+            "type": "array",
+            "title": "Presets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "presets"
+        ],
+        "title": "UserPresetBundle"
+      },
+      "UserPresetName": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "UserPresetName"
+      },
+      "UserPresetSpec": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/PresetSpec"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "preset",
+          "controls"
+        ],
+        "title": "UserPresetSpec"
       },
       "ValidationError": {
         "properties": {

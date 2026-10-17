@@ -1,0 +1,8 @@
+{
+  "sha256": "d7bed04132c83e4cb75153b4f6ef467e1d4a24392ce81fee16c2ba2f255a1d87",
+  "samples": 480000,
+  "sample_rate": 48000,
+  "channels": 2,
+  "codec": "pcm_f32le",
+  "matches_report": true
+}

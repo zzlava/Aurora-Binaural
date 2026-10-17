@@ -34,7 +34,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from aurora_binaural.catalog import CATALOG, DEFAULT_PRESET_ID
+from aurora_binaural.catalog import CATALOG, CONTROL_KEYS, DEFAULT_PRESET_ID
 from aurora_binaural.config import ServiceConfig
 from aurora_binaural.engine import engine_status
 from aurora_binaural.exit_codes import AuroraError, ExitCode
@@ -58,6 +58,7 @@ from aurora_binaural.storage import (
     TaskStore,
     UnauthorizedError,
 )
+from aurora_binaural.user_presets import UserPreset, UserPresetBundle, UserPresetName, UserPresetSpec, UserPresetStore
 
 API_VERSION = "v1"
 
@@ -248,6 +249,7 @@ def create_app(
     cfg = config or ServiceConfig.from_env()
     cfg.ensure_directories()
     task_store = store or TaskStore(cfg.db_path)
+    user_presets = UserPresetStore(task_store)
 
     app = FastAPI(
         title="Aurora Binaural API",
@@ -265,7 +267,7 @@ def create_app(
 
         app.add_middleware(
             CORSMiddleware, allow_origins=list(cfg.cors_origins),
-            allow_methods=["GET", "POST"],
+            allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Asset-Filename"],
             expose_headers=["Content-Disposition"],
         )
@@ -319,7 +321,9 @@ def create_app(
             error_code="INVALID_PARAMETERS",
             exit_code=ExitCode.PARAM_ERROR,
             retryable=False,
-            details={"errors": json.loads(json.dumps(exc.errors(), default=str))},
+            # JSONResponse rejects non-finite floats. An invalid JSON numeric
+            # literal can appear in validation input; preserve it as text.
+            details={"errors": json.loads(json.dumps(exc.errors(), default=str), parse_constant=str)},
         )
         return JSONResponse(status_code=err.http_status, content=err.to_dict())
 
@@ -393,6 +397,7 @@ def create_app(
             presets=list(PRESET_CATALOG.values()),
             parameter_ranges={
                 "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},
+                "controls": {key: {"min": 0.0, "max": 1.0, "finite_outliers": "clamp"} for key in CONTROL_KEYS},
                 "seed": {"min": 0, "max": 4294967295, "default": 20261016},
                 "sample_rate": ["source", 44100, 48000, 96000],
                 "wav_bit_depth": [16, 24, "32f"],
@@ -401,6 +406,35 @@ def create_app(
                 "lossy_bitrate_kbps": {"min": 64, "max": 512, "default": 256},
             },
         )
+
+    @app.get("/v1/user-presets", response_model=list[UserPreset], dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def list_user_presets() -> list[UserPreset]:
+        return user_presets.list_presets()
+
+    @app.post("/v1/user-presets", status_code=201, response_model=UserPreset,
+              dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def save_user_preset(spec: UserPresetSpec) -> UserPreset:
+        return user_presets.create(spec)
+
+    @app.get("/v1/user-presets/export", response_model=UserPresetBundle,
+             dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def export_user_presets() -> UserPresetBundle:
+        return user_presets.export_bundle()
+
+    @app.post("/v1/user-presets/import", status_code=201, response_model=list[UserPreset],
+              dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def import_user_presets(bundle: UserPresetBundle) -> list[UserPreset]:
+        return user_presets.import_bundle(bundle)
+
+    @app.patch("/v1/user-presets/{identity}", response_model=UserPreset,
+               dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def rename_user_preset(identity: str, name: UserPresetName) -> UserPreset:
+        return user_presets.rename(identity, name)
+
+    @app.delete("/v1/user-presets/{identity}", dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def delete_user_preset(identity: str) -> dict[str, bool]:
+        user_presets.delete(identity)
+        return {"deleted": True}
 
     @app.post(
         "/v1/assets",
@@ -627,7 +661,8 @@ def create_app(
     ) -> JobStatusResponseModel:
         params = AuroraParams(
             input=InputSpec(asset_id=request.asset_id), preset=request.preset,
-            strength=request.strength, seed=request.seed, output=OutputSpec(bit_depth=32),
+            strength=request.strength, controls=request.controls, control_clipping=request.control_clipping,
+            seed=request.seed, output=OutputSpec(bit_depth=32),
             timing=TimingSpec(fade_out_ms=0),
             preview=PreviewSpec(start_seconds=request.start_seconds, duration_seconds=request.duration_seconds),
         )

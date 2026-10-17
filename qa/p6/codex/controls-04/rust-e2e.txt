@@ -1,0 +1,90 @@
+[WebServer] [aurora] Aurora GUI: http://127.0.0.1:8776 （Ctrl-C 退出）
+
+[WebServer] [aurora] [worker_49148_9af6c6cf] Worker started (concurrency=1, lease=30.0s, max_retries=2)
+
+
+Running 2 tests using 1 worker
+
+(node:49163) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/2] tests/hires-workflow.spec.ts:9:1 › 高解析 FLAC → 源采样率 FLAC、ALAC、AIFF、float WAV 实际下载回读
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_fcf5a57f562749f0' (attempt 1/3)
+
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Streaming decode -> renderer (preset=V3, strength=1.0, block_size=1024) -> encode (flac, sr=96000)
+
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+
+[WebServer] [aurora] Completed conversion in 1129.5 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/tmp/attempt_job_fcf5a57f562749f0_1_lease_0bca6506f89d42deba5f5d0f64aad701/staged_out.flac
+
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_909af30bb5f84c93' (attempt 1/3)
+
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Streaming decode -> renderer (preset=V3, strength=1.0, block_size=1024) -> encode (alac, sr=44100)
+
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+
+[WebServer] [aurora] Completed conversion in 1333.9 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/tmp/attempt_job_909af30bb5f84c93_1_lease_04b2f2b4a7bb4f4d8fd15655850035b8/staged_out.m4a
+
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_4b2080626a164eeb' (attempt 1/3)
+
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Streaming decode -> renderer (preset=V3, strength=1.0, block_size=1024) -> encode (aiff, sr=48000)
+
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+
+[WebServer] [aurora] Completed conversion in 1160.7 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/tmp/attempt_job_4b2080626a164eeb_1_lease_7bf2eaa5c20047d7b831508a40cbb602/staged_out.aiff
+
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_b6e228d0246d47d3' (attempt 1/3)
+
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_9ed1b59632904af9.flac
+
+[WebServer] [aurora] Streaming decode -> renderer (preset=V3, strength=1.0, block_size=1024) -> encode (wav, sr=96000)
+
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+
+[WebServer] [aurora] Completed conversion in 1162.6 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/tmp/attempt_job_b6e228d0246d47d3_1_lease_15e7f0d007db42b6863162f0b78ad945/staged_out.wav
+
+[2/2] tests/rust-workflow.spec.ts:8:1 › 真实音乐 → Rust V2 试听与同步 A/B → WAV 导出下载；四种主题视口
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_c8981643e8ec4f09' (attempt 1/3)
+
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_c49c783f40694f76' (attempt 1/3)
+
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_aca6e07b2bc446ce.wav
+
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_aca6e07b2bc446ce.wav
+
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=1.0, block_size=1024) -> encode (wav, sr=48000)
+
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+
+[WebServer] [aurora] Completed conversion in 2679.1 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/tmp/attempt_job_c49c783f40694f76_1_lease_bb34548f59f5401b9f4e4afdd34fa0dd/staged_out.wav
+
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_65b4b00da81f4f1b' (attempt 1/3)
+
+[WebServer] [aurora] [worker_49148_9af6c6cf] Claimed job 'job_923f6f1791804b41' (attempt 1/3)
+
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_f6217d0c656248c5.wav
+
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/assets/asset_f6217d0c656248c5.wav
+
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=1.0, block_size=1024) -> encode (wav, sr=48000)
+
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+
+[WebServer] [aurora] Completed conversion in 3090.3 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-49136/tmp/attempt_job_923f6f1791804b41_1_lease_6e9fe6f086e3435c95a8bc389888b5b2/staged_out.wav
+
+  2 passed (27.7s)

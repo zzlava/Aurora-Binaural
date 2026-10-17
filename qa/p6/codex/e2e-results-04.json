@@ -1,0 +1,220 @@
+{
+  "config": {
+    "argv": [
+      "~/.nvm/versions/node/v24.12.0/bin/node",
+      "~/Desktop/leo/Aurora Binaural/.agents/codex/web/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "playwright.controls.config.ts"
+    ],
+    "configFile": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/playwright.controls.config.ts",
+    "rootDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.test-output/controls",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "controls-workflow.spec.ts"
+        ],
+        "timeout": 120000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.test-output/controls",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+        "snapshotDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+        "testIgnore": [],
+        "testMatch": "controls-workflow.spec.ts",
+        "timeout": 120000,
+        "use": {
+          "baseURL": "http://127.0.0.1:8777",
+          "browserName": "chromium",
+          "colorScheme": "light",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "trace": "off"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/e2e-results-04.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "controls-workflow.spec.ts",
+      "file": "controls-workflow.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "滑块松手防抖 → Rust 自动试听保留 A/B 进度 → 下载报告",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 11496,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T06:21:44.212Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b2a153b1aca3047483f-6727ad2a997ed2011d5d",
+          "file": "controls-workflow.spec.ts",
+          "line": 8,
+          "column": 1
+        },
+        {
+          "title": "我的预设 SQLite 保存、改名、重启读回、JSON 往返与批量导出；桌面和窄屏",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 8728,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T06:21:55.779Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b2a153b1aca3047483f-ae6a45d0f2475c9661c3",
+          "file": "controls-workflow.spec.ts",
+          "line": 92,
+          "column": 1
+        },
+        {
+          "title": "本地 GUI 使用远程渲染时，我的预设仍写入本机 SQLite",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 280,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T06:22:04.512Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9b2a153b1aca3047483f-9756adc713650a7b8435",
+          "file": "controls-workflow.spec.ts",
+          "line": 170,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-17T06:21:43.296Z",
+    "duration": 21531.603000000003,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

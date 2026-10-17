@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "test:e2e": "playwright test",
-    "test:e2e:rust": "playwright test --config playwright.rust.config.ts"
+    "test:e2e:rust": "playwright test --config playwright.rust.config.ts",
+    "test:e2e:controls": "playwright test --config playwright.controls.config.ts"
   }
 }

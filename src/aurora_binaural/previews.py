@@ -10,7 +10,14 @@ from pathlib import Path
 
 import numpy as np
 
-from aurora_binaural.engine import FloatBlock, Renderer, RendererStreamProcessor, create_renderer, renderer_metadata
+from aurora_binaural.engine import (
+    FloatBlock,
+    Renderer,
+    RendererStreamProcessor,
+    create_renderer,
+    renderer_controls,
+    renderer_metadata,
+)
 from aurora_binaural.exit_codes import OperationCanceledError, ProcessingError
 from aurora_binaural.media import (
     StreamingF32LeEncoder,
@@ -153,6 +160,7 @@ def render_preview(
         output=effect,
         engine=renderer_metadata(active_renderer, git_commit=get_git_commit_sha(), block_size=1024, sample_rate=sr),
         params=params,
+        **renderer_controls(active_renderer, params),
         timeline=TimelineVerification(
             mode=params.timing.mode,
             tail_policy=params.timing.tail,

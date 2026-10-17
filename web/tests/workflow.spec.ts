@@ -94,7 +94,7 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
   await page.getByRole("button", { name: "本地模式", exact: true }).click();
   await expect(page.locator(".asset-row")).toHaveCount(1);
   await page.locator('input[name="preset"][value="V1"]').check();
-  await page.getByLabel("空间强度", { exact: true }).fill("0.6");
+  await page.getByRole("slider", { name: "空间强度", exact: true }).fill("0.6");
   await page.getByLabel("起始位置（秒）").fill("1");
   await page.getByLabel("试听时长（秒）").fill("3");
   await page.getByRole("button", { name: "生成试听片段", exact: true }).click();

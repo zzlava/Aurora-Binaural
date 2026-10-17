@@ -1,0 +1,477 @@
+{
+  "$defs": {
+    "ControlClipping": {
+      "additionalProperties": false,
+      "properties": {
+        "control": {
+          "enum": [
+            "strength",
+            "width",
+            "height",
+            "room",
+            "voice_distance"
+          ],
+          "title": "Control",
+          "type": "string"
+        },
+        "requested": {
+          "title": "Requested",
+          "type": "number"
+        },
+        "applied": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Applied",
+          "type": "number"
+        }
+      },
+      "required": [
+        "control",
+        "requested",
+        "applied"
+      ],
+      "title": "ControlClipping",
+      "type": "object"
+    },
+    "InputSpec": {
+      "additionalProperties": false,
+      "description": "Input reference for HTTP API jobs or CLI invocations (docs/plan.md Section 10).",
+      "properties": {
+        "asset_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Uploaded asset identifier for HTTP API jobs (e.g. 'asset_example').",
+          "title": "Asset Id"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Local filesystem path for CLI / local worker jobs.",
+          "title": "Path"
+        }
+      },
+      "title": "InputSpec",
+      "type": "object"
+    },
+    "OutputContainer": {
+      "description": "Supported output audio container formats (docs/plan.md Section 4.1).",
+      "enum": [
+        "wav",
+        "m4a",
+        "mp3",
+        "flac",
+        "aiff"
+      ],
+      "title": "OutputContainer",
+      "type": "string"
+    },
+    "OutputFormat": {
+      "description": "Supported output audio formats (docs/plan.md Section 4.1 & 10).",
+      "enum": [
+        "wav",
+        "m4a",
+        "mp3",
+        "flac",
+        "alac",
+        "aiff"
+      ],
+      "title": "OutputFormat",
+      "type": "string"
+    },
+    "OutputSpec": {
+      "additionalProperties": false,
+      "description": "Output encoding and container specification (docs/plan.md Section 4.1, 8, 10).\n\nExplicitly separates audio format/codec from container per Section 4.1.\nRaw .aac is not permitted as an output container because ADTS lacks edit-list\ngapless metadata; AAC output always uses the M4A (MP4) container.",
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/OutputFormat",
+          "default": "wav",
+          "description": "wav, flac, alac (M4A), aiff, m4a (AAC), mp3"
+        },
+        "container": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputContainer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Derived from format; ALAC uses m4a."
+        },
+        "sample_rate": {
+          "default": "source",
+          "description": "source (default), 44100, 48000 or 96000 Hz. DSP runs at 48000 Hz.",
+          "enum": [
+            "source",
+            44100,
+            48000,
+            96000
+          ],
+          "title": "Sample Rate"
+        },
+        "bit_depth": {
+          "anyOf": [
+            {
+              "enum": [
+                16,
+                24,
+                32,
+                "32f"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 24,
+          "description": "Lossless output: 16/24; WAV also accepts 32f (legacy 32). 16 bit uses TPDF dither.",
+          "title": "Bit Depth"
+        },
+        "bitrate_kbps": {
+          "anyOf": [
+            {
+              "maximum": 512,
+              "minimum": 64,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bitrate Kbps"
+        }
+      },
+      "title": "OutputSpec",
+      "type": "object"
+    },
+    "PresetId": {
+      "enum": [
+        "room",
+        "surround",
+        "orbit",
+        "V2",
+        "V1",
+        "V3"
+      ],
+      "title": "PresetId",
+      "type": "string"
+    },
+    "PresetSpec": {
+      "additionalProperties": false,
+      "description": "Preset selection and version specification (docs/plan.md Section 6.10 & 10).",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PresetId",
+          "default": "V3",
+          "description": "Preset identifier from presets/*.toml; default from route_v.toml. room is the classic route B."
+        },
+        "version": {
+          "default": "1",
+          "description": "Explicit preset version string for deterministic reproduction.",
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "title": "PresetSpec",
+      "type": "object"
+    },
+    "PreviewSpec": {
+      "additionalProperties": false,
+      "description": "Source-timeline excerpt; duration is bounded before creating a queue entry.",
+      "properties": {
+        "start_seconds": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "duration_seconds": {
+          "default": 10.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 20.0,
+          "title": "Duration Seconds",
+          "type": "number"
+        }
+      },
+      "title": "PreviewSpec",
+      "type": "object"
+    },
+    "RenderMode": {
+      "description": "Job rendering mode (docs/plan.md Section 10).",
+      "enum": [
+        "enhance"
+      ],
+      "title": "RenderMode",
+      "type": "string"
+    },
+    "SpatialControls": {
+      "additionalProperties": false,
+      "description": "Partial overrides; omitted values come from the selected TOML preset.",
+      "properties": {
+        "strength": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strength"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "room": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Room"
+        },
+        "voice_distance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Voice Distance"
+        }
+      },
+      "title": "SpatialControls",
+      "type": "object"
+    },
+    "TailPolicy": {
+      "description": "Reverb tail handling policy (docs/plan.md Section 8 & 10).",
+      "enum": [
+        "trim",
+        "preserve"
+      ],
+      "title": "TailPolicy",
+      "type": "string"
+    },
+    "TimingMode": {
+      "description": "Timeline synchronization mode (docs/plan.md Section 8 & 10).",
+      "enum": [
+        "preserve"
+      ],
+      "title": "TimingMode",
+      "type": "string"
+    },
+    "TimingSpec": {
+      "additionalProperties": false,
+      "description": "Timeline synchronization and reverb tail policy (docs/plan.md Section 8 & 10).",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/TimingMode",
+          "default": "preserve",
+          "description": "Preserve source duration and compensate reported engine/codec latency; impulse peaks require separate measurement."
+        },
+        "tail": {
+          "$ref": "#/$defs/TailPolicy",
+          "default": "trim",
+          "description": "Reverb tail strategy: 'trim' keeps exact input sample length with a short fade-out; 'preserve' appends tail_samples."
+        },
+        "fade_out_ms": {
+          "default": 10.0,
+          "description": "Short fade-out duration in milliseconds applied at the end when tail='trim' to prevent clicks.",
+          "maximum": 500.0,
+          "minimum": 0.0,
+          "title": "Fade Out Ms",
+          "type": "number"
+        }
+      },
+      "title": "TimingSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Unified parameter model shared by CLI, Web GUI, and HTTP API (docs/plan.md Sections 9 & 10).\n\nSupports both standalone render parameter validation and full `POST /v1/jobs` payloads:\n```json\n{\n  \"api_version\": \"v1\",\n  \"mode\": \"enhance\",\n  \"input\": {\"asset_id\": \"asset_example\"},\n  \"preset\": {\"id\": \"room\", \"version\": \"1\"},\n  \"strength\": 0.4,\n  \"seed\": 20261016,\n  \"output\": {\"format\": \"wav\", \"sample_rate\": 48000, \"bit_depth\": 24},\n  \"timing\": {\"mode\": \"preserve\", \"tail\": \"trim\"}\n}\n```",
+  "properties": {
+    "strength": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Perceptual effect strength in [0.0, 1.0]. Mapped to upmix width, ambient ratio, early reflections, and DRR offset. Dry/wet mixing is forbidden. When 0.0, spatial DSP is bypassed. Defaults to TOML controls.strength; finite outliers are clamped.",
+      "title": "Strength"
+    },
+    "width": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Width"
+    },
+    "height": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Height"
+    },
+    "room": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Room"
+    },
+    "voice_distance": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voice Distance"
+    },
+    "controls": {
+      "$ref": "#/$defs/SpatialControls"
+    },
+    "control_clipping": {
+      "items": {
+        "$ref": "#/$defs/ControlClipping"
+      },
+      "title": "Control Clipping",
+      "type": "array"
+    },
+    "preview": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PreviewSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "api_version": {
+      "const": "v1",
+      "default": "v1",
+      "description": "API and schema contract version.",
+      "title": "Api Version",
+      "type": "string"
+    },
+    "mode": {
+      "$ref": "#/$defs/RenderMode",
+      "default": "enhance",
+      "description": "Processing mode ('enhance' for V1 stereo/mono binaural enhancement)."
+    },
+    "input": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InputSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional input asset or file reference (required for POST /v1/jobs)."
+    },
+    "preset": {
+      "$ref": "#/$defs/PresetSpec",
+      "description": "Spatial preset identifier and version."
+    },
+    "seed": {
+      "default": 20261016,
+      "description": "Explicit 32-bit unsigned seed for deterministic FDN delay lines and decorrelation filters.",
+      "maximum": 4294967295,
+      "minimum": 0,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "output": {
+      "$ref": "#/$defs/OutputSpec",
+      "description": "Output format, container, sample rate, bit depth, and bitrate settings."
+    },
+    "timing": {
+      "$ref": "#/$defs/TimingSpec",
+      "description": "Timeline synchronization mode and reverb tail handling policy."
+    }
+  },
+  "title": "AuroraParams",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora-binaural.local/schemas/v1/params.schema.json"
+}

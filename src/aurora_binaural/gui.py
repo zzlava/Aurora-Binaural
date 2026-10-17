@@ -48,12 +48,7 @@ def run_gui(*, port: int = 0, open_browser: bool = True) -> int:
     if not 0 <= port <= 65535:
         raise ParameterValidationError("端口必须在 0–65535 范围内。", error_code="INVALID_GUI_PORT")
     web_dir = find_web_directory()
-    cfg = ServiceConfig.from_env()
-    if "AURORA_DATA_DIR" not in os.environ:
-        data_dir = Path.home() / "Library" / "Caches" / "AuroraBinaural"
-        cfg = replace(
-            cfg, data_dir=data_dir, db_path=(cfg.db_path if "AURORA_DB_PATH" in os.environ else data_dir / "aurora.db")
-        )
+    cfg = ServiceConfig.for_local_gui()
     cfg = replace(cfg, api_key=secrets.token_urlsafe(32), host="127.0.0.1", port=port)
     app = create_app(cfg, web_dir=web_dir, local_gui=True)
     worker = AuroraWorker(cfg, store=app.state.store)

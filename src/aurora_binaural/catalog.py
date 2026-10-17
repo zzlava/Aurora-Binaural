@@ -5,12 +5,15 @@ Older catalogs fall back to their first named V preset with an explicit warning.
 """
 
 import hashlib
+import math
 import tomllib
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 from aurora_binaural.resources import asset_directory
+
+CONTROL_KEYS = ("strength", "width", "height", "room", "voice_distance")
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,7 @@ class CatalogEntry:
     route: str
     version: str
     default_strength: float
+    default_controls: dict[str, float]
     description: str
     preset_path: Path
     sha256: str
@@ -40,9 +44,16 @@ def load_catalog(directory: Path | None = None) -> dict[str, CatalogEntry]:
                 raise ValueError(f"Duplicate preset {key!r} in {directory}")
             public = route == "V" or (route == "B" and key == "room")
             name = f"经典 · {row['name']}" if route == "B" and key == "room" else row["name"]
+            controls = {str(k): float(v) for k, v in row.get("controls", {}).items()}
+            if any(k not in CONTROL_KEYS or not math.isfinite(v) or not 0 <= v <= 1 for k, v in controls.items()):
+                raise ValueError(f"Invalid controls for preset {key!r} in {path}")
+            strength = controls.get("strength", float(row.get("default_strength", 0.5)))
+            # Legacy route B has a strength only. Do not invent macro defaults.
+            if route == "B":
+                controls = {"strength": strength}
             entries[key] = CatalogEntry(
                 id=key, name=name, route=route, version=str(document.get("version", 1)),
-                default_strength=float(row.get("default_strength", 0.5)),
+                default_strength=strength, default_controls=controls,
                 description=str(row.get("description", f"路线 {route} · {name}")),
                 preset_path=path.resolve(), sha256=hashlib.sha256(content).hexdigest(), public=public,
             )

@@ -98,11 +98,11 @@ class TestUnifiedParameterModel:
         assert AuroraParams.model_validate({"preset": "surround"}).effective_strength == pytest.approx(0.5)
         assert AuroraParams.model_validate({"preset": "orbit"}).effective_strength == pytest.approx(0.3)
 
-    def test_invalid_strength_rejected(self) -> None:
+    def test_outlier_strength_clamped(self) -> None:
+        assert AuroraParams(strength=-0.1).effective_strength == 0.0
+        assert AuroraParams(strength=1.01).effective_strength == 1.0
         with pytest.raises(ValidationError):
-            AuroraParams(strength=-0.1)
-        with pytest.raises(ValidationError):
-            AuroraParams(strength=1.01)
+            AuroraParams(strength=float("nan"))
 
     def test_output_container_and_codec_mapping(self) -> None:
         m4a_spec = OutputSpec(format=OutputFormat.M4A, sample_rate=48000)
@@ -313,8 +313,8 @@ class TestCliPipelineAndExitCodes:
         assert inspect_data["ok"] is True
         assert inspect_data["audio"]["samples"] == 4800
 
-        # Exit code 2: Parameter error (invalid strength > 1.0)
-        assert run_cli(["convert", str(in_wav), "--output", str(tmp_path / "bad.wav"), "--strength", "1.5"]) == int(
+        # Exit code 2: Parameter error (non-finite strength)
+        assert run_cli(["convert", str(in_wav), "--output", str(tmp_path / "bad.wav"), "--strength", "nan"]) == int(
             ExitCode.PARAM_ERROR
         )
         err2 = json.loads(capsys.readouterr().out)

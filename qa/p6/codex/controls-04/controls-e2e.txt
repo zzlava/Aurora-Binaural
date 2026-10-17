@@ -1,0 +1,35 @@
+
+> aurora-binaural-web@0.1.0 test:e2e:controls
+> playwright test --config playwright.controls.config.ts
+
+[WebServer] [aurora] Aurora GUI: http://127.0.0.1:8777 （Ctrl-C 退出）
+[WebServer] [aurora] [worker_50296_76f13b1d] Worker started (concurrency=1, lease=30.0s, max_retries=2)
+[WebServer] INFO:     Started server process [50309]
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8779 (Press CTRL+C to quit)
+
+Running 3 tests using 1 worker
+
+(node:50319) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [aurora] [worker_50296_76f13b1d] Claimed job 'job_1c83fde9d2964577' (attempt 1/3)
+[WebServer] [aurora] [worker_50296_76f13b1d] Claimed job 'job_ee9c9c10776e4b56' (attempt 1/3)
+[WebServer] [aurora] [worker_50296_76f13b1d] Claimed job 'job_9908b81fd3144d6a' (attempt 1/3)
+  ✓  1 tests/controls-workflow.spec.ts:8:1 › 滑块松手防抖 → Rust 自动试听保留 A/B 进度 → 下载报告 (11.5s)
+[WebServer] [aurora] [worker_50296_76f13b1d] Claimed job 'job_383d20486bf84ba2' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/controls-50288/assets/asset_bf67f2b5b0d74a64.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/controls-50288/assets/asset_bf67f2b5b0d74a64.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V3, strength=0.65, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 2587.9 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/controls-50288/tmp/attempt_job_383d20486bf84ba2_1_lease_30c552cc64724a2691198dac88899519/staged_out.wav
+[WebServer] [aurora] [worker_50296_76f13b1d] Claimed job 'job_73002057554d48fd' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/controls-50288/assets/asset_eff374e71a4f433c.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/controls-50288/assets/asset_eff374e71a4f433c.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V3, strength=0.65, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 3085.3 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/controls-50288/tmp/attempt_job_73002057554d48fd_1_lease_606b270b5269420db72d817051ab5739/staged_out.wav
+  ✓  2 tests/controls-workflow.spec.ts:92:1 › 我的预设 SQLite 保存、改名、重启读回、JSON 往返与批量导出；桌面和窄屏 (8.7s)
+  ✓  3 tests/controls-workflow.spec.ts:170:1 › 本地 GUI 使用远程渲染时，我的预设仍写入本机 SQLite (280ms)
+
+  3 passed (21.5s)

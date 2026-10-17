@@ -11,7 +11,7 @@ uv run aurora gui
 
 Aurora Binaural 把单声道／双声道音频渲染为耳机播放的双耳立体声文件。输入支持 FLAC、WAV、ALAC（M4A）、AIFF、AAC 和 MP3；推荐视频流程使用 WAV 48 kHz／24 bit。需要在源码仓库根目录执行下列命令，路径有空格时始终加引号。
 
-GUI、CLI、API 和 Worker 默认使用真实 Rust **路线 V、SADIE II D1 HRTF**；默认预设由 `presets/route_v.toml` 根字段 `default_preset` 决定，强度由该预设的 `default_strength` 决定（省略时为 50%）。无需指定路线参数，应用会从预设读取路线。路线 B 的 `room` 保留为“经典”，需要时显式选择；核心缺失或版本过旧会报错，不会自动替换成其他预设或桩。
+GUI、CLI、API 和 Worker 默认使用真实 Rust **路线 V、SADIE II D1 HRTF**；默认预设由 `presets/route_v.toml` 根字段 `default_preset` 决定，五个空间控件的初始值读取该预设的 `[Vx.controls]`，其中 `strength` 为默认强度。旧预设缺少 `controls.strength` 时才读取 `default_strength`（再缺少则为 50%）。无需指定路线参数，应用会从预设读取路线。路线 B 的 `room` 保留为“经典”，需要时显式选择；核心缺失或版本过旧会报错，不会自动替换成其他预设或桩。
 
 ## 本机安装与 Rust 核心
 
@@ -84,6 +84,35 @@ uv run aurora gui --port 8765 --no-browser
 ```
 
 启动器绑定 `127.0.0.1` 的空闲端口，启动 API 和 Worker，并打开浏览器。导入自己的音频 → 保持 TOML 默认预设或调整强度 → 生成最多 20 秒试听 → 播放并切换等响度 A/B → 导出完整音频 → 下载。界面会显示 Rust、路线、预设、HRTF 和核心版本；每个任务的摘要记录其实际引擎信息。按 Ctrl-C 退出并停止 Worker。默认数据目录为 `~/Library/Caches/AuroraBinaural`，可设置 `AURORA_DATA_DIR`。刷新页面后可用原 job ID 继续查询服务端任务。
+
+## 高级空间控件与我的预设
+
+在“空间强度”下方展开“高级”。五个滑块均显示百分比，范围是 0–100%；CLI/API 的归一化数值范围为 0–1。
+
+| 控件 | 听感含义 | 参数键 |
+|---|---|---|
+| 空间强度 | 整体空间感；0% 旁路空间 DSP | `strength` |
+| 宽度 | 声场左右展开 | `width` |
+| 头顶感 | 上方扬声器层 | `height` |
+| 房间感 | 混响量与长度 | `room` |
+| 人声距离 | 人声远近，0% 最近 | `voice_distance` |
+
+先生成一段试听，再调节控件。松开滑块后等待 300 ms，应用会自动重新生成当前片段；新音频就绪后保留 A/B 选中侧、播放进度和播放/暂停状态。键盘方向键也可调节滑块。“恢复预设默认”从基础预设读取五个初始值，不会删除已保存的个人预设。
+
+填入“预设名称”，点击“保存为新预设”，即可把基础预设版本和五个控件保存到“我的预设”。下次从列表选用后，试听、完整导出和“将全部素材加入导出队列”都会使用它。支持重命名、删除、导出/导入 JSON；导入遇到重名时整批取消，请改名后再导入。可将 JSON 导出作为备份。
+
+本地 GUI 的 SQLite 默认是 `~/Library/Caches/AuroraBinaural/aurora.db`，可用 `AURORA_DATA_DIR` 或 `AURORA_DB_PATH` 指定。启动时自动迁移旧数据库，任务清理不会删除我的预设。刷新页面后预设仍保留。本地 GUI 连接远程渲染服务时也将个人预设留在本机，只发送基础预设和控件数值；直接使用远程 API 的预设管理端点则保存于该 API 的 SQLite。
+
+我的预设使用支持全部五项控件的路线 V。经典路线 B 只应用空间强度，另外四项在报告中注明忽略；桩引擎忽略全部五项。报告顶层 `controls` 是实际生效值，`effective_params` 是核心展开后的内部参数；`params.controls` 是归一化请求。有限越界值会截断并写入 `params.control_clipping`，NaN/Inf 会拒绝。
+
+```bash
+uv run aurora preview "input.wav" --output-dir outputs/preview \
+  --strength 0.8 --width '80%' --height 0.7 --room '30%' --voice-distance 0.1
+uv run aurora convert "input.wav" --output outputs/personal.wav --user-preset '夜听空间'
+uv run aurora batch ./inputs --output-dir outputs/batch --user-preset '夜听空间'
+```
+
+`preview` 写出 `original.wav`、`effect.wav` 和 `report.json`，固定为 48 kHz 双声道 float32 WAV。CLI 的 `--user-preset` 与本地 GUI 共用默认数据库；若 GUI 使用自定义数据库，CLI 也须设置相同的 `AURORA_DB_PATH`。完整参数见 [CLI](cli.md)。
 
 ## 命令行转换
 
