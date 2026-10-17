@@ -1,5 +1,14 @@
 # 快速开始
 
+macOS／Linux 在源码仓库根目录执行一步安装：
+
+```bash
+bash scripts/setup.sh
+uv run aurora gui
+```
+
+先安装 uv、Rust/rustup 和 Node.js/npm；脚本会检查工具、同步 Python 依赖、编译 Rust 核心、构建界面，并实际试跑 soxr 重采样。找不到 Cargo/rustup 时会自动尝试 Homebrew 和 `~/.cargo/bin`。macOS 缺少 soxr 时先执行 `brew install ffmpeg-full`；Linux 安装带 libsoxr 的 FFmpeg。脚本可重复执行，选中的 FFmpeg/ffprobe 保存到忽略提交的 `.aurora-local.env`，应用自动读取，无需设置环境变量。详细步骤如下。
+
 Aurora Binaural 把单声道／双声道音频渲染为耳机播放的双耳立体声文件。输入支持 FLAC、WAV、ALAC（M4A）、AIFF、AAC 和 MP3；推荐视频流程使用 WAV 48 kHz／24 bit。需要在源码仓库根目录执行下列命令，路径有空格时始终加引号。
 
 GUI、CLI、API 和 Worker 默认使用真实 Rust **路线 V、SADIE II D1 HRTF**；默认预设由 `presets/route_v.toml` 根字段 `default_preset` 决定，强度由该预设的 `default_strength` 决定（省略时为 50%）。无需指定路线参数，应用会从预设读取路线。路线 B 的 `room` 保留为“经典”，需要时显式选择；核心缺失或版本过旧会报错，不会自动替换成其他预设或桩。
@@ -48,7 +57,7 @@ uv run aurora presets --json
 
 **内部按 48 kHz 处理，超过 24 kHz 的内容不做空间处理**。内部为 32 bit float；高采样率输入先经 soxr VHQ 降到 48 kHz，导出再升到目标采样率，24 kHz 以上的内容会被滤掉。选择源采样率不代表原生高解析度空间处理。普通导出不加应用增益；试听／compare 为等响度 A/B 会单独记录匹配增益。桩模式在无需重采样和位深转换时保持解码 PCM 逐位一致，包括末尾。
 
-重采样必须使用 `aresample=resampler=soxr:precision=28`；FFmpeg 不支持时返回 `SOXR_UNAVAILABLE`。本机 Homebrew 普通版可能不带 soxr，若已安装完整版本，可显式选择：
+重采样必须使用 `aresample=resampler=soxr:precision=28`；FFmpeg 不支持时返回 `SOXR_UNAVAILABLE`。应用优先使用显式环境变量，否则读取 `.aurora-local.env` 或依次实际探测 PATH 和 `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`；ffprobe 同样自动查找。Homebrew 普通版不带 soxr 时可执行 `brew install ffmpeg-full`，安装后重启应用即可自动选择。需要固定其他版本时，可显式选择：
 
 ```bash
 export AURORA_FFMPEG=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
