@@ -245,15 +245,21 @@ function App() {
   }, [queue, autoLoadId]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey || !loaded) return;
-      const element = event.target as HTMLElement | null;
       if (
-        element?.closest(
-          'input,select,textarea,button,a,summary,[contenteditable="true"]',
-        )
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        !loaded
       )
         return;
+      const element = event.target as HTMLElement | null;
+      if (element?.closest('input,select,textarea,[contenteditable="true"]'))
+        return;
       if (event.code === "Space") {
+        // Preserve native activation elsewhere; player buttons share the transport shortcut.
+        if (element?.closest("button,a,summary") && !element.closest(".player"))
+          return;
         event.preventDefault();
         void togglePlayback();
       }
@@ -487,6 +493,7 @@ function App() {
               aria-pressed={mode === "local"}
               disabled={connectionLocked}
               onClick={() => {
+                if (mode === "local") return;
                 setMode("local");
                 void connect("local");
               }}
@@ -497,6 +504,7 @@ function App() {
               aria-pressed={mode === "remote"}
               disabled={connectionLocked}
               onClick={() => {
+                if (mode === "remote") return;
                 setMode("remote");
                 resetConnection();
                 setError("");

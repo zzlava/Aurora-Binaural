@@ -8,6 +8,7 @@ export class ABPlayer {
   private offset = 0;
   private startedAt = 0;
   private generation = 0;
+  private starting = false;
   playing = false;
   side: 0 | 1 = 0;
   volume = 0.7;
@@ -42,10 +43,16 @@ export class ABPlayer {
     this.buffers = [a, b];
   }
   async play(): Promise<void> {
-    if (!this.context || !this.buffers || this.playing) return;
-    await this.context.resume();
-    if (this.offset >= this.duration) this.offset = 0;
+    if (!this.context || !this.buffers || this.playing || this.starting) return;
     const generation = ++this.generation;
+    this.starting = true;
+    try {
+      await this.context.resume();
+    } finally {
+      this.starting = false;
+    }
+    if (generation !== this.generation) return;
+    if (this.offset >= this.duration) this.offset = 0;
     this.master = this.context.createGain();
     this.master.gain.value = this.volume;
     this.master.connect(this.context.destination);

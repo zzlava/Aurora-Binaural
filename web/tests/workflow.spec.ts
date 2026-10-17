@@ -3,6 +3,17 @@ import { Buffer } from "node:buffer";
 import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+declare global {
+  interface Window {
+    __abStarts: {
+      when: number;
+      offset: number;
+      length: number;
+      sampleRate: number;
+    }[];
+  }
+}
+
 const screenshotDir = fileURLToPath(
   new URL("../../qa/p4/antigravity/screenshots/", import.meta.url),
 );
@@ -52,6 +63,23 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
 }) => {
   const errors: string[] = [],
     requests: string[] = [];
+  await page.addInitScript(() => {
+    window.__abStarts = [];
+    const nativeStart = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (
+      when = 0,
+      offset = 0,
+      duration?: number,
+    ) {
+      window.__abStarts.push({
+        when,
+        offset,
+        length: this.buffer?.length ?? 0,
+        sampleRate: this.buffer?.sampleRate ?? 0,
+      });
+      nativeStart.call(this, when, offset, duration);
+    };
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => requests.push(request.url()));
   await open(page);
@@ -60,6 +88,8 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
   ).toBeVisible();
   await expect(page.locator(".developer")).not.toHaveAttribute("open");
   await importAudio(page);
+  await page.getByRole("button", { name: "本地模式", exact: true }).click();
+  await expect(page.locator(".asset-row")).toHaveCount(1);
   await page.getByLabel("缓慢环绕", { exact: false }).check();
   await page.getByLabel("空间强度", { exact: true }).fill("0.6");
   await page.getByLabel("起始位置（秒）").fill("1");
@@ -71,6 +101,15 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
     page.getByRole("button", { name: "播放试听", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "播放试听", exact: true }).click();
+  // Focus remains on Play: letter shortcuts must still work.
+  await page.keyboard.press("b");
+  await expect(page.getByRole("button", { name: "B 效果" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(
+    page.getByRole("button", { name: "暂停试听", exact: true }),
+  ).toBeVisible();
   await expect
     .poll(async () =>
       position(await page.getByTestId("playback-position").innerText()),
@@ -89,7 +128,6 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
   );
   expect(after).toBeGreaterThanOrEqual(before - 0.1);
   expect(after - before).toBeLessThan(0.6);
-  await page.locator("h1").click();
   await page.keyboard.press("a");
   await expect(page.getByRole("button", { name: "A 原声" })).toHaveAttribute(
     "aria-pressed",
@@ -100,6 +138,9 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
     "aria-pressed",
     "true",
   );
+  const starts = await page.evaluate(() => window.__abStarts);
+  expect(starts).toHaveLength(2);
+  expect(starts[0]).toEqual(starts[1]); // Same clock, offset and buffer length; switching never restarts sources.
   await page.keyboard.press("Space");
   await expect(
     page.getByRole("button", { name: "播放试听", exact: true }),
@@ -123,6 +164,12 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
   const output = await readFile(saved!);
   expect(output.toString("ascii", 0, 4)).toBe("RIFF");
   expect(output.length).toBeGreaterThan(1_000_000);
+  await page.getByRole("button", { name: "本地模式", exact: true }).click();
+  await expect(page.getByTestId("job-preview")).toHaveCount(1);
+  await expect(page.getByTestId("job-export")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "播放试听", exact: true }),
+  ).toBeEnabled();
   await mkdir(screenshotDir, { recursive: true });
   for (const size of [
     { name: "desktop", width: 1440, height: 1000 },
@@ -196,6 +243,8 @@ test("远程错误 Key 明确提示；Key 只在 sessionStorage，URL 与日志�
   await page.getByRole("button", { name: "连接服务器", exact: true }).click();
   await expect(page.getByText("远程已连接", { exact: true })).toBeVisible();
   await importAudio(page, "远程测试.wav", 1);
+  await page.getByRole("button", { name: "远程模式", exact: true }).click();
+  await expect(page.locator(".asset-row")).toHaveCount(1);
   await page.getByRole("button", { name: "导出当前素材", exact: true }).click();
   await expect(
     page.getByTestId("job-export").getByText("已完成", { exact: true }),
