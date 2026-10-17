@@ -34,7 +34,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from aurora_binaural.catalog import CATALOG, DEFAULT_PRESET_ID
 from aurora_binaural.config import ServiceConfig
+from aurora_binaural.engine import engine_status
 from aurora_binaural.exit_codes import AuroraError, ExitCode
 from aurora_binaural.media import probe_audio
 from aurora_binaural.params import (
@@ -121,6 +123,8 @@ class PresetsResponseModel(BaseModel):
 
     ok: Literal[True] = True
     api_version: Literal["v1"] = "v1"
+    engine: dict[str, Any]
+    default_preset: str
     presets: list[PresetMetadata]
     parameter_ranges: dict[str, Any]
 
@@ -388,6 +392,8 @@ def create_app(
     async def get_presets() -> PresetsResponseModel:
         """Return built-in spatial presets, parameter ranges, and version metadata."""
         return PresetsResponseModel(
+            engine=engine_status(cfg.engine),
+            default_preset=DEFAULT_PRESET_ID,
             presets=list(PRESET_CATALOG.values()),
             parameter_ranges={
                 "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},
@@ -564,7 +570,7 @@ def create_app(
                 retryable=False,
             )
 
-        catalog_meta = PRESET_CATALOG.get(params.preset.id)
+        catalog_meta = CATALOG.get(params.preset.id)
         if catalog_meta is None or params.preset.version != catalog_meta.version:
             raise ApiServiceError(
                 f"Unsupported preset version '{params.preset.version}' for preset '{params.preset.id.value}'.",

@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from aurora_binaural.engine import Renderer, RendererStreamProcessor, StubRenderer
+from aurora_binaural.engine import Renderer, RendererStreamProcessor, RustRenderer, create_renderer, renderer_metadata
 from aurora_binaural.exit_codes import InputAudioError
 from aurora_binaural.media import (
     StreamingF32LeEncoder,
@@ -44,7 +44,6 @@ from aurora_binaural.report import (
     AudioProbeInfo,
     CompareReport,
     ConversionReport,
-    EngineMetadata,
     TimelineVerification,
 )
 
@@ -196,6 +195,13 @@ def convert_audio(
         effective_params.output.sample_rate = in_sr  # type: ignore[assignment]
 
     target_sr = effective_params.output.sample_rate
+    active_renderer: Renderer = renderer or create_renderer(
+        latency_samples=simulated_latency_samples,
+        tail_samples=simulated_tail_samples,
+    )
+    # The native HRIR pack and DSP operate at 48 kHz. FFmpeg handles both
+    # boundaries; output sample counts are expressed at the requested rate.
+    render_sr = 48000 if isinstance(active_renderer, RustRenderer) else target_sr
 
     # F-AG-1: Check FFmpeg version when handling M4A/AAC input or output
     involves_m4a = (
@@ -208,13 +214,9 @@ def convert_audio(
     log_stderr(f"Measuring input BS.1770 loudness: {input_path}")
     loudness_before = measure_loudness_file(input_path)
 
-    active_renderer: Renderer = renderer or StubRenderer(
-        latency_samples=simulated_latency_samples,
-        tail_samples=simulated_tail_samples,
-    )
     stream_proc = RendererStreamProcessor(
         active_renderer,
-        sample_rate=target_sr,
+        sample_rate=render_sr,
         input_channels=in_ch,
         params=effective_params,
         block_size=block_size,
@@ -233,9 +235,9 @@ def convert_audio(
             f"encode ({effective_params.output.format.value}, sr={target_sr})"
         )
         input_duration = float(in_fmt_meta.get("duration", 0) or 0)
-        expected_frames = max(1.0, input_duration * target_sr)
+        expected_frames = max(1.0, input_duration * render_sr)
         with StreamingF32LeEncoder(
-            sample_rate=target_sr,
+            sample_rate=render_sr,
             channels=2,
             output_spec=effective_params.output,
             target_path=tmp_out_path,
@@ -243,7 +245,7 @@ def convert_audio(
         ) as encoder:
             for in_block, _, _ in stream_decode_f32le(
                 input_path,
-                target_sample_rate=target_sr,
+                target_sample_rate=render_sr,
                 block_frames=block_size,
             ):
                 for out_chunk in stream_proc.push_block(in_block):
@@ -254,7 +256,7 @@ def convert_audio(
             for out_chunk in stream_proc.finish():
                 encoder.write_block(out_chunk)
 
-        if in_sr == target_sr:
+        if in_sr == render_sr:
             native_input_samples = stream_proc.input_frames
         else:
             native_input_samples, _, _ = count_decoded_samples_streaming(input_path)
@@ -291,7 +293,7 @@ def convert_audio(
         )
         loudness_after = measure_loudness_file(tmp_out_path)
 
-        expected_output_samples = stream_proc.output_frames
+        expected_output_samples = round(stream_proc.output_frames * target_sr / render_sr)
         sample_diff = readback_samples - expected_output_samples
         raw_sample_diff = raw_samples - expected_output_samples
 
@@ -303,7 +305,7 @@ def convert_audio(
             priming_samples = output_probe_tmp.initial_padding or nominal_priming
             trailing_padding_samples = max(0, raw_sample_diff - priming_samples)
 
-        tolerance_samples = 0 if in_sr == target_sr else 2
+        tolerance_samples = 0 if in_sr == target_sr == render_sr else 2
         sync_ok = abs(sample_diff) <= tolerance_samples
         sync_warning: str | None = None
         if not sync_ok:
@@ -336,7 +338,7 @@ def convert_audio(
         tail_policy=effective_params.timing.tail,
         engine_latency_samples=stream_proc.latency,
         engine_tail_samples=stream_proc.tail,
-        extra_tail_samples_kept=stream_proc.extra_tail_kept,
+        extra_tail_samples_kept=round(stream_proc.extra_tail_kept * target_sr / render_sr),
         input_samples=input_probe.samples,
         expected_output_samples=expected_output_samples,
         decoded_readback_samples=readback_samples,
@@ -355,10 +357,8 @@ def convert_audio(
     report = ConversionReport(
         input=input_probe,
         output=output_probe,
-        engine=EngineMetadata(
-            git_commit=get_git_commit_sha(),
-            block_size_frames=block_size,
-            internal_sample_rate=target_sr,
+        engine=renderer_metadata(
+            active_renderer, git_commit=get_git_commit_sha(), block_size=block_size, sample_rate=render_sr,
         ),
         params=effective_params,
         timeline=timeline,

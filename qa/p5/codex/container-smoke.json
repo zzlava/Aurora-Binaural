@@ -1,0 +1,18 @@
+{
+  "engine": {
+    "name": "rust",
+    "is_stub": false,
+    "available": true,
+    "supported_routes": [
+      "B"
+    ],
+    "message": "\u6548\u679c\u5f15\u64ce\uff1aRust\uff08\u5f53\u524d\u6838\u5fc3\u4ec5\u652f\u6301\u7ecf\u5178 room\uff09"
+  },
+  "native_module": "/usr/local/lib/python3.12/site-packages/aurora_core/__init__.py",
+  "cargo_present": false,
+  "ku100_pack_present": false,
+  "input_samples": 1200000,
+  "readback_samples": 1200000,
+  "true_peak_dbtp": -0.6,
+  "sample_diff": 0
+}

@@ -1,7 +1,7 @@
 """Unified Pydantic v2 parameter models for Aurora Binaural CLI, GUI, and HTTP API.
 
 Implements docs/plan.md Sections 6.8, 6.10, 8, 9, and 10:
-- preset: PresetSpec (room / surround / orbit, versioned)
+- preset: PresetSpec (TOML catalog, versioned; default V2)
 - strength: perceptual spatial intensity in [0.0, 1.0] (dry/wet mixing forbidden)
 - seed: explicit PRNG seed for deterministic FDN reverb and decorrelation
 - output: OutputSpec (wav / m4a / mp3, separated format & container, sample_rate, bit_depth, bitrate)
@@ -17,13 +17,11 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from aurora_binaural.catalog import CATALOG, DEFAULT_PRESET_ID
 
-class PresetId(StrEnum):
-    """Built-in spatial preset identifiers (docs/plan.md Section 6.10)."""
-
-    ROOM = "room"
-    SURROUND = "surround"
-    ORBIT = "orbit"
+# Compatibility constants and JSON Schema enum are generated from the same TOML
+# catalog, including legacy explicit selections absent from the default cards.
+PresetId = StrEnum("PresetId", {key.upper(): key for key in CATALOG})  # type: ignore[misc]
 
 
 class OutputFormat(StrEnum):
@@ -76,35 +74,18 @@ class PresetMetadata(BaseModel):
     default_strength: float = Field(ge=0.0, le=1.0)
     description: str
     algorithm_summary: str
-    max_orbit_deg_per_sec: float | None = None
+    route: str
+    is_default: bool = False
 
 
 PRESET_CATALOG: dict[PresetId, PresetMetadata] = {
-    PresetId.ROOM: PresetMetadata(
-        id=PresetId.ROOM,
-        name="自然空间",
-        version="1",
-        default_strength=0.4,
-        description="上混（窄）+ 小房间早期反射 + 短 FDN + 音色保护；中置稳定",
-        algorithm_summary="STFT upmix (±30°..±45°) + shoebox early reflections + short FDN + diffuse-field EQ",
-    ),
-    PresetId.SURROUND: PresetMetadata(
-        id=PresetId.SURROUND,
-        name="包围感",
-        version="1",
-        default_strength=0.5,
-        description="上混（宽）+ 环境成分推向侧后方 + 中等房间",
-        algorithm_summary="STFT upmix (±30°..±60°) + lateral/rear 3OA bed + medium room FDN",
-    ),
-    PresetId.ORBIT: PresetMetadata(
-        id=PresetId.ORBIT,
-        name="缓慢环绕",
-        version="1",
-        default_strength=0.3,
-        description="整个声场或单一对象做 Ambisonics 旋转；转速上限约 10°/s",
-        algorithm_summary="3rd-order Ambisonics spherical harmonic rotation + MagLS binaural decode",
-        max_orbit_deg_per_sec=10.0,
-    ),
+    PresetId(entry.id): PresetMetadata(
+        id=PresetId(entry.id), name=entry.name, version=entry.version,
+        default_strength=entry.default_strength, description=entry.description,
+        algorithm_summary=f"Route {entry.route} / TOML", route=entry.route,
+        is_default=entry.id == DEFAULT_PRESET_ID,
+    )
+    for entry in sorted(CATALOG.values(), key=lambda row: (row.route != "V", row.id)) if entry.public
 }
 
 
@@ -114,8 +95,8 @@ class PresetSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: PresetId = Field(
-        default=PresetId.ROOM,
-        description="Preset identifier: 'room' (自然空间), 'surround' (包围感), or 'orbit' (缓慢环绕).",
+        default=PresetId(DEFAULT_PRESET_ID),
+        description="Preset identifier from presets/*.toml; default V2. room is the classic route B.",
     )
     version: str = Field(
         default="1",
@@ -159,6 +140,8 @@ class OutputSpec(BaseModel):
 
     @model_validator(mode="after")
     def _validate_and_normalize_output(self) -> OutputSpec:
+        if self.format == OutputFormat.MP3 and self.sample_rate == 96000:
+            raise ValueError("MP3 supports 44100 or 48000 Hz output; 96000 Hz requires WAV or M4A.")
         expected_container = OutputContainer(self.format.value)
         if self.container is None:
             self.container = expected_container
@@ -336,14 +319,14 @@ class AuroraParams(BaseModel):
     @model_validator(mode="after")
     def _apply_preset_default_strength(self) -> AuroraParams:
         if self.strength is None:
-            self.strength = PRESET_CATALOG[self.preset.id].default_strength
+            self.strength = CATALOG[self.preset.id].default_strength
         return self
 
     @property
     def effective_strength(self) -> float:
         """Return validated non-null strength in [0.0, 1.0]."""
         if self.strength is None:
-            return PRESET_CATALOG[self.preset.id].default_strength
+            return CATALOG[self.preset.id].default_strength
         return self.strength
 
 

@@ -1,0 +1,40 @@
+{
+  "baseline": "b13f388",
+  "branch": "agent/codex/P5-01",
+  "pytest": {
+    "passed": 98,
+    "real_rust_tests": 32,
+    "warnings": 1,
+    "warning": "Existing Starlette/httpx deprecation"
+  },
+  "ruff": "passed",
+  "mypy": "passed (31 source files)",
+  "uv_lock": "passed",
+  "frontend_build": "passed",
+  "frontend_lint": "passed",
+  "playwright": {
+    "passed": 4,
+    "screenshots": 4
+  },
+  "native_build": {
+    "platform": "macOS arm64",
+    "python": "3.12",
+    "rust": "1.99.1",
+    "maturin": "1.15.0",
+    "route": "B",
+    "result": "passed"
+  },
+  "docker": {
+    "build": "passed",
+    "image": "sha256:06c59c681a808566a19060c6d49b5502ad67477ea73ef2eecd5538369fb5b677",
+    "native_smoke": "passed",
+    "rust_toolchain_in_final_image": false
+  },
+  "distribution_check": "passed (wheel and sdist; SADIE-only pack)",
+  "installed_wheel_smoke": "passed outside checkout",
+  "without_core_smoke": "passed; exit 4 / CORE_NOT_INSTALLED; explicit stub succeeds",
+  "route_v_native": "unavailable in baseline; explicit CORE_ROUTE_UNSUPPORTED",
+  "route_b_true_peak_dbtp": -0.6,
+  "route_b_sample_diff": 0,
+  "pushed": false
+}

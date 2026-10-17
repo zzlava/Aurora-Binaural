@@ -20,6 +20,9 @@ dependencies = [
 aurora = "aurora_binaural.cli:main"
 
 [dependency-groups]
+core-build = [
+    "maturin>=1.9.0,<2.0.0",
+]
 dev = [
     "httpx>=0.27.0",
     "mypy>=1.11.0",
@@ -29,6 +32,20 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aurora_binaural"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"presets" = "aurora_binaural/_data/presets"
+"data/hrtf/sadie2_d1" = "aurora_binaural/_data/hrtf/sadie2_d1"
+"data/hrtf/sadie_d1_frontal.ahrp" = "aurora_binaural/_data/hrtf/sadie_d1_frontal.ahrp"
+"deploy/licenses" = "aurora_binaural/_data/licenses"
+"deploy/THIRD_PARTY_NOTICES.md" = "aurora_binaural/_data/THIRD_PARTY_NOTICES.md"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src", "/presets", "/deploy/licenses", "/deploy/THIRD_PARTY_NOTICES.md",
+    "/README.md", "/pyproject.toml", "/data/hrtf/sadie2_d1",
+    "/data/hrtf/sadie_d1_frontal.ahrp",
+]
 
 [tool.ruff]
 target-version = "py312"

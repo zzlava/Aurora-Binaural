@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from aurora_binaural.config import ServiceConfig
-from aurora_binaural.engine import Renderer
+from aurora_binaural.engine import Renderer, create_renderer
 from aurora_binaural.exit_codes import AuroraError, OperationCanceledError, ProcessingError
 from aurora_binaural.media import atomic_write_bytes, log_stderr
 from aurora_binaural.pipeline import convert_audio
@@ -152,7 +152,10 @@ class AuroraWorker:
             staged_out_path = attempt_dir / f"staged_out.{fmt_ext}"
             staged_report_path = attempt_dir / "staged_report.json"
 
-            renderer_instance = self.renderer_factory() if self.renderer_factory is not None else None
+            renderer_instance = (
+                self.renderer_factory() if self.renderer_factory is not None
+                else create_renderer(engine=self.config.engine, hrtf_dir=self.config.hrtf_dir)
+            )
             staged_original_path = staged_out_path.with_suffix(".original.wav")
 
             def _progress(value: float) -> None:

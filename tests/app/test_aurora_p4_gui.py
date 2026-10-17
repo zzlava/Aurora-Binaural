@@ -132,7 +132,7 @@ def test_gui_real_lifecycle_and_ephemeral_bootstrap(tmp_path: Path) -> None:
         assert key and key != "unused-environment-fixture"
         request = urllib.request.Request(base + "/v1/presets", headers={"Authorization": f"Bearer {key}"})
         with urllib.request.urlopen(request, timeout=2) as response:
-            assert len(json.load(response)["presets"]) == 3
+            assert len(json.load(response)["presets"]) == 4
         assert TaskStore(runtime / "aurora.db").has_active_worker()
         process.send_signal(signal.SIGINT)
         stdout, stderr = process.communicate(timeout=10)

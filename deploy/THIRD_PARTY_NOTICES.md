@@ -14,7 +14,17 @@ Keep the license and original copyright / attribution notices when redistributin
 Acknowledge the original SADIE dataset when using original or modified data.
 Academic citation: Armstrong, Thresh, Murphy, Kearney, “A Perceptual Evaluation of Individual and Non-Individual HRTFs: A Case Study of the SADIE II Database”, Applied Sciences (2018), DOI https://doi.org/10.3390/app8112029.
 
-The current application engine is a passthrough stub and does not apply this HRTF yet.
-TH Köln KU100 L2702 and its derived filters are excluded from the default image (ADR 0004).
+The Rust engine verifies the source SOFA hash embedded in the bundled
+`sadie_d1_frontal.ahrp` pack before applying it. The pack is derived from the
+SADIE II SOFA using minimum-phase / frontal equalization processing; its SHA-256
+is `9c3482d6a53351bb9deba559ab4638cc8ba920e77731896b28cbe1e42e5526de`.
+Both the unmodified SOFA and the derived pack retain the attribution and Apache-2.0 license.
+The explicitly selected passthrough stub does not apply any HRTF.
+
+TH Köln KU100 L2702 (CC BY-SA 3.0) is **仅本地研究 (local research only)**.
+Its SOFA and HRIR pack are excluded from the default image, wheel and source
+distribution (ADR 0004). The read-only preset TOMLs contain optional
+`thk_ku100` calibration tables for local research only; the application has no
+KU100 selection control and always selects SADIE II.
 
 This file documents bundled HRTF data. Python and frontend package licenses remain in their installed package distributions; Preact's MIT license is copied to `licenses/Preact-MIT.txt` in the image.

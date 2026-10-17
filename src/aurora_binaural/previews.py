@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from aurora_binaural.engine import FloatBlock, Renderer, RendererStreamProcessor, StubRenderer
+from aurora_binaural.engine import FloatBlock, Renderer, RendererStreamProcessor, create_renderer, renderer_metadata
 from aurora_binaural.exit_codes import OperationCanceledError, ProcessingError
 from aurora_binaural.media import (
     StreamingF32LeEncoder,
@@ -21,7 +21,7 @@ from aurora_binaural.media import (
 )
 from aurora_binaural.params import AuroraParams, OutputSpec
 from aurora_binaural.pipeline import get_git_commit_sha
-from aurora_binaural.report import ConversionReport, EngineMetadata, PreviewReport, TimelineVerification
+from aurora_binaural.report import ConversionReport, PreviewReport, TimelineVerification
 
 
 def render_preview(
@@ -48,7 +48,7 @@ def render_preview(
     end = start + max(1, round(spec.duration_seconds * sr))
     metadata, _ = probe_stream_metadata(input_path)
     channels = int(metadata["channels"])
-    active_renderer = renderer or StubRenderer()
+    active_renderer = renderer or create_renderer()
     processor = RendererStreamProcessor(
         active_renderer, sample_rate=sr, input_channels=channels, params=params, cancel_check=cancel_check
     )
@@ -151,7 +151,7 @@ def render_preview(
     return ConversionReport(
         input=original,
         output=effect,
-        engine=EngineMetadata(git_commit=get_git_commit_sha()),
+        engine=renderer_metadata(active_renderer, git_commit=get_git_commit_sha(), block_size=1024, sample_rate=sr),
         params=params,
         timeline=TimelineVerification(
             mode=params.timing.mode,

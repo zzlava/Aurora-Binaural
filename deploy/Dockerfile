@@ -12,6 +12,23 @@ COPY web/src/ ./src/
 COPY web/public/ ./public/
 RUN npm run build
 
+FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS core-build
+RUN apt-get update && apt-get install -y --no-install-recommends curl build-essential ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup.sh \
+    && sh /tmp/rustup.sh -y --profile minimal --default-toolchain 1.99.1 \
+    && rm /tmp/rustup.sh
+RUN pip install 'uv==0.12.13'
+WORKDIR /build
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --only-group core-build --no-install-project
+COPY core/ /source/core/
+COPY scripts/stage-core.py /source/scripts/stage-core.py
+RUN python /source/scripts/stage-core.py /source /build/staged \
+    && .venv/bin/maturin build --manifest-path staged/core/aurora-py/Cargo.toml \
+    --release --locked --interpreter /usr/local/bin/python --out /wheels
+
 FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -21,6 +38,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     AURORA_DATA_DIR=/data/runtime \
     AURORA_HRTF_DIR=/app/data/hrtf \
+    AURORA_PRESETS_DIR=/app/presets \
+    AURORA_ENGINE=rust \
     AURORA_WEB_DIR=/app/web/dist
 
 # Install system ffmpeg / ffprobe (>= 7.1 in Debian Trixie) for float32 decode, BS.1770 ebur128 loudness,
@@ -44,13 +63,18 @@ WORKDIR /app
 COPY --chown=aurora:aurora pyproject.toml uv.lock README.md ./
 COPY --chown=aurora:aurora src/ ./src/
 COPY --chown=aurora:aurora data/hrtf/sadie2_d1/ ./data/hrtf/sadie2_d1/
-COPY --chown=aurora:aurora deploy/licenses/ ./licenses/
-COPY --chown=aurora:aurora deploy/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
+COPY --chown=aurora:aurora data/hrtf/sadie_d1_frontal.ahrp ./data/hrtf/sadie_d1_frontal.ahrp
+COPY --chown=aurora:aurora presets/ ./presets/
+COPY --chown=aurora:aurora deploy/licenses/ ./deploy/licenses/
+COPY --chown=aurora:aurora deploy/THIRD_PARTY_NOTICES.md ./deploy/THIRD_PARTY_NOTICES.md
 
 COPY --from=web-build --chown=aurora:aurora /web/dist/ ./web/dist/
 
 # Install aurora_binaural and its runtime dependencies (FastAPI, Uvicorn, Pydantic, NumPy)
-RUN pip install --no-cache-dir .
+COPY --from=core-build /wheels/ /wheels/
+RUN pip install --no-cache-dir . /wheels/*.whl && rm -rf /wheels \
+    && cp -a deploy/licenses ./licenses && cp deploy/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md \
+    && python -c 'import aurora_core'
 
 USER aurora
 

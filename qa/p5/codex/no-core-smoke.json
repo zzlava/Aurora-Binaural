@@ -1,0 +1,8 @@
+{
+  "fresh_environment_without_core": true,
+  "default_engine_exit_code": 4,
+  "error": "CORE_NOT_INSTALLED",
+  "installation_hint": "Rust 核心未安装。请运行 bash scripts/build-core.sh；测试流程可显式设置 AURORA_ENGINE=stub（桩）。",
+  "explicit_stub_is_stub": true,
+  "explicit_stub_sample_diff": 0
+}
