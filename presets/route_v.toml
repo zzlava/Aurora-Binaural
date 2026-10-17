@@ -8,6 +8,14 @@
 # It does not scale center_distance_m or direct_room_send_db: those are
 # the voice-distance controls, not the space intensity.
 #
+# Five macro controls (ADR 0005), each in [0, 1], live under [macros].
+# width / height / room / voice_distance are linear and anchored on the
+# preset: value = clamp(stored + (control - default) * per_unit, min, max).
+# At the default written in [V1.controls] / [V2.controls] / [V3.controls]
+# the stored number is returned unchanged, so expanding those defaults
+# reproduces the preset. strength is applied afterwards, exactly as above.
+# 0 on voice_distance is the near end of that line.
+#
 # direct_room_send_db is how many dB the coherent direct path (the voice
 # body) is turned down before it enters early reflections and the FDN,
 # relative to the incoherent bed. center_distance_m sets a mild proximity
@@ -62,8 +70,89 @@ near_lf_hz = 280.0
 near_lf_max_db = 4.0
 near_ild_scale = 1.0
 
+# Linear curves. per_unit is the change for one full step of the control.
+# min / max are the safety limits (ADR 0005). The limiter stays on.
+[macros.strength]
+curve = "linear"
+front_az_at_0 = 30.0
+front_az_max = 60.0
+scales = ["wide_db", "surround_db", "height_db", "early_db", "room_db"]
+
+[macros.width.front_az]
+curve = "linear"
+per_unit = 30.0
+min = 30.0
+max = 60.0
+
+[macros.width.wide_db]
+curve = "linear"
+per_unit = 14.0
+min = -12.0
+max = 8.0
+
+[macros.width.surround_db]
+curve = "linear"
+per_unit = 16.0
+min = -18.0
+max = 4.0
+
+[macros.height.height_db]
+curve = "linear"
+per_unit = 8.0
+min = -12.0
+max = 2.0
+
+[macros.height.height_el]
+curve = "linear"
+per_unit = 20.0
+min = 30.0
+max = 70.0
+
+[macros.height.ceiling_db]
+curve = "linear"
+per_unit = 4.0
+min = 0.0
+max = 10.0
+
+[macros.height.height_direct_db]
+curve = "linear"
+per_unit = 8.0
+min = -20.0
+max = -6.0
+
+[macros.room.room_db]
+curve = "linear"
+per_unit = 16.0
+min = -12.0
+max = 16.0
+
+[macros.room.t60]
+curve = "linear"
+per_unit = 1.0
+min = 0.3
+max = 1.8
+
+[macros.voice_distance.center_distance_m]
+curve = "linear"
+per_unit = 2.6
+min = 0.2
+max = 3.2
+
+[macros.voice_distance.direct_room_send_db]
+curve = "linear"
+per_unit = 16.0
+min = -18.0
+max = 6.0
+
 [V2]
 name = "G，人声更近"
+
+[V2.controls]
+strength = 1.0
+width = 0.5
+height = 0.25
+room = 0.5
+voice_distance = 0.25
 
 [V1]
 name = "V2，人声更远"
@@ -71,12 +160,26 @@ center_distance_m = 2.20
 center_spread_deg = 45.0
 direct_room_send_db = 0.0
 
+[V1.controls]
+strength = 1.0
+width = 0.5
+height = 0.25
+room = 0.5
+voice_distance = 0.75
+
 [V3]
 name = "V2，高度更强"
 height_db = -2.0
 height_el = 55.0
 ceiling_db = 6.0
 height_direct_db = -10.0
+
+[V3.controls]
+strength = 1.0
+width = 0.5
+height = 0.75
+room = 0.5
+voice_distance = 0.25
 
 [V1.fixed_eq]
 bands_hz = [49.606, 62.500, 78.745, 99.213, 125.000, 157.490, 198.425, 250.000, 314.980, 396.850, 500.000, 629.961, 793.701, 1000.000, 1259.921, 1587.401, 2000.000, 2519.842, 3174.802, 4000.000, 5039.684, 6349.604, 8000.000, 10079.368, 12699.208, 16000.000]
