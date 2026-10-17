@@ -432,12 +432,10 @@ def _cmd_batch(args: argparse.Namespace) -> int:
     return int(ExitCode.OK if failed_count == 0 else ExitCode.PROCESSING_ERROR)
 
 
-def _cmd_gui(_args: argparse.Namespace) -> int:
-    raise ParameterValidationError(
-        "Web GUI (`aurora gui`) is not implemented yet (scheduled for P4). "
-        "Please use `aurora convert`, `aurora compare`, or `aurora batch`.",
-        error_code="GUI_NOT_IMPLEMENTED",
-    )
+def _cmd_gui(args: argparse.Namespace) -> int:
+    from aurora_binaural.gui import run_gui
+
+    return run_gui(port=args.port, open_browser=not args.no_browser)
 
 
 def _cmd_job(args: argparse.Namespace) -> int:
@@ -481,6 +479,7 @@ def _cmd_api(args: argparse.Namespace) -> int:
         max_retries=cfg.max_retries,
         worker_block_delay_ms=cfg.worker_block_delay_ms,
         strict_ffmpeg=cfg.strict_ffmpeg,
+        cors_origins=cfg.cors_origins,
     )
     app = create_app(cfg)
     uvicorn.run(app, host=host, port=port, log_level="info")
@@ -683,8 +682,10 @@ def build_parser() -> argparse.ArgumentParser:
     # aurora gui
     p_gui = subparsers.add_parser(
         "gui",
-        help="Launch Web GUI (scheduled for P4; currently exits with code 2)",
+        help="Launch local Web GUI, API and Worker on 127.0.0.1",
     )
+    p_gui.add_argument("--port", type=int, default=0, help="Loopback port; 0 selects a free port")
+    p_gui.add_argument("--no-browser", action="store_true", help="Run without opening a browser")
     p_gui.set_defaults(func=_cmd_gui)
 
     # aurora schema

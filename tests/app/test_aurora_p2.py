@@ -316,14 +316,17 @@ class TestFormatsSampleRatesAndEdgeCases:
 class TestCliCommandsCompareGuiBatchAndRemote:
     """Tests for Task 4: `compare`, `gui`, `batch` (partial failure & Ctrl-C cleanup), and `--server` / `job status`."""
 
-    def test_gui_returns_not_implemented_exit_code_2(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_gui_missing_build_exit_code_2(
+        self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("AURORA_WEB_DIR", str(tmp_path / "missing"))
         code = run_cli(["gui"])
         captured = capsys.readouterr()
         assert code == int(ExitCode.PARAM_ERROR)
         data = json.loads(captured.out)
         assert data["ok"] is False
         assert data["error"]["exit_code"] == 2
-        assert data["error"]["code"] == "GUI_NOT_IMPLEMENTED"
+        assert data["error"]["code"] == "GUI_BUILD_MISSING"
 
     def test_compare_bs1770_equal_loudness_matching(
         self,

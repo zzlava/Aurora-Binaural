@@ -29,6 +29,7 @@ from aurora_binaural.engine import Renderer
 from aurora_binaural.exit_codes import AuroraError, OperationCanceledError, ProcessingError
 from aurora_binaural.media import atomic_write_bytes, log_stderr
 from aurora_binaural.pipeline import convert_audio
+from aurora_binaural.previews import render_preview
 from aurora_binaural.storage import JobRecord, TaskStore, format_utc_iso
 
 WORKER_MAX_RETRIES = 2
@@ -58,6 +59,7 @@ class AuroraWorker:
         recovered = self.store.recover_expired_leases(now=now)
         if recovered:
             log_stderr(f"[{self.worker_id}] Reclaimed {len(recovered)} expired job lease(s): {recovered}")
+        self.store.cleanup_attempt_directories(self.config.tmp_dir)
         cleaned_jobs, cleaned_assets = self.store.cleanup_expired_resources(now=now)
         return recovered, cleaned_jobs, cleaned_assets
 
@@ -80,6 +82,7 @@ class AuroraWorker:
         )
         attempt_dir.mkdir(parents=True, exist_ok=True)
 
+        progress_value = 0.0
         hb_stop = threading.Event()
         lease_lost_flag = threading.Event()
         cancel_seen_flag = threading.Event()
@@ -92,6 +95,7 @@ class AuroraWorker:
                         job.job_id,
                         lease_id,
                         lease_duration_sec=self.config.lease_duration_sec,
+                        progress=progress_value,
                     )
                     self.register_heartbeat()
                     if not owned:
@@ -149,16 +153,29 @@ class AuroraWorker:
             staged_report_path = attempt_dir / "staged_report.json"
 
             renderer_instance = self.renderer_factory() if self.renderer_factory is not None else None
-            report = convert_audio(
-                input_path=asset.file_path,
-                output_path=staged_out_path,
-                params=job.params,
-                overwrite=True,
-                report_path=None,
-                renderer=renderer_instance,
-                strict_ffmpeg=self.config.strict_ffmpeg,
-                cancel_check=_cancel_check,
-            )
+            staged_original_path = staged_out_path.with_suffix(".original.wav")
+
+            def _progress(value: float) -> None:
+                nonlocal progress_value
+                progress_value = value
+
+            if job.params.preview is not None:
+                report = render_preview(
+                    asset.file_path, staged_out_path, staged_original_path, job.params,
+                    renderer=renderer_instance, cancel_check=_cancel_check, progress=_progress,
+                )
+            else:
+                report = convert_audio(
+                    input_path=asset.file_path,
+                    output_path=staged_out_path,
+                    params=job.params,
+                    overwrite=True,
+                    report_path=None,
+                    renderer=renderer_instance,
+                    strict_ffmpeg=self.config.strict_ffmpeg,
+                    cancel_check=_cancel_check,
+                    progress=_progress,
+                )
 
             # Re-verify cancellation / lease before committing
             if _cancel_check():
@@ -168,14 +185,20 @@ class AuroraWorker:
             expires_epoch = commit_now + self.config.retention_sec
             expires_iso = format_utc_iso(expires_epoch)
 
-            sanitized_in = report.input.model_copy(
+            sanitized_in = (asset.probe if job.params.preview is not None else report.input).model_copy(
                 update={"path": f"asset://{asset.asset_id}/{asset.filename}"}
             )
             sanitized_out = report.output.model_copy(
                 update={"path": f"result://{job.job_id}.{fmt_ext}"}
             )
+            preview = report.preview
+            if preview is not None:
+                preview = preview.model_copy(update={
+                    "original": preview.original.model_copy(update={"path": f"result://{job.job_id}.original.wav"})
+                })
             final_report_model = report.model_copy(
                 update={
+                    "preview": preview,
                     "job_id": job.job_id,
                     "asset_id": job.asset_id,
                     "input": sanitized_in,
@@ -190,6 +213,7 @@ class AuroraWorker:
 
             final_result_path = self.config.results_dir / f"{job.job_id}.{fmt_ext}"
             final_report_path = self.config.results_dir / f"{job.job_id}.report.json"
+            final_original_path = final_result_path.with_suffix(".original.wav")
 
             result_meta: dict[str, Any] = {
                 "format": sanitized_out.format,
@@ -209,7 +233,11 @@ class AuroraWorker:
                     self.config.results_dir.mkdir(parents=True, exist_ok=True)
                     os.replace(staged_out_path, final_result_path)
                     os.replace(staged_report_path, final_report_path)
+                    if job.params.preview is not None:
+                        os.replace(staged_original_path, final_original_path)
                 except OSError as exc:
+                    with contextlib.suppress(OSError):
+                        final_original_path.unlink(missing_ok=True)
                     with contextlib.suppress(OSError):
                         final_result_path.unlink(missing_ok=True)
                     with contextlib.suppress(OSError):
@@ -311,7 +339,7 @@ class AuroraWorker:
                         last_hb = now_mono
 
                     if now_mono - last_cleanup >= self.config.cleanup_interval_sec:
-                        self.store.cleanup_expired_resources()
+                        self.recover_and_cleanup()
                         last_cleanup = now_mono
 
                     done = {f for f in active_futures if f.done()}

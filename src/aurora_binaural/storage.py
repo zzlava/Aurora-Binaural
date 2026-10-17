@@ -13,6 +13,8 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import re
+import shutil
 import sqlite3
 import threading
 import time
@@ -231,6 +233,7 @@ class JobRecord:
         return {
             "ok": True,
             "job_id": self.job_id,
+            "preview": self.params.preview.model_dump() if self.params.preview else None,
             "asset_id": self.asset_id,
             "status": self.status,
             "cancel_requested": self.cancel_requested,
@@ -251,6 +254,7 @@ def compute_canonical_job_hash(params: AuroraParams) -> str:
     """Compute a deterministic SHA-256 hex digest over the normalized `AuroraParams` payload."""
     normalized = {
         "api_version": params.api_version,
+        **({"preview": params.preview.model_dump()} if params.preview else {}),
         "mode": params.mode.value,
         "asset_id": params.input.asset_id if params.input else None,
         "preset": {
@@ -1096,7 +1100,7 @@ class TaskStore:
         with self._immediate_tx() as conn:
             expired_job_rows = conn.execute(
                 """
-                SELECT job_id, result_path, report_path
+                SELECT job_id, result_path, report_path, params_json
                 FROM jobs
                 WHERE status IN ('succeeded', 'failed', 'canceled')
                   AND result_expired = 0
@@ -1110,6 +1114,10 @@ class TaskStore:
                 with self._download_lock:
                     if self._active_downloads.get(jid, 0) > 0:
                         continue
+                params = AuroraParams.model_validate_json(str(row["params_json"]))
+                if params.preview is not None and row["result_path"]:
+                    with contextlib.suppress(OSError):
+                        Path(str(row["result_path"])).with_suffix(".original.wav").unlink(missing_ok=True)
                 for col in ("result_path", "report_path"):
                     raw_p = row[col]
                     if raw_p:
@@ -1146,3 +1154,34 @@ class TaskStore:
                 cleaned_assets.append(aid)
 
         return cleaned_jobs, cleaned_assets
+
+
+    def cleanup_attempt_directories(self, tmp_dir: Path) -> list[str]:
+        """Reclaim fenced/terminal attempts, including empty SIGKILL leftovers.
+
+        Recover leases first. A directory for the current running attempt is always
+        protected, even at the expiration boundary; recovery must fence it before
+        deletion. The write transaction serializes this check with claim/renewal.
+        Only our exact directory namespace is considered; never follow symlinks.
+        """
+        cleaned: list[str] = []
+        pattern = re.compile(r"attempt_(job_[0-9a-f]{16})_([1-9][0-9]*)_(lease_[0-9a-f]{32})")
+        for path in tmp_dir.glob("attempt_*"):
+            match = pattern.fullmatch(path.name)
+            if match is None or path.is_symlink() or not path.is_dir():
+                continue
+            job_id, attempt, lease_id = match.groups()
+            with self._immediate_tx() as conn:
+                row = conn.execute(
+                    "SELECT status, attempts, lease_id FROM jobs WHERE job_id = ?;", (job_id,)
+                ).fetchone()
+                if row is None:
+                    continue
+                if row["status"] == "running" and row["attempts"] == int(attempt) and row["lease_id"] == lease_id:
+                    continue
+                try:
+                    shutil.rmtree(path)
+                except OSError:
+                    continue  # Retry on the next cleanup cycle.
+                cleaned.append(path.name)
+        return cleaned

@@ -5,6 +5,8 @@ Implements the Section 10 HTTP API contract:
 - `GET /ready`: readiness check for SQLite task store, Worker heartbeat, and HRTF data
 - `GET /v1/presets`: spatial presets, parameter bounds, and versions
 - `POST /v1/assets`: streaming audio asset upload with size & duration limits
+- `POST /v1/previews`: create a source-time BS.1770 matched original/effect excerpt job
+- `GET /v1/jobs/{id}/original`: download the matched original excerpt
 - `POST /v1/jobs`: create asynchronous job (HTTP 202) with `Idempotency-Key` support (HTTP 409 on conflict)
 - `GET /v1/jobs/{id}`: query job status, progress, result metadata, and structured error
 - `POST /v1/jobs/{id}/cancel`: idempotent job cancellation
@@ -29,12 +31,23 @@ from fastapi import Depends, FastAPI, Header, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from aurora_binaural.config import ServiceConfig
 from aurora_binaural.exit_codes import AuroraError, ExitCode
 from aurora_binaural.media import probe_audio
-from aurora_binaural.params import PRESET_CATALOG, AuroraParams, OutputFormat, PresetMetadata
+from aurora_binaural.params import (
+    PRESET_CATALOG,
+    AuroraParams,
+    InputSpec,
+    OutputFormat,
+    OutputSpec,
+    PresetMetadata,
+    PreviewRequest,
+    PreviewSpec,
+    TimingSpec,
+)
 from aurora_binaural.report import ConversionReport
 from aurora_binaural.storage import (
     ApiServiceError,
@@ -170,6 +183,7 @@ class JobStatusResponseModel(BaseModel):
     ok: Literal[True] = True
     job_id: str
     asset_id: str
+    preview: PreviewSpec | None = None
     status: JobStatus
     cancel_requested: bool = Field(
         description="True if cancellation was requested (transitional sub-field when status='running')."
@@ -227,6 +241,8 @@ def create_app(
     config: ServiceConfig | None = None,
     *,
     store: TaskStore | None = None,
+    web_dir: Path | None = None,
+    local_gui: bool = False,
 ) -> FastAPI:
     """Create and configure the Aurora Binaural FastAPI application."""
     cfg = config or ServiceConfig.from_env()
@@ -235,7 +251,7 @@ def create_app(
 
     app = FastAPI(
         title="Aurora Binaural API",
-        version="0.3.0",
+        version="0.4.0",
         description=(
             "Aurora Binaural spatial audio processing HTTP API (docs/plan.md Section 10). "
             "Provides streaming asset uploads, persistent SQLite asynchronous job queue with "
@@ -244,6 +260,15 @@ def create_app(
     )
     app.state.config = cfg
     app.state.store = task_store
+    if cfg.cors_origins:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware, allow_origins=list(cfg.cors_origins),
+            allow_methods=["GET", "POST"],
+            allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Asset-Filename"],
+            expose_headers=["Content-Disposition"],
+        )
 
     def _verify_token_string(token: str | None) -> None:
         expected = cfg.api_key
@@ -297,6 +322,22 @@ def create_app(
             details={"errors": json.loads(json.dumps(exc.errors(), default=str))},
         )
         return JSONResponse(status_code=err.http_status, content=err.to_dict())
+
+    if local_gui:
+        from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1"])
+
+        @app.get("/gui/session", include_in_schema=False)
+        async def gui_session(request: Request) -> JSONResponse:
+            origin = request.headers.get("origin")
+            expected_origin = f"http://{request.headers.get('host', '')}"
+            if (request.headers.get("x-aurora-gui") != "1"
+                    or (origin is not None and origin != expected_origin)
+                    or request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none")
+                    or request.client is None or request.client.host not in ("127.0.0.1", "::1")):
+                raise UnauthorizedError()
+            return JSONResponse({"api_key": cfg.api_key}, headers={"Cache-Control": "no-store"})
 
     @app.get(
         "/health",
@@ -505,26 +546,7 @@ def create_app(
                 with contextlib.suppress(OSError):
                     tmp_upload_path.unlink(missing_ok=True)
 
-    @app.post(
-        "/v1/jobs",
-        status_code=status.HTTP_202_ACCEPTED,
-        response_model=JobStatusResponseModel,
-        responses={
-            401: {"model": ErrorResponseModel},
-            404: {"model": ErrorResponseModel},
-            409: {"model": ErrorResponseModel},
-            410: {"model": ErrorResponseModel},
-            422: {"model": ErrorResponseModel},
-        },
-        dependencies=[Depends(require_api_key)],
-        summary="Create an asynchronous spatial rendering job (HTTP 202)",
-        tags=["v1"],
-    )
-    async def create_job(
-        params: AuroraParams,
-        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-    ) -> JobStatusResponseModel:
-        """Create an asynchronous job with `Idempotency-Key` deduplication and conflict protection."""
+    def enqueue_job(params: AuroraParams, idempotency_key: str | None) -> JobStatusResponseModel:
         if params.input is None or not params.input.asset_id:
             raise ApiServiceError(
                 "HTTP job creation requires 'input.asset_id'.",
@@ -559,6 +581,57 @@ def create_app(
             max_retries=cfg.max_retries,
         )
         return JobStatusResponseModel.model_validate(job_record.to_api_dict())
+
+    @app.post(
+        "/v1/jobs",
+        status_code=status.HTTP_202_ACCEPTED,
+        response_model=JobStatusResponseModel,
+        responses={
+            401: {"model": ErrorResponseModel},
+            404: {"model": ErrorResponseModel},
+            409: {"model": ErrorResponseModel},
+            410: {"model": ErrorResponseModel},
+            422: {"model": ErrorResponseModel},
+        },
+        dependencies=[Depends(require_api_key)],
+        summary="Create an asynchronous spatial rendering job (HTTP 202)",
+        tags=["v1"],
+    )
+    async def create_job(
+        params: AuroraParams,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> JobStatusResponseModel:
+        """Create an asynchronous job with `Idempotency-Key` deduplication and conflict protection."""
+        if params.preview is not None:
+            raise ApiServiceError("试听任务请通过 POST /v1/previews 创建。", http_status=422,
+                                  error_code="INVALID_PARAMETERS", exit_code=ExitCode.PARAM_ERROR)
+        return enqueue_job(params, idempotency_key)
+
+    @app.post(
+        "/v1/previews", status_code=202, response_model=JobStatusResponseModel,
+        dependencies=[Depends(require_api_key)], tags=["v1"],
+        responses={
+            401: {"model": ErrorResponseModel}, 404: {"model": ErrorResponseModel},
+            409: {"model": ErrorResponseModel}, 410: {"model": ErrorResponseModel},
+            422: {"model": ErrorResponseModel},
+        },
+        summary="Queue a source-timeline excerpt with a BS.1770 matched original/effect pair",
+    )
+    async def create_preview(
+        request: PreviewRequest,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> JobStatusResponseModel:
+        params = AuroraParams(
+            input=InputSpec(asset_id=request.asset_id), preset=request.preset,
+            strength=request.strength, seed=request.seed, output=OutputSpec(bit_depth=32),
+            timing=TimingSpec(fade_out_ms=0),
+            preview=PreviewSpec(start_seconds=request.start_seconds, duration_seconds=request.duration_seconds),
+        )
+        asset = task_store.get_asset(request.asset_id)
+        if asset is not None and request.start_seconds >= asset.duration_seconds:
+            raise ApiServiceError("试听起点必须小于音频时长。", http_status=422,
+                                  error_code="PREVIEW_OUT_OF_RANGE", exit_code=ExitCode.PARAM_ERROR)
+        return enqueue_job(params, idempotency_key)
 
     @app.get(
         "/v1/jobs/{id}",
@@ -648,6 +721,45 @@ def create_app(
             raise
 
     @app.get(
+        "/v1/jobs/{id}/original", dependencies=[Depends(require_api_key)], tags=["v1"],
+        responses={
+            200: {"content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}}},
+                  "description": "BS.1770 loudness-matched original excerpt (float32 stereo WAV)."},
+            401: {"model": ErrorResponseModel}, 404: {"model": ErrorResponseModel},
+            409: {"model": ErrorResponseModel}, 410: {"model": ErrorResponseModel},
+        },
+        response_class=StreamingResponse,
+        summary="Download the loudness-matched original side of a completed preview",
+    )
+    async def download_preview_original(id: str) -> StreamingResponse:
+        ctx = task_store.acquire_result_access(id)
+        job = ctx.__enter__()
+        try:
+            if job.params.preview is None:
+                raise ApiServiceError("该任务不是试听任务。", http_status=409,
+                                      error_code="NOT_A_PREVIEW", exit_code=ExitCode.PARAM_ERROR)
+            original = job.result_path.with_suffix(".original.wav") if job.result_path else None
+            if original is None or not original.is_file():
+                raise ResourceExpiredError("result", id, job.expires_at)
+            file_handle = original.open("rb")
+
+            def stream() -> Iterator[bytes]:
+                try:
+                    with file_handle:
+                        while chunk := file_handle.read(65536):
+                            yield chunk
+                finally:
+                    ctx.__exit__(None, None, None)
+
+            return StreamingResponse(stream(), media_type="audio/wav", headers={
+                "Content-Length": str(original.stat().st_size),
+                "Content-Disposition": f'attachment; filename="{id}.original.wav"',
+            })
+        except Exception:
+            ctx.__exit__(None, None, None)
+            raise
+
+    @app.get(
         "/v1/jobs/{id}/report",
         response_model=ConversionReport,
         responses={
@@ -668,6 +780,11 @@ def create_app(
             raw_json = job.report_path.read_text(encoding="utf-8")
             return ConversionReport.model_validate_json(raw_json)
 
+    static_dir = web_dir or Path(os.environ.get(
+        "AURORA_WEB_DIR", str(Path(__file__).resolve().parents[3] / "web" / "dist")
+    ))
+    if (static_dir / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="web")
     return app
 
 

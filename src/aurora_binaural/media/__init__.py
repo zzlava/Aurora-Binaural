@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -224,7 +224,7 @@ def stream_decode_f32le(
     target_sample_rate: int | None = None,
     ignore_gapless: bool = False,
     block_frames: int = 1024,
-) -> Iterator[tuple[NDArray[np.float32], int, int]]:
+) -> Generator[tuple[NDArray[np.float32], int, int], None, None]:
     """Stream-decode an audio file to `(frames, channels)` float32 numpy blocks via FFmpeg pipe.
 
     Peak memory is O(block_frames) regardless of file duration. Cleanly terminates the child

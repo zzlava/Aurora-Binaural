@@ -179,8 +179,8 @@ class TestApiContractAuthAndOpenApi:
     """Tests for Task 1 & Task 3: endpoints, OpenAPI artifact, Bearer auth, and upload limits."""
 
     def test_openapi_export_and_artifact_parity(self, tmp_path: Path) -> None:
-        qa_openapi_path = Path(__file__).resolve().parents[2] / "qa" / "p3" / "antigravity" / "openapi.json"
-        assert qa_openapi_path.is_file(), "qa/p3/antigravity/openapi.json must exist"
+        qa_openapi_path = Path(__file__).resolve().parents[2] / "qa" / "p4" / "antigravity" / "openapi.json"
+        assert qa_openapi_path.is_file(), "qa/p4/antigravity/openapi.json must exist"
 
         generated = export_openapi_schema(tmp_path / "openapi_check.json")
         on_disk = json.loads(qa_openapi_path.read_text(encoding="utf-8"))
@@ -536,6 +536,10 @@ class TestFaultsRecoveryAndInvariants:
             assert st["status"] == "running"
             assert st["attempts"] == 1
 
+            deadline = time.monotonic() + 3.0
+            while not list(cfg.tmp_dir.glob(f"attempt_{job_id}_*")) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert list(cfg.tmp_dir.glob(f"attempt_{job_id}_*"))
             # Abruptly SIGKILL the worker subprocess!
             worker_proc.send_signal(signal.SIGKILL)
             worker_proc.wait(timeout=3.0)
@@ -559,6 +563,7 @@ class TestFaultsRecoveryAndInvariants:
         assert finished_job is not None
         assert finished_job.status == "succeeded"
         assert finished_job.attempts == 2
+        assert list(cfg.tmp_dir.glob(f"attempt_{job_id}_*")) == []
 
         # Verify report via API records attempts == 2
         rep_resp = client.get(f"/v1/jobs/{job_id}/report", headers=_auth_headers())
