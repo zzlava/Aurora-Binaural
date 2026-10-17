@@ -5,6 +5,8 @@ Implements the Section 10 HTTP API contract:
 - `GET /ready`: readiness check for SQLite task store, Worker heartbeat, and HRTF data
 - `GET /v1/presets`: spatial presets, parameter bounds, and versions
 - `POST /v1/assets`: streaming audio asset upload with size & duration limits
+- `POST /v1/previews`: create a source-time BS.1770 matched original/effect excerpt job
+- `GET /v1/jobs/{id}/original`: download the matched original excerpt
 - `POST /v1/jobs`: create asynchronous job (HTTP 202) with `Idempotency-Key` support (HTTP 409 on conflict)
 - `GET /v1/jobs/{id}`: query job status, progress, result metadata, and structured error
 - `POST /v1/jobs/{id}/cancel`: idempotent job cancellation
@@ -608,7 +610,11 @@ def create_app(
     @app.post(
         "/v1/previews", status_code=202, response_model=JobStatusResponseModel,
         dependencies=[Depends(require_api_key)], tags=["v1"],
-        responses={401: {"model": ErrorResponseModel}, 422: {"model": ErrorResponseModel}},
+        responses={
+            401: {"model": ErrorResponseModel}, 404: {"model": ErrorResponseModel},
+            409: {"model": ErrorResponseModel}, 410: {"model": ErrorResponseModel},
+            422: {"model": ErrorResponseModel},
+        },
         summary="Queue a source-timeline excerpt with a BS.1770 matched original/effect pair",
     )
     async def create_preview(
@@ -716,6 +722,13 @@ def create_app(
 
     @app.get(
         "/v1/jobs/{id}/original", dependencies=[Depends(require_api_key)], tags=["v1"],
+        responses={
+            200: {"content": {"audio/wav": {"schema": {"type": "string", "format": "binary"}}},
+                  "description": "BS.1770 loudness-matched original excerpt (float32 stereo WAV)."},
+            401: {"model": ErrorResponseModel}, 404: {"model": ErrorResponseModel},
+            409: {"model": ErrorResponseModel}, 410: {"model": ErrorResponseModel},
+        },
+        response_class=StreamingResponse,
         summary="Download the loudness-matched original side of a completed preview",
     )
     async def download_preview_original(id: str) -> StreamingResponse:
