@@ -43,3 +43,7 @@ qa/p0/calibration/*.wav
 
 # Claude desktop app output folder (not part of the project)
 Claude outputs/
+
+# 用户放在仓库根目录的试听音频（不入库，避免阻塞合并）
+/*.wav
+/*.flac
