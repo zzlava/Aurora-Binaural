@@ -9,7 +9,7 @@ use aurora_dsp::{Params, Processor, RenderConfig, RouteB, RouteV};
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyModule;
+use pyo3::types::{PyDict, PyModule};
 use std::path::PathBuf;
 
 enum Core {
@@ -40,6 +40,10 @@ struct PyRenderer {
     hrtf_source: PathBuf,
     preset_path: PathBuf,
     strength: f64,
+    width: Option<f64>,
+    height: Option<f64>,
+    room: Option<f64>,
+    voice_distance: Option<f64>,
     seed: u64,
     preset: String,
     limiter: bool,
@@ -79,6 +83,10 @@ impl PyRenderer {
             hrtf_source,
             preset_path,
             strength,
+            width: None,
+            height: None,
+            room: None,
+            voice_distance: None,
             seed,
             preset: preset.to_string(),
             limiter,
@@ -130,15 +138,92 @@ impl PyRenderer {
         let strength = read_strength(params)?;
         let preset = read_preset(params)?;
         let seed = optional_u64(params, "seed")?.unwrap_or(self.seed);
+        if let Some(value) = optional_f64(params, "width")? {
+            self.width = Some(value);
+        }
+        if let Some(value) = optional_f64(params, "height")? {
+            self.height = Some(value);
+        }
+        if let Some(value) = optional_f64(params, "room")? {
+            self.room = Some(value);
+        }
+        if let Some(value) = optional_f64(params, "voice_distance")? {
+            self.voice_distance = Some(value);
+        }
         self.strength = strength;
-        self.preset = preset.clone();
+        self.preset = preset;
         self.seed = seed;
-        self.inner.get_mut().set_params(&Params {
-            strength,
-            preset,
-            seed,
-        });
+        self.push_params();
         Ok(())
+    }
+
+    /// Update any of `strength`, `width`, `height`, `room`, `voice_distance`.
+    /// Omitted keys keep their current value. Each value is in `[0, 1]`.
+    fn set_controls(&mut self, controls: &Bound<'_, PyDict>) -> PyResult<()> {
+        if !self.prepared {
+            return Err(PyRuntimeError::new_err("prepare before set_controls"));
+        }
+        for key in ["strength", "width", "height", "room", "voice_distance"] {
+            if let Some(value) = controls.get_item(key)? {
+                let number: f64 = value.extract()?;
+                if !number.is_finite() || !(0.0..=1.0).contains(&number) {
+                    return Err(PyValueError::new_err(format!(
+                        "{key} must be a finite number in [0, 1]"
+                    )));
+                }
+                match key {
+                    "strength" => self.strength = number,
+                    "width" => self.width = Some(number),
+                    "height" => self.height = Some(number),
+                    "room" => self.room = Some(number),
+                    "voice_distance" => self.voice_distance = Some(number),
+                    _ => {}
+                }
+            }
+        }
+        self.push_params();
+        Ok(())
+    }
+
+    /// Macro controls plus the internal parameters they expand to.
+    fn effective_params<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let Core::V(route) = &self.inner else {
+            return Err(PyRuntimeError::new_err(
+                "effective_params is available on route V",
+            ));
+        };
+        let Some(params) = route.effective_params() else {
+            return Err(PyRuntimeError::new_err("prepare before effective_params"));
+        };
+        let dict = PyDict::new(py);
+        let controls = PyDict::new(py);
+        controls.set_item("strength", params.strength)?;
+        controls.set_item("width", params.width)?;
+        controls.set_item("height", params.height)?;
+        controls.set_item("room", params.room)?;
+        controls.set_item("voice_distance", params.voice_distance)?;
+        dict.set_item("controls", controls)?;
+        dict.set_item("front_az", params.front_az)?;
+        dict.set_item("wide_db", params.wide_db)?;
+        dict.set_item("surround_db", params.surround_db)?;
+        dict.set_item("height_db", params.height_db)?;
+        dict.set_item("height_el", params.height_el)?;
+        dict.set_item("height_direct_db", params.height_direct_db)?;
+        dict.set_item("ceiling_db", params.ceiling_db)?;
+        dict.set_item("room_db", params.room_db)?;
+        dict.set_item("early_db", params.early_db)?;
+        dict.set_item("t60", params.t60)?;
+        dict.set_item("direct_room_send_db", params.direct_room_send_db)?;
+        dict.set_item("center_distance_m", params.center_distance_m)?;
+        dict.set_item("center_spread_deg", params.center_spread_deg)?;
+        dict.set_item("wide_lin", params.wide_lin)?;
+        dict.set_item("surround_lin", params.surround_lin)?;
+        dict.set_item("height_lin", params.height_lin)?;
+        dict.set_item("early_lin", params.early_lin)?;
+        dict.set_item("late_lin", params.late_lin)?;
+        dict.set_item("direct_room_send_lin", params.direct_room_send_lin)?;
+        dict.set_item("bypass", params.bypass)?;
+        Ok(dict)
     }
 
     /// `block` is float32, shape `(frames, channels)`, C-contiguous.
@@ -255,6 +340,32 @@ fn empty_stereo<'py>(py: Python<'py>, frames: usize) -> PyResult<Bound<'py, PyAn
     let dtype = np.getattr("float32")?;
     let out = np.call_method1("empty", ((frames, 2usize), dtype))?;
     Ok(out)
+}
+
+impl PyRenderer {
+    fn push_params(&mut self) {
+        self.inner.get_mut().set_params(&Params {
+            strength: self.strength,
+            preset: self.preset.clone(),
+            seed: self.seed,
+            width: self.width,
+            height: self.height,
+            room: self.room,
+            voice_distance: self.voice_distance,
+        });
+    }
+}
+
+fn optional_f64(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Option<f64>> {
+    match obj.getattr(name) {
+        Ok(value) => {
+            if value.is_none() {
+                return Ok(None);
+            }
+            Ok(Some(value.extract()?))
+        }
+        Err(_) => Ok(None),
+    }
 }
 
 fn read_strength(params: &Bound<'_, PyAny>) -> PyResult<f64> {
