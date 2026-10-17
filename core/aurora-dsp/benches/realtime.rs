@@ -1,7 +1,8 @@
-//! Single-core route B cost at 48 kHz, stereo, block size 256.
+//! Single-core cost at 48 kHz, stereo, block size 256.
 //!
-//! Realtime factor is `(256 / 48000) / mean_seconds`. The acceptance target
-//! is at least 20×.
+//! Realtime factor is `(256 / 48000) / mean_seconds`. Route B's target is
+//! 20×. Route V runs the same block with every virtual speaker, so its
+//! target is 10×.
 
 use aurora_dsp::hrir::{sha256_file, MAGIC, VERSION};
 use aurora_dsp::{Processor, RenderConfig, RouteB, RouteV};

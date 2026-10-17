@@ -302,7 +302,9 @@ impl Processor for RouteV {
             early: Vec::new(),
             fdn: FdnReverb::new(sample_rate, row.t60, config.seed),
             fir: FirStereo::empty(),
-            limiter: TruePeakLimiter::new(sample_rate),
+            // Detector ceiling sits ~0.7 dB under scipy's 4× resample, so an
+            // internal −1.8 dBTP still measures at or under −1 dBTP.
+            limiter: TruePeakLimiter::with_ceiling(sample_rate, -1.8),
             center_i: N_SECTORS / 2,
             lateral_idx: [0; N_LATERAL],
             in_l: vec![0.0; mb],

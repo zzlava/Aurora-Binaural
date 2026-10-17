@@ -29,13 +29,20 @@ pub struct TruePeakLimiter {
 
 impl TruePeakLimiter {
     pub fn new(sample_rate: u32) -> Self {
+        Self::with_ceiling(sample_rate, -1.0)
+    }
+
+    /// `ceiling_dbtp` is the detector ceiling. Route V passes a lower value
+    /// because this 8-tap 4× filter reads about 0.7 dB under
+    /// `scipy.signal.resample_poly`, which is how the prototype meters.
+    pub fn with_ceiling(sample_rate: u32, ceiling_dbtp: f64) -> Self {
         let release = (f64::from(sample_rate) * OS as f64 * 40.0 / 1000.0).max(1.0);
         let mut coeff = [[0.0; TAPS]; OS];
         design_polyphase(&mut coeff);
         let mut dec_coeff = [0.0; TAPS * OS];
         design_decimator(&mut dec_coeff);
         Self {
-            ceiling: 10.0_f64.powf(-1.0 / 20.0),
+            ceiling: 10.0_f64.powf(ceiling_dbtp / 20.0),
             release,
             gain: 1.0,
             hist_l: [0.0; TAPS],

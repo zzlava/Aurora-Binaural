@@ -98,9 +98,16 @@ fn nearest_weights(
             azimuth,
             elevation,
         );
-        da.partial_cmp(&db)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.cmp(&b))
+        // Equal distances are a real tie on this grid (22.5° is exactly as
+        // far from 21° as from 24°). NumPy's default argsort keeps the higher
+        // index; a lower-index tie-break drops the other neighbour and the
+        // k=3 set no longer matches the prototype. Differences this small
+        // are the tie itself — 22° versus 23° still differ by ~1e-12°.
+        if da.is_nan() || db.is_nan() || (da - db).abs() <= 1e-13 {
+            b.cmp(&a)
+        } else {
+            da.total_cmp(&db)
+        }
     });
     order.truncate(k);
     let mut w = Vec::with_capacity(k);
@@ -285,6 +292,39 @@ mod tests {
     }
 
     #[test]
+    fn tie_at_22_5_keeps_the_higher_index_neighbour() {
+        // 22.5° is equidistant from 21° and 24°. NumPy keeps 24° (the higher
+        // index). The first sample of each HRIR is a marker.
+        let pack = HrirPack {
+            sample_rate: 48_000,
+            eq_mode: "frontal+power".into(),
+            source_sha256: [0; 32],
+            dirs: vec![
+                marker(21.0, 21.0),
+                marker(22.0, 22.0),
+                marker(23.0, 23.0),
+                marker(24.0, 24.0),
+            ],
+        };
+        let mut l = [0.0; 1];
+        let mut r = [0.0; 1];
+        idw_render(&pack, 22.5, 0.0, 3, &mut l, &mut r);
+        let d22 = crate::coords::angular_distance_deg(22.0, 0.0, 22.5, 0.0);
+        let d23 = crate::coords::angular_distance_deg(23.0, 0.0, 22.5, 0.0);
+        let d24 = crate::coords::angular_distance_deg(24.0, 0.0, 22.5, 0.0);
+        let w22 = 1.0 / d22;
+        let w23 = 1.0 / d23;
+        let w24 = 1.0 / d24;
+        let sum = w22 + w23 + w24;
+        let expect = (22.0 * w22 + 23.0 * w23 + 24.0 * w24) / sum;
+        assert!(
+            (l[0] - expect).abs() < 1e-9,
+            "got {} expect {expect} (a 21° neighbour would not land here)",
+            l[0]
+        );
+    }
+
+    #[test]
     fn minphase_interpolation_stays_finite() {
         let pack = HrirPack {
             sample_rate: 48_000,
@@ -308,6 +348,10 @@ mod tests {
         assert!(out_l.iter().chain(out_r.iter()).all(|v| v.is_finite()));
         let energy: f64 = out_l.iter().map(|v| v * v).sum();
         assert!(energy > 1e-8, "{energy} {out_l:?}");
+    }
+
+    fn marker(az: f64, tag: f64) -> crate::hrir::Direction {
+        dir(az, &[tag], &[tag])
     }
 
     fn dir(az: f64, l: &[f64], r: &[f64]) -> crate::hrir::Direction {
