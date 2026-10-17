@@ -1,7 +1,7 @@
 """Reproduce P6-02 timeline acceptance and isolate native-engine loudness.
 
-AURORA_FFMPEG=/path/to/soxr/ffmpeg .venv/bin/python qa/p6/codex/verify_02.py
-Exit 1 means the strict spatial impulse acceptance failed; evidence is still saved.
+uv run python qa/p6/codex/verify_02.py
+P6-03: equal counts, bit-exact native bypass, exact bypass origin, spatial peak <=1 ms.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from aurora_binaural.catalog import DEFAULT_PRESET_ID
-from aurora_binaural.engine import RenderConfig, RustRenderer, StubRenderer
+from aurora_binaural.engine import RenderConfig, RustRenderer, StubRenderer, run_offline_block_pipeline
 from aurora_binaural.media import (
     decode_to_f32le,
     encode_f32le_to_path,
@@ -38,7 +38,7 @@ def pcm(path: Path) -> np.ndarray:
 
 def timeline() -> list[dict]:
     rows = []
-    for rate in (44100, 88200, 96000, 192000):
+    for rate in (44100, 48000, 88200, 96000, 176400, 192000):
         n = rate * 2 + 17  # Deliberately not an integer 48 kHz frame count.
         position = rate // 2 + 17
         signal = np.zeros((n, 2), dtype='<f4')
@@ -56,6 +56,14 @@ def timeline() -> list[dict]:
                 )
                 samples = pcm(output)
                 peak = int(np.argmax(np.max(np.abs(samples), axis=1)))
+                bypass_bit_exact = None
+                if strength == 0:
+                    processing, processing_rate, processing_channels = decode_to_f32le(source, target_sample_rate=48000)
+                    bypass, _, _, _, _ = run_offline_block_pipeline(
+                        processing, sample_rate=processing_rate, input_channels=processing_channels,
+                        params=AuroraParams(preset='V2', strength=0), renderer=RustRenderer(),
+                    )
+                    bypass_bit_exact = bypass == processing
                 rows.append({
                     'input_format': fmt, 'output_format': fmt, 'preset': 'V2', 'strength': strength,
                     'mode': label, 'rate_chain': [report.input.sample_rate, report.engine.internal_sample_rate,
@@ -64,8 +72,11 @@ def timeline() -> list[dict]:
                     'output_samples': len(samples), 'sample_diff': len(samples) - n,
                     'duration_rounding_adjustment_samples': report.timeline.duration_rounding_adjustment_samples,
                     'source_peak': position, 'output_peak': peak, 'peak_error_source_samples': peak - position,
-                    'sample_count_pass': abs(len(samples) - n) <= 1,
-                    'impulse_pass': abs(peak - position) <= 1,
+                    'peak_offset_ms': (peak - position) * 1000 / rate,
+                    'sample_count_pass': len(samples) == n,
+                    'bypass_renderer_bit_exact': bypass_bit_exact,
+                    'source_to_output_bit_exact': samples.tobytes() == pcm(source).tobytes(),
+                    'impulse_pass': peak == position if strength == 0 else abs(peak - position) * 1000 <= rate,
                     'engine_latency_48k': report.timeline.engine_latency_samples,
                 })
     return rows
@@ -136,12 +147,17 @@ def main() -> int:
         'ffmpeg_version': subprocess.check_output([ffmpeg, '-version'], text=True).splitlines()[0],
         'resampler': 'aresample=resampler=soxr:precision=28', 'default_preset_in_this_checkout': DEFAULT_PRESET_ID,
         'timeline': rows, 'native_impulse_reference': native_impulse_reference(), 'loudness': loudness(),
-        'strict_spatial_timeline_pass': all(row['sample_count_pass'] and row['impulse_pass']
-                                            for row in rows if row['mode'] == 'spatial'),
+        'acceptance_definition': 'Equal sample counts; bit-exact native bypass and zero bypass peak offset; spatial peak offset <=1 ms',
+        'bypass_reference': 'Native 48 kHz renderer input/output; source-to-source equality separately recorded because soxr roundtrips change amplitudes',
+        'spatial_timeline_pass': all(row['sample_count_pass'] and row['impulse_pass']
+                                     for row in rows if row['mode'] == 'spatial'),
+        'bypass_timeline_pass': all(row['sample_count_pass'] and row['impulse_pass'] and row['bypass_renderer_bit_exact']
+                                    for row in rows if row['mode'] == 'native-bypass'),
     }
-    (QA / 'evidence-02.json').write_text(json.dumps(result, indent=2) + '\n')
+    result['timeline_acceptance_pass'] = result['spatial_timeline_pass'] and result['bypass_timeline_pass']
+    (QA / 'evidence-03.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
-    return 0 if result['strict_spatial_timeline_pass'] else 1
+    return 0 if result['timeline_acceptance_pass'] else 1
 
 
 if __name__ == '__main__':

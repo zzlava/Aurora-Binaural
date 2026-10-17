@@ -4,8 +4,8 @@
 
 | 现象 | 检查与处理 |
 |---|---|
-| 找不到 ffmpeg/ffprobe | 两者都需在 PATH 中；运行 `ffmpeg -version`、`ffprobe -version`，重开终端后再试 |
-| SOXR_UNAVAILABLE | 当前 FFmpeg 无法实际运行 soxr；安装带 --enable-libsoxr 的版本并设置 AURORA_FFMPEG。本机可用 /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg；需要时设置 AURORA_FFPROBE。不使用低质量重采样替代 |
+| 找不到 ffmpeg/ffprobe | 运行 `bash scripts/setup.sh`；应用自动读取仓库的 `.aurora-local.env`，或依次探测 PATH、`/opt/homebrew/opt/ffmpeg-full/bin`，无需手动 source。显式的 AURORA_FFMPEG/AURORA_FFPROBE 优先，失效时需修正或取消设置 |
+| SOXR_UNAVAILABLE | 当前 FFmpeg 无法实际运行 soxr；macOS 执行 `brew install ffmpeg-full` 后重跑 setup.sh 或重启应用；Linux 安装带 --enable-libsoxr 的 FFmpeg。显式 AURORA_FFMPEG 不会被自动替换，不使用低质量重采样替代 |
 | route_v.toml has no default_preset 警告 | 当前 TOML 尚无根字段，默认退回该文件第一个预设；合入 Cursor 的 default_preset 配置并重启后自动采用指定值 |
 | M4A 样本数多出一帧／AAC 延时 | 使用 FFmpeg 7.1+，优先 WAV 48 kHz／24 bit；检查 timeline.sample_diff、codec_priming_samples、codec_trailing_padding_samples、residual_priming_shift_samples 和 sync_warning |
 | FFmpeg 旧版仍显示成功 | 默认低于 7 只警告；`--strict-ffmpeg` 或服务端 AURORA_STRICT_FFMPEG=1 可拒绝，最终以回读报告为准 |
@@ -26,7 +26,7 @@
 | source 导出 MP3/AAC 参数错误 | MP3 最高 48 kHz、AAC 最高 96 kHz；显式降低导出采样率，或改用 FLAC/WAV/ALAC/AIFF |
 | 浏览器跨域失败 | 服务端 AURORA_CORS_ORIGINS 填准确 scheme/host/port，重启 API；本地 CLI 和 Python 客户端不受浏览器 CORS 限制 |
 | 真峰值高于 −1 dBTP | 先构建最新核心，保留实测报告、素材、预设、强度交核心负责人；不能据“任务成功”宣称质量验收通过 |
-| 波形起点前有微弱能量 | 补偿固定引擎延时后，路线 V 的峰值仍可能提前约 13 个 48 kHz 采样（约 0.27 ms），未满足严格 ±1 个源采样的要求；此外，起点前约 2 ms 处有低电平（约 −40 dB）预振铃。来自 STFT 上混和 FIR，见 [P1a 核心验收记录](../../qa/p1/ACCEPTANCE-cursor-p1a-05.md)及 [P6-02 实测](../../qa/p6/codex/REPORT-02.md)；用很低阈值检测到的最早能量不等于峰值或口型整体提前 |
+| 波形起点前有微弱能量 | 路线 V 叠加虚拟扬声器、HRIR 与反射，补偿固定延时后峰值可提前约 14 个 48 kHz 采样（0.29 ms）；约 2 ms 前还可能有低电平预振铃。时间线验收现为“样本数一致、旁路逐位对齐、空间路径峰值偏移 ≤1 ms，并记录偏移”，已撤回 ±1 源采样峰值要求，见 [P6-02 验收定义](../../qa/p6/ACCEPTANCE-codex-p6-02.md)和 [P6-03 实测](../../qa/p6/codex/REPORT-03.md)。旁路原生 48 kHz 输入／输出逐位相同；不同源采样率经过 soxr 往返后幅度会改变，另行核对其峰值位置误差为 0。低阈值检测到的最早能量不等于峰值或口型整体提前 |
 
 内部按 48 kHz 处理，超过 24 kHz 的内容不做空间处理，重采样会滤掉这些超声内容；把导出率设回源采样率不会恢复它们。
 
