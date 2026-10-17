@@ -660,7 +660,7 @@ function App() {
                   ? "正在上传与分析…"
                   : "拖入音频，开始试听"}
               </strong>
-              <span>WAV、M4A、MP3、AAC · 支持多选</span>
+              <span>FLAC、WAV、ALAC、AIFF、AAC、MP3 · 支持多选</span>
               <button
                 disabled={!api || pending}
                 onClick={() => fileInput.current?.click()}
@@ -1129,7 +1129,7 @@ function App() {
                               async () => {
                                 await api?.download(
                                   `/v1/jobs/${entry.job.job_id}/result`,
-                                  `${entry.filename.replace(/\.[^.]+$/, "")}.${entry.job.preview ? "preview.wav" : (entry.job.result_metadata?.format === "alac" ? "m4a" : (entry.job.result_metadata?.format ?? "wav"))}`,
+                                  `${entry.filename.replace(/\.[^.]+$/, "")}.${entry.job.preview ? "preview.wav" : (["alac", "aac"].includes(entry.job.result_metadata?.format ?? "") ? "m4a" : (entry.job.result_metadata?.format ?? "wav"))}`,
                                 );
                               },
                             )

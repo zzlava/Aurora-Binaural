@@ -607,12 +607,12 @@ def _build_encode_cmd(
     if target_sr != sample_rate:
         require_soxr(ffmpeg_bin)
         filters.append(f"aresample={target_sr}:resampler=soxr:precision=28")
-    # Quantize after resampling. TPDF must target s16 explicitly; otherwise FFmpeg
-    # may insert a separate undithered float-to-int conversion after this filter.
-    if output_spec.is_lossless and output_spec.bit_depth == 16:
-        filters.append("aresample=osf=s16p:dither_method=triangular")
     if expected_samples is not None:
         filters.extend([f"apad=whole_len={expected_samples}", f"atrim=end_sample={expected_samples}"])
+    # Quantize last, including duration padding. Planar s16 avoids the packed-s16
+    # float conversion bias observed in FFmpeg 9; planar->packed is lossless.
+    if output_spec.is_lossless and output_spec.bit_depth == 16:
+        filters.append("aresample=osf=s16p:dither_method=triangular")
     metadata_args: list[str] = []
     if metadata_source is not None:
         metadata_args = ["-i", str(metadata_source), "-map", "0:a:0", "-map_metadata", "1",
