@@ -19,7 +19,10 @@ use crate::fdn::FdnReverb;
 use crate::hrir::HrirPack;
 use crate::interpolate::idw_render;
 use crate::limiter::{TruePeakLimiter, DETECTOR_CEILING_DBTP, LOOKAHEAD};
-use crate::preset_v::{map_route_v, MappedRouteV, RouteVTable};
+use crate::preset_v::{
+    apply_macros, map_route_v, resolve_controls, MacroControls, MappedRouteV, RouteVRow,
+    RouteVTable,
+};
 use crate::processor::{Params, Processor, RenderConfig};
 use crate::rng::numpy_round;
 use crate::upmix::{StreamingUpmix, N_FFT, N_SECTORS, N_STEMS};
@@ -27,7 +30,19 @@ use num_complex::Complex;
 use realfft::RealFftPlanner;
 
 const PART: usize = 64;
-const FADE: usize = 128;
+/// 32 ms at 48 kHz. Gain ramps and HRIR crossfades share this length.
+const SMOOTH: usize = 1536;
+const FADE: usize = SMOOTH;
+const N_GAINS: usize = 8;
+const G_WIDE: usize = 0;
+const G_SUR: usize = 1;
+const G_HEIGHT: usize = 2;
+const G_EARLY: usize = 3;
+const G_LATE: usize = 4;
+const G_HDIRECT: usize = 5;
+const G_CHEIGHT: usize = 6;
+const G_SEND: usize = 7;
+const MAX_EARLY: usize = 16;
 const EQ_TAPS: usize = 512;
 const EQ_FFT: usize = 8192;
 const N_HEIGHT: usize = 4;
@@ -111,6 +126,22 @@ impl FirStereo {
         self.pos = 0;
     }
 
+    fn blend_toward(&mut self, target: &[f64], steps: usize, left: usize) {
+        if left == 0 || steps == 0 || self.coeff.is_empty() || self.coeff.len() != target.len() {
+            return;
+        }
+        let portion = steps as f64 / left as f64;
+        for i in 0..self.coeff.len() {
+            self.coeff[i] += (target[i] - self.coeff[i]) * portion;
+        }
+    }
+
+    fn copy_coeff_inplace(&mut self, target: &[f64]) {
+        if self.coeff.len() == target.len() {
+            self.coeff.copy_from_slice(target);
+        }
+    }
+
     fn process(&mut self, left: &[f64], right: &[f64], out_l: &mut [f64], out_r: &mut [f64]) {
         let n = left
             .len()
@@ -149,6 +180,8 @@ struct Engine {
     bypass: bool,
     limiter_on: bool,
     mapped: MappedRouteV,
+    controls: MacroControls,
+    anchors: RouteVRow,
     seed: u64,
     hrtf_name: String,
     table: RouteVTable,
@@ -198,6 +231,20 @@ struct Engine {
     ir_l: Vec<f64>,
     ir_r: Vec<f64>,
     shelf: Vec<f64>,
+    played: bool,
+    smooth_left: usize,
+    gain_now: [f64; N_GAINS],
+    gain_d: [f64; N_GAINS],
+    gain_tgt: [f64; N_GAINS],
+    early_now: [f64; MAX_EARLY],
+    early_d: [f64; MAX_EARLY],
+    early_tgt: [f64; MAX_EARLY],
+    front_now: f64,
+    front_d: f64,
+    front_tgt: f64,
+    fir_tgt: Vec<f64>,
+    xfade_left: usize,
+    xfade_len: usize,
 }
 
 impl RouteV {
@@ -217,6 +264,73 @@ impl RouteV {
 impl Default for RouteV {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Controls and the internal parameters they expanded to. Reported values are
+/// the requested target, including while a ramp is still in progress.
+#[derive(Debug, Clone)]
+pub struct EffectiveParams {
+    pub strength: f64,
+    pub width: f64,
+    pub height: f64,
+    pub room: f64,
+    pub voice_distance: f64,
+    pub front_az: f64,
+    pub wide_db: f64,
+    pub surround_db: f64,
+    pub height_db: f64,
+    pub height_el: f64,
+    pub height_direct_db: f64,
+    pub ceiling_db: f64,
+    pub room_db: f64,
+    pub early_db: f64,
+    pub t60: f64,
+    pub direct_room_send_db: f64,
+    pub center_distance_m: f64,
+    pub center_spread_deg: f64,
+    pub wide_lin: f64,
+    pub surround_lin: f64,
+    pub height_lin: f64,
+    pub early_lin: f64,
+    pub late_lin: f64,
+    pub direct_room_send_lin: f64,
+    pub bypass: bool,
+}
+
+impl RouteV {
+    pub fn effective_params(&self) -> Option<EffectiveParams> {
+        let engine = self.engine.as_ref()?;
+        let anchors = &engine.anchors;
+        let mapped = &engine.mapped;
+        let controls = engine.controls;
+        Some(EffectiveParams {
+            strength: controls.strength,
+            width: controls.width,
+            height: controls.height,
+            room: controls.room,
+            voice_distance: controls.voice_distance,
+            front_az: mapped.front_az,
+            wide_db: anchors.wide_db,
+            surround_db: anchors.surround_db,
+            height_db: anchors.height_db,
+            height_el: mapped.height_el,
+            height_direct_db: anchors.height_direct_db,
+            ceiling_db: mapped.ceiling_db,
+            room_db: anchors.room_db,
+            early_db: anchors.early_db,
+            t60: mapped.t60,
+            direct_room_send_db: anchors.direct_room_send_db,
+            center_distance_m: mapped.center_distance_m,
+            center_spread_deg: mapped.center_spread_deg,
+            wide_lin: mapped.wide_lin,
+            surround_lin: mapped.surround_lin,
+            height_lin: mapped.height_lin,
+            early_lin: mapped.early_lin,
+            late_lin: mapped.late_lin,
+            direct_room_send_lin: mapped.direct_room_send_lin,
+            bypass: mapped.bypass,
+        })
     }
 }
 
@@ -243,7 +357,15 @@ impl Processor for RouteV {
         let row = table.get(&config.preset)?.clone();
         let hrtf_name =
             resolve_hrtf_name(&config.hrtf_name, &config.hrtf_pack, &config.hrtf_source);
-        let mapped = map_route_v(config.strength, &row, &hrtf_name, &table.delays_ms);
+        let controls = resolve_controls(row.controls, config.strength, None, None, None, None);
+        let anchors = apply_macros(&row, &controls, &table.curves);
+        let mapped = map_route_v(
+            controls.strength,
+            &anchors,
+            &hrtf_name,
+            &table.delays_ms,
+            &table.strength,
+        );
         let pack = HrirPack::load(&config.hrtf_pack, &config.hrtf_source)?;
         if pack.sample_rate != sample_rate {
             return Err(DspError::Message(format!(
@@ -272,6 +394,8 @@ impl Processor for RouteV {
             bypass: mapped.bypass,
             limiter_on: config.limiter,
             mapped,
+            controls,
+            anchors,
             seed: config.seed,
             hrtf_name,
             table,
@@ -326,8 +450,23 @@ impl Processor for RouteV {
             ir_l: vec![0.0; n_taps],
             ir_r: vec![0.0; n_taps],
             shelf: vec![0.0; n_taps],
+            played: false,
+            smooth_left: 0,
+            gain_now: [0.0; N_GAINS],
+            gain_d: [0.0; N_GAINS],
+            gain_tgt: [0.0; N_GAINS],
+            early_now: [0.0; MAX_EARLY],
+            early_d: [0.0; MAX_EARLY],
+            early_tgt: [0.0; MAX_EARLY],
+            front_now: 0.0,
+            front_d: 0.0,
+            front_tgt: 0.0,
+            fir_tgt: Vec::new(),
+            xfade_left: 0,
+            xfade_len: 1,
         };
         engine.install(sample_rate);
+        engine.capture_smooth();
         self.engine = Some(engine);
         Ok(())
     }
@@ -339,12 +478,28 @@ impl Processor for RouteV {
         let Ok(row) = engine.table.get(&params.preset).cloned() else {
             return;
         };
-        let mapped = map_route_v(
+        let controls = resolve_controls(
+            row.controls,
             params.strength,
-            &row,
+            params.width,
+            params.height,
+            params.room,
+            params.voice_distance,
+        );
+        let anchors = apply_macros(&row, &controls, &engine.table.curves);
+        let mapped = map_route_v(
+            controls.strength,
+            &anchors,
             &engine.hrtf_name,
             &engine.table.delays_ms,
+            &engine.table.strength,
         );
+        engine.controls = controls;
+        engine.anchors = anchors;
+        if engine.played {
+            engine.begin_smooth(mapped);
+            return;
+        }
         let cutoff_changed = (mapped.crossover_hz - engine.mapped.crossover_hz).abs() > 1e-9;
         let t60_changed = (mapped.t60 - engine.mapped.t60).abs() > 1e-12;
         let seed_changed = params.seed != engine.seed;
@@ -360,6 +515,7 @@ impl Processor for RouteV {
             engine.fdn.reseed(48_000, engine.mapped.t60, params.seed);
         }
         engine.install(48_000);
+        engine.capture_smooth();
     }
 
     fn process(&mut self, input: &[&[f32]], output: &mut [&mut [f32]], n: usize) {
@@ -602,10 +758,170 @@ impl Engine {
         self.conv[index].set_ir(&self.ir_l, &self.ir_r);
     }
 
+    fn capture_smooth(&mut self) {
+        self.gain_now = gain_pack(&self.mapped);
+        self.gain_tgt = self.gain_now;
+        self.gain_d = [0.0; N_GAINS];
+        self.early_now = [0.0; MAX_EARLY];
+        self.early_d = [0.0; MAX_EARLY];
+        self.early_tgt = [0.0; MAX_EARLY];
+        for (i, tap) in self.early.iter().take(MAX_EARLY).enumerate() {
+            self.early_now[i] = tap.gain;
+            self.early_tgt[i] = tap.gain;
+        }
+        self.front_now = self.mapped.front_az;
+        self.front_tgt = self.front_now;
+        self.front_d = 0.0;
+        self.smooth_left = 0;
+        self.fir_tgt.clear();
+        self.xfade_left = 0;
+    }
+
+    fn g(&self, idx: usize, sample: usize) -> f64 {
+        if self.smooth_left == 0 {
+            return self.gain_now[idx];
+        }
+        self.gain_now[idx] + self.gain_d[idx] * sample.min(self.smooth_left) as f64
+    }
+
+    fn g_front(&self, sample: usize) -> f64 {
+        if self.smooth_left == 0 {
+            return self.front_now;
+        }
+        self.front_now + self.front_d * sample.min(self.smooth_left) as f64
+    }
+
+    fn acc_gain(&mut self, idx: usize, m: usize) {
+        let now = self.gain_now[idx];
+        let delta = self.gain_d[idx];
+        let left = self.smooth_left;
+        for i in 0..m {
+            let gain = if left == 0 {
+                now
+            } else {
+                now + delta * i.min(left) as f64
+            };
+            self.mix_l[i] += gain * self.tmp_l[i];
+            self.mix_r[i] += gain * self.tmp_r[i];
+        }
+    }
+
+    fn early_g(&self, tap: usize, sample: usize) -> f64 {
+        if tap >= MAX_EARLY {
+            return 0.0;
+        }
+        if self.smooth_left == 0 {
+            return self.early_now[tap];
+        }
+        self.early_now[tap] + self.early_d[tap] * sample.min(self.smooth_left) as f64
+    }
+
+    fn begin_smooth(&mut self, mapped: MappedRouteV) {
+        let old = self.mapped.clone();
+        let leaving_bypass = self.bypass && !mapped.bypass;
+        let steps = SMOOTH.max(1) as f64;
+        self.gain_tgt = gain_pack(&mapped);
+        for i in 0..N_GAINS {
+            self.gain_d[i] = (self.gain_tgt[i] - self.gain_now[i]) / steps;
+        }
+        self.front_tgt = mapped.front_az;
+        self.front_d = (mapped.front_az - self.front_now) / steps;
+        let taps = shoebox_taps(&mapped, 48_000);
+        self.early_d = [0.0; MAX_EARLY];
+        self.early_tgt = self.early_now;
+        for (i, tap) in taps.iter().take(MAX_EARLY).enumerate() {
+            self.early_tgt[i] = tap.gain;
+            self.early_d[i] = (tap.gain - self.early_now[i]) / steps;
+        }
+        if (mapped.t60 - old.t60).abs() > 1e-12 {
+            self.fdn.start_decay(48_000, mapped.t60, SMOOTH);
+        }
+        let eq_changed = mapped.eq_gain_db != old.eq_gain_db;
+        self.mapped = mapped;
+        if !self.mapped.bypass
+            && (eq_changed || self.fir.coeff.is_empty())
+            && !self.mapped.eq_gain_db.is_empty()
+        {
+            let coeff = design_minphase(
+                &self.mapped.eq_bands_hz,
+                &self.mapped.eq_gain_db,
+                48_000,
+                EQ_TAPS,
+                EQ_FFT,
+            );
+            if self.fir.coeff.is_empty() {
+                self.fir.set_coeff(coeff);
+                self.fir_tgt.clear();
+            } else {
+                self.fir_tgt = coeff;
+            }
+        } else {
+            self.fir_tgt.clear();
+        }
+        self.retarget_hrir(&old);
+        if leaving_bypass {
+            self.bypass = false;
+            self.xfade_left = SMOOTH;
+            self.xfade_len = SMOOTH.max(1);
+        } else {
+            // A hard bypass would drop the latency and click. Keep the chain
+            // and let the bed gains reach the bypass values.
+            self.bypass = false;
+        }
+        self.smooth_left = SMOOTH;
+    }
+
+    fn retarget_hrir(&mut self, old: &MappedRouteV) {
+        let spread = self.mapped.center_spread_deg;
+        let distance_changed = (old.center_distance_m - self.mapped.center_distance_m).abs() > 1e-6;
+        if (old.center_spread_deg - spread).abs() > 1e-6 || distance_changed {
+            self.set_near_conv(CENTER_POS, spread, 0.0);
+            self.set_near_conv(CENTER_NEG, -spread, 0.0);
+        }
+        if (old.height_el - self.mapped.height_el).abs() > 1e-6
+            || old.height_az != self.mapped.height_az
+        {
+            let az = pad_height(&self.mapped.height_az);
+            let el = self.mapped.height_el;
+            for i in 0..N_HEIGHT {
+                self.set_conv(H0 + i, az[i], el);
+            }
+        }
+    }
+
+    fn commit_smooth(&mut self, n: usize) {
+        if self.smooth_left > 0 {
+            let steps = n.min(self.smooth_left);
+            for i in 0..N_GAINS {
+                self.gain_now[i] += self.gain_d[i] * steps as f64;
+            }
+            for tap in 0..MAX_EARLY {
+                self.early_now[tap] += self.early_d[tap] * steps as f64;
+            }
+            self.front_now += self.front_d * steps as f64;
+            self.smooth_left -= steps;
+            if self.smooth_left == 0 {
+                self.gain_now = self.gain_tgt;
+                self.early_now = self.early_tgt;
+                self.front_now = self.front_tgt;
+                self.gain_d = [0.0; N_GAINS];
+                self.early_d = [0.0; MAX_EARLY];
+                self.front_d = 0.0;
+                if !self.fir_tgt.is_empty() {
+                    self.fir.copy_coeff_inplace(&self.fir_tgt);
+                    self.fir_tgt.clear();
+                }
+                self.up.set_width_ambient(self.front_now, 1.0);
+            }
+        }
+        self.xfade_left = self.xfade_left.saturating_sub(n);
+    }
+
     fn process_block(&mut self, m: usize) {
         if self.bypass {
             self.mix_l[..m].copy_from_slice(&self.in_l[..m]);
             self.mix_r[..m].copy_from_slice(&self.in_r[..m]);
+            self.played = true;
             return;
         }
         let stride = self.max_block;
@@ -617,13 +933,30 @@ impl Engine {
             &mut self.high_l[..m],
             &mut self.high_r[..m],
         );
-        self.up.process(
-            &self.high_l[..m],
-            &self.high_r[..m],
-            &mut self.stems,
-            stride,
-            0,
-        );
+        if self.smooth_left > 0 && self.front_d.abs() > 0.0 {
+            let mut done = 0;
+            while done < m {
+                let step = 64.min(m - done);
+                let az = self.g_front(done);
+                self.up.set_width_ambient(az, 1.0);
+                self.up.process(
+                    &self.high_l[done..done + step],
+                    &self.high_r[done..done + step],
+                    &mut self.stems,
+                    stride,
+                    done,
+                );
+                done += step;
+            }
+        } else {
+            self.up.process(
+                &self.high_l[..m],
+                &self.high_r[..m],
+                &mut self.stems,
+                stride,
+                0,
+            );
+        }
         self.mix_l[..m].fill(0.0);
         self.mix_r[..m].fill(0.0);
 
@@ -674,56 +1007,29 @@ impl Engine {
 
         let amb_l = 4 * stride;
         let amb_r = 5 * stride;
-        let wide_lin = self.mapped.wide_lin;
         self.dec_wide_l
             .process(&self.stems[amb_l..amb_l + m], &mut self.mono[..m]);
         self.conv[WIDE_L].process(&self.mono[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
-        acc_scaled(
-            &mut self.mix_l[..m],
-            &mut self.mix_r[..m],
-            &self.tmp_l[..m],
-            &self.tmp_r[..m],
-            wide_lin,
-        );
+        self.acc_gain(G_WIDE, m);
         self.dec_wide_r
             .process(&self.stems[amb_r..amb_r + m], &mut self.mono[..m]);
         self.conv[WIDE_R].process(&self.mono[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
-        acc_scaled(
-            &mut self.mix_l[..m],
-            &mut self.mix_r[..m],
-            &self.tmp_l[..m],
-            &self.tmp_r[..m],
-            wide_lin,
-        );
+        self.acc_gain(G_WIDE, m);
 
-        let surround_lin = self.mapped.surround_lin;
         self.delay_sur_l
             .process(&self.stems[amb_l..amb_l + m], &mut self.mono[..m]);
         self.dec_sur_l.process(&self.mono[..m], &mut self.feed[..m]);
         self.conv[SUR_L].process(&self.feed[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
-        acc_scaled(
-            &mut self.mix_l[..m],
-            &mut self.mix_r[..m],
-            &self.tmp_l[..m],
-            &self.tmp_r[..m],
-            surround_lin,
-        );
+        self.acc_gain(G_SUR, m);
         self.delay_sur_r
             .process(&self.stems[amb_r..amb_r + m], &mut self.mono[..m]);
         self.dec_sur_r.process(&self.mono[..m], &mut self.feed[..m]);
         self.conv[SUR_R].process(&self.feed[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
-        acc_scaled(
-            &mut self.mix_l[..m],
-            &mut self.mix_r[..m],
-            &self.tmp_l[..m],
-            &self.tmp_r[..m],
-            surround_lin,
-        );
+        self.acc_gain(G_SUR, m);
 
-        let height_lin = self.mapped.height_lin;
-        let direct_lin = self.mapped.height_direct_lin;
-        let center_lin = self.mapped.center_height_lin;
         for i in 0..m {
+            let direct_lin = self.g(G_HDIRECT, i);
+            let center_lin = self.g(G_CHEIGHT, i);
             self.mono[i] = self.lateral[i] * direct_lin + self.stems[center_row + i] * center_lin;
         }
         self.delay_lift
@@ -731,7 +1037,7 @@ impl Engine {
 
         self.dec_height[0].process(&self.stems[amb_l..amb_l + m], &mut self.feed[..m]);
         for i in 0..m {
-            self.mono[i] = height_lin * (self.feed[i] + self.lifted[i]);
+            self.mono[i] = self.g(G_HEIGHT, i) * (self.feed[i] + self.lifted[i]);
         }
         self.conv[H0].process(&self.mono[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
         acc(
@@ -743,7 +1049,7 @@ impl Engine {
 
         self.dec_height[1].process(&self.stems[amb_r..amb_r + m], &mut self.feed[..m]);
         for i in 0..m {
-            self.mono[i] = height_lin * (self.feed[i] + self.lifted[i]);
+            self.mono[i] = self.g(G_HEIGHT, i) * (self.feed[i] + self.lifted[i]);
         }
         self.conv[H0 + 1].process(&self.mono[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
         acc(
@@ -757,7 +1063,7 @@ impl Engine {
             .process(&self.stems[amb_l..amb_l + m], &mut self.mono[..m]);
         self.dec_height[2].process(&self.mono[..m], &mut self.feed[..m]);
         for i in 0..m {
-            self.feed[i] *= height_lin;
+            self.feed[i] *= self.g(G_HEIGHT, i);
         }
         self.conv[H0 + 2].process(&self.feed[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
         acc(
@@ -771,7 +1077,7 @@ impl Engine {
             .process(&self.stems[amb_r..amb_r + m], &mut self.mono[..m]);
         self.dec_height[3].process(&self.mono[..m], &mut self.feed[..m]);
         for i in 0..m {
-            self.feed[i] *= height_lin;
+            self.feed[i] *= self.g(G_HEIGHT, i);
         }
         self.conv[H0 + 3].process(&self.feed[..m], &mut self.tmp_l[..m], &mut self.tmp_r[..m]);
         acc(
@@ -781,25 +1087,22 @@ impl Engine {
             &self.tmp_r[..m],
         );
 
-        let send = self.mapped.direct_room_send_lin;
         let dir_l = 0;
         let dir_r = stride;
         for i in 0..m {
             let direct = 0.5 * (self.stems[dir_l + i] + self.stems[dir_r + i]);
             let amb = 0.5 * (self.stems[amb_l + i] + self.stems[amb_r + i]);
-            self.room[i] = direct * send + amb;
+            self.room[i] = direct * self.g(G_SEND, i) + amb;
         }
-        let early_lin = self.mapped.early_lin;
         let n_early = self
             .early
             .len()
             .min(self.delay_early.len())
             .min(self.conv.len().saturating_sub(EARLY0));
         for t in 0..n_early {
-            let gain = self.early[t].gain * early_lin;
             self.delay_early[t].process(&self.room[..m], &mut self.mono[..m]);
             for i in 0..m {
-                self.mono[i] *= gain;
+                self.mono[i] *= self.early_g(t, i) * self.g(G_EARLY, i);
             }
             self.conv[EARLY0 + t].process(
                 &self.mono[..m],
@@ -819,14 +1122,7 @@ impl Engine {
             .process(&self.fdn_l[..m], &mut self.tmp_l[..m]);
         self.delay_fdn_r
             .process(&self.fdn_r[..m], &mut self.tmp_r[..m]);
-        let late_lin = self.mapped.late_lin;
-        acc_scaled(
-            &mut self.mix_l[..m],
-            &mut self.mix_r[..m],
-            &self.tmp_l[..m],
-            &self.tmp_r[..m],
-            late_lin,
-        );
+        self.acc_gain(G_LATE, m);
 
         for i in 0..m {
             self.mono[i] = 0.5 * (self.low_l[i] + self.low_r[i]);
@@ -838,14 +1134,39 @@ impl Engine {
         }
 
         if !self.fir.coeff.is_empty() {
-            self.fir.process(
-                &self.mix_l[..m],
-                &self.mix_r[..m],
-                &mut self.tmp_l[..m],
-                &mut self.tmp_r[..m],
-            );
+            if self.fir_tgt.len() == self.fir.coeff.len() && self.smooth_left > 0 {
+                for i in 0..m {
+                    if self.smooth_left > i {
+                        self.fir
+                            .blend_toward(&self.fir_tgt, 1, self.smooth_left - i);
+                    }
+                    self.fir.process(
+                        &self.mix_l[i..i + 1],
+                        &self.mix_r[i..i + 1],
+                        &mut self.tmp_l[i..i + 1],
+                        &mut self.tmp_r[i..i + 1],
+                    );
+                }
+            } else {
+                self.fir.process(
+                    &self.mix_l[..m],
+                    &self.mix_r[..m],
+                    &mut self.tmp_l[..m],
+                    &mut self.tmp_r[..m],
+                );
+            }
             self.mix_l[..m].copy_from_slice(&self.tmp_l[..m]);
             self.mix_r[..m].copy_from_slice(&self.tmp_r[..m]);
+        }
+        if self.xfade_left > 0 {
+            let len = self.xfade_len.max(1) as f64;
+            let left0 = self.xfade_left;
+            for i in 0..m {
+                let remain = left0.saturating_sub(i) as f64;
+                let t = (1.0 - remain / len).clamp(0.0, 1.0);
+                self.mix_l[i] = (1.0 - t) * self.in_l[i] + t * self.mix_l[i];
+                self.mix_r[i] = (1.0 - t) * self.in_r[i] + t * self.mix_r[i];
+            }
         }
         if self.limiter_on {
             self.limiter.process(
@@ -857,7 +1178,22 @@ impl Engine {
             self.mix_l[..m].copy_from_slice(&self.tmp_l[..m]);
             self.mix_r[..m].copy_from_slice(&self.tmp_r[..m]);
         }
+        self.commit_smooth(m);
+        self.played = true;
     }
+}
+
+fn gain_pack(mapped: &MappedRouteV) -> [f64; N_GAINS] {
+    let mut gain = [0.0; N_GAINS];
+    gain[G_WIDE] = mapped.wide_lin;
+    gain[G_SUR] = mapped.surround_lin;
+    gain[G_HEIGHT] = mapped.height_lin;
+    gain[G_EARLY] = mapped.early_lin;
+    gain[G_LATE] = mapped.late_lin;
+    gain[G_HDIRECT] = mapped.height_direct_lin;
+    gain[G_CHEIGHT] = mapped.center_height_lin;
+    gain[G_SEND] = mapped.direct_room_send_lin;
+    gain
 }
 
 fn apply_upmix_controls(up: &mut StreamingUpmix, mapped: &MappedRouteV) {
@@ -923,13 +1259,6 @@ fn acc(dst_l: &mut [f64], dst_r: &mut [f64], src_l: &[f64], src_r: &[f64]) {
     for i in 0..dst_l.len() {
         dst_l[i] += src_l[i];
         dst_r[i] += src_r[i];
-    }
-}
-
-fn acc_scaled(dst_l: &mut [f64], dst_r: &mut [f64], src_l: &[f64], src_r: &[f64], gain: f64) {
-    for i in 0..dst_l.len() {
-        dst_l[i] += gain * src_l[i];
-        dst_r[i] += gain * src_r[i];
     }
 }
 
@@ -1206,6 +1535,7 @@ mod tests {
     use super::*;
     use crate::hrir::{sha256_file, MAGIC, VERSION};
     use crate::preset_v::RouteVTable;
+    use crate::processor::Params;
     use std::io::Write;
     use std::path::PathBuf;
 
@@ -1280,7 +1610,13 @@ mod tests {
     fn shoebox_matches_prototype_taps() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../presets/route_v.toml");
         let table = RouteVTable::load(&path).unwrap();
-        let mapped = map_route_v(1.0, table.get("V2").unwrap(), "sadie", &table.delays_ms);
+        let mapped = map_route_v(
+            1.0,
+            table.get("V2").unwrap(),
+            "sadie",
+            &table.delays_ms,
+            &table.strength,
+        );
         let taps = shoebox_taps(&mapped, 48_000);
         assert_eq!(taps.len(), 12);
         assert_eq!(taps[0].delay, 505);
@@ -1316,7 +1652,13 @@ mod tests {
     fn fixed_eq_matches_prototype_fir() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../presets/route_v.toml");
         let table = RouteVTable::load(&path).unwrap();
-        let mapped = map_route_v(1.0, table.get("V2").unwrap(), "sadie", &table.delays_ms);
+        let mapped = map_route_v(
+            1.0,
+            table.get("V2").unwrap(),
+            "sadie",
+            &table.delays_ms,
+            &table.strength,
+        );
         let fir = design_minphase(
             &mapped.eq_bands_hz,
             &mapped.eq_gain_db,
@@ -1399,5 +1741,91 @@ mod tests {
         dsp.process(&[&left, &right], &mut [&mut ol2, &mut or2], n);
         assert_eq!(ol, ol2);
         assert_eq!(or_, or2);
+    }
+
+    #[test]
+    fn mid_stream_controls_do_not_step_or_allocate() {
+        let mut dsp = prepared(256, 1.0, "V3");
+        let n = 8192;
+        let split = 4096;
+        let left: Vec<f32> = (0..n)
+            .map(|i| 0.15 * (i as f32 * 2.0 * std::f32::consts::PI * 200.0 / 48_000.0).sin())
+            .collect();
+        let right = left.clone();
+        let mut out_l = vec![0.0f32; n];
+        let mut out_r = vec![0.0f32; n];
+        let mut offset = 0;
+        while offset < split {
+            let m = 256.min(split - offset);
+            dsp.process(
+                &[&left[offset..offset + m], &right[offset..offset + m]],
+                &mut [
+                    &mut out_l[offset..offset + m],
+                    &mut out_r[offset..offset + m],
+                ],
+                m,
+            );
+            offset += m;
+        }
+        dsp.set_params(&Params {
+            strength: 0.35,
+            preset: "V3".into(),
+            seed: 20_261_016,
+            width: Some(1.0),
+            height: Some(0.0),
+            room: Some(1.0),
+            voice_distance: Some(1.0),
+        });
+        crate::test_alloc::set_enabled(false);
+        crate::test_alloc::COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+        crate::test_alloc::set_enabled(true);
+        while offset < n {
+            let m = 256.min(n - offset);
+            dsp.process(
+                &[&left[offset..offset + m], &right[offset..offset + m]],
+                &mut [
+                    &mut out_l[offset..offset + m],
+                    &mut out_r[offset..offset + m],
+                ],
+                m,
+            );
+            offset += m;
+        }
+        let allocs = crate::test_alloc::COUNT.load(std::sync::atomic::Ordering::Relaxed);
+        crate::test_alloc::set_enabled(false);
+        let interleaved: Vec<f32> = out_l
+            .iter()
+            .zip(out_r.iter())
+            .flat_map(|(l, r)| [*l, *r])
+            .collect();
+        assert_eq!(allocs, 0, "smooth process allocated {allocs} times");
+        assert!(interleaved.iter().all(|s| s.is_finite()));
+        assert!(interleaved.iter().all(|s| s.abs() <= 1.0));
+        let (peak_before, _) = channel_step_at(&interleaved, 0, split);
+        let (peak_after, at) = channel_step_at(&interleaved, split, n);
+        assert!(
+            peak_after < peak_before.max(0.02) * 8.0,
+            "step {peak_after} at sample {at} vs steady {peak_before}"
+        );
+    }
+
+    fn channel_step_at(interleaved: &[f32], start: usize, end: usize) -> (f32, usize) {
+        let mut peak = 0.0f32;
+        let mut at = start;
+        let end = end.min(interleaved.len() / 2);
+        for channel in 0..2 {
+            let mut frame = start.max(1);
+            while frame < end {
+                let index = frame * 2 + channel;
+                let prev = (frame - 1) * 2 + channel;
+                let step = (interleaved[index] - interleaved[prev]).abs();
+                if step > peak {
+                    peak = step;
+                    at = frame;
+                }
+                frame += 1;
+            }
+        }
+        (peak, at)
     }
 }
