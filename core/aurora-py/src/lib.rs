@@ -5,6 +5,7 @@
 //! HRTF pack paths live on the constructor because `RenderConfig` only carries
 //! channel counts.
 
+use aurora_dsp::limiter::LimiterStats;
 use aurora_dsp::{Params, Processor, RenderConfig, RouteB, RouteV};
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -159,25 +160,31 @@ impl PyRenderer {
 
     /// Update any of `strength`, `width`, `height`, `room`, `voice_distance`.
     /// Omitted keys keep their current value. Each value is in `[0, 1]`.
+    /// An unknown key is a `ValueError`.
     fn set_controls(&mut self, controls: &Bound<'_, PyDict>) -> PyResult<()> {
         if !self.prepared {
             return Err(PyRuntimeError::new_err("prepare before set_controls"));
         }
-        for key in ["strength", "width", "height", "room", "voice_distance"] {
-            if let Some(value) = controls.get_item(key)? {
-                let number: f64 = value.extract()?;
-                if !number.is_finite() || !(0.0..=1.0).contains(&number) {
-                    return Err(PyValueError::new_err(format!(
-                        "{key} must be a finite number in [0, 1]"
-                    )));
-                }
-                match key {
-                    "strength" => self.strength = number,
-                    "width" => self.width = Some(number),
-                    "height" => self.height = Some(number),
-                    "room" => self.room = Some(number),
-                    "voice_distance" => self.voice_distance = Some(number),
-                    _ => {}
+        for (key, value) in controls.iter() {
+            let name: String = key.extract().map_err(|_| {
+                PyValueError::new_err("control names must be strings")
+            })?;
+            let number: f64 = value.extract().map_err(|_| {
+                PyValueError::new_err(format!("{name} must be a finite number in [0, 1]"))
+            })?;
+            if !number.is_finite() || !(0.0..=1.0).contains(&number) {
+                return Err(PyValueError::new_err(format!(
+                    "{name} must be a finite number in [0, 1]"
+                )));
+            }
+            match name.as_str() {
+                "strength" => self.strength = number,
+                "width" => self.width = Some(number),
+                "height" => self.height = Some(number),
+                "room" => self.room = Some(number),
+                "voice_distance" => self.voice_distance = Some(number),
+                _ => {
+                    return Err(PyValueError::new_err(format!("unknown control '{name}'")));
                 }
             }
         }
@@ -223,6 +230,34 @@ impl PyRenderer {
         dict.set_item("late_lin", params.late_lin)?;
         dict.set_item("direct_room_send_lin", params.direct_room_send_lin)?;
         dict.set_item("bypass", params.bypass)?;
+        dict.set_item("headroom_db", params.headroom_db)?;
+        Ok(dict)
+    }
+
+    /// Target input attenuation in dB. 0 while route V is bypassed, and on route B.
+    fn headroom_db(&self) -> f64 {
+        match &self.inner {
+            Core::V(route) => route.headroom_db(),
+            Core::B(_) => 0.0,
+        }
+    }
+
+    /// Limiter gain-reduction stats for the samples processed since prepare or reset.
+    fn limiter_stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let stats = match &self.inner {
+            Core::V(route) => route.limiter_stats(),
+            Core::B(_) => LimiterStats {
+                max_gr_db: 0.0,
+                p50_gr_db: 0.0,
+                p95_gr_db: 0.0,
+                samples: 0,
+            },
+        };
+        let dict = PyDict::new(py);
+        dict.set_item("max_gr_db", stats.max_gr_db)?;
+        dict.set_item("p50_gr_db", stats.p50_gr_db)?;
+        dict.set_item("p95_gr_db", stats.p95_gr_db)?;
+        dict.set_item("samples", stats.samples)?;
         Ok(dict)
     }
 

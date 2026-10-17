@@ -16,6 +16,18 @@ pub const LOOKAHEAD: usize = 32;
 pub const DETECTOR_CEILING_DBTP: f64 = -1.8;
 const OS: usize = 4;
 const TAPS: usize = 8;
+/// Gain-reduction histogram. Bin width is [`GR_STEP_DB`] from 0 dB upward.
+const GR_BINS: usize = 400;
+const GR_STEP_DB: f64 = 0.05;
+
+/// Gain reduction observed at the end of each output sample.
+#[derive(Debug, Clone, Copy)]
+pub struct LimiterStats {
+    pub max_gr_db: f64,
+    pub p50_gr_db: f64,
+    pub p95_gr_db: f64,
+    pub samples: u64,
+}
 
 pub struct TruePeakLimiter {
     ceiling: f64,
@@ -32,6 +44,9 @@ pub struct TruePeakLimiter {
     dec_hist_r: [f64; TAPS * OS],
     dec_pos: usize,
     dec_coeff: [f64; TAPS * OS],
+    gr_hist: [u32; GR_BINS],
+    gr_samples: u64,
+    gr_max_db: f64,
 }
 
 impl TruePeakLimiter {
@@ -63,6 +78,9 @@ impl TruePeakLimiter {
             dec_hist_r: [0.0; TAPS * OS],
             dec_pos: 0,
             dec_coeff,
+            gr_hist: [0; GR_BINS],
+            gr_samples: 0,
+            gr_max_db: 0.0,
         }
     }
 
@@ -81,6 +99,48 @@ impl TruePeakLimiter {
         self.dec_hist_l = [0.0; TAPS * OS];
         self.dec_hist_r = [0.0; TAPS * OS];
         self.dec_pos = 0;
+        self.gr_hist = [0; GR_BINS];
+        self.gr_samples = 0;
+        self.gr_max_db = 0.0;
+    }
+
+    pub fn stats(&self) -> LimiterStats {
+        LimiterStats {
+            max_gr_db: self.gr_max_db,
+            p50_gr_db: self.percentile(0.50),
+            p95_gr_db: self.percentile(0.95),
+            samples: self.gr_samples,
+        }
+    }
+
+    fn note_gain(&mut self, gain: f64) {
+        let gr = if gain >= 1.0 - 1e-15 {
+            0.0
+        } else {
+            -20.0 * gain.max(1e-12).log10()
+        };
+        if gr > self.gr_max_db {
+            self.gr_max_db = gr;
+        }
+        let idx = (gr / GR_STEP_DB) as usize;
+        let bin = &mut self.gr_hist[idx.min(GR_BINS - 1)];
+        *bin = bin.saturating_add(1);
+        self.gr_samples = self.gr_samples.saturating_add(1);
+    }
+
+    fn percentile(&self, q: f64) -> f64 {
+        if self.gr_samples == 0 {
+            return 0.0;
+        }
+        let target = ((self.gr_samples as f64) * q).ceil().max(1.0) as u64;
+        let mut acc = 0u64;
+        for (i, count) in self.gr_hist.iter().enumerate() {
+            acc += u64::from(*count);
+            if acc >= target {
+                return i as f64 * GR_STEP_DB;
+            }
+        }
+        self.gr_max_db
     }
 
     pub fn process(&mut self, left: &[f64], right: &[f64], out_l: &mut [f64], out_r: &mut [f64]) {
@@ -120,14 +180,17 @@ impl TruePeakLimiter {
             self.delay_l[self.delay_pos] = xl;
             self.delay_r[self.delay_pos] = xr;
             self.delay_pos = (self.delay_pos + 1) % LOOKAHEAD;
-            if !hot && self.gain >= 1.0 - 1e-15 {
+            let applied = if !hot && self.gain >= 1.0 - 1e-15 {
                 out_l[i] = dry_l;
                 out_r[i] = dry_r;
+                1.0
             } else {
                 let (wl, wr) = self.downsample();
                 out_l[i] = wl;
                 out_r[i] = wr;
-            }
+                self.gain
+            };
+            self.note_gain(applied);
         }
     }
 

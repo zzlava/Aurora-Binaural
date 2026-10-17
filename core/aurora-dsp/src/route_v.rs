@@ -18,7 +18,7 @@ use crate::error::DspError;
 use crate::fdn::FdnReverb;
 use crate::hrir::HrirPack;
 use crate::interpolate::idw_render;
-use crate::limiter::{TruePeakLimiter, DETECTOR_CEILING_DBTP, LOOKAHEAD};
+use crate::limiter::{LimiterStats, TruePeakLimiter, DETECTOR_CEILING_DBTP, LOOKAHEAD};
 use crate::preset_v::{
     apply_macros, map_route_v, resolve_controls, MacroControls, MappedRouteV, RouteVRow,
     RouteVTable,
@@ -208,6 +208,20 @@ struct Engine {
     fdn: FdnReverb,
     fir: FirStereo,
     limiter: TruePeakLimiter,
+    /// Bed-gain sum of this preset at strength 1 with its stored anchors.
+    bed_ref: f64,
+    headroom_now: f64,
+    headroom_d: f64,
+    headroom_tgt: f64,
+    lf_k_now: f64,
+    lf_k_d: f64,
+    lf_k_tgt: f64,
+    lf_sos: [f64; 6],
+    lf_zi: [f64; 2],
+    lf_peak_sos: [f64; 6],
+    lf_peak_zi: [f64; 2],
+    lf_shelf_applied: f64,
+    lf_peak_applied: f64,
     center_i: usize,
     lateral_idx: [usize; N_LATERAL],
     in_l: Vec<f64>,
@@ -296,6 +310,8 @@ pub struct EffectiveParams {
     pub late_lin: f64,
     pub direct_room_send_lin: f64,
     pub bypass: bool,
+    /// Target input attenuation in dB (positive means quieter). 0 while bypassed.
+    pub headroom_db: f64,
 }
 
 impl RouteV {
@@ -330,7 +346,28 @@ impl RouteV {
             late_lin: mapped.late_lin,
             direct_room_send_lin: mapped.direct_room_send_lin,
             bypass: mapped.bypass,
+            headroom_db: engine.headroom_db_value(),
         })
+    }
+
+    /// Target input attenuation in dB. Zero while strength 0 is bypassing.
+    pub fn headroom_db(&self) -> f64 {
+        self.engine
+            .as_ref()
+            .map(Engine::headroom_db_value)
+            .unwrap_or(0.0)
+    }
+
+    pub fn limiter_stats(&self) -> LimiterStats {
+        self.engine
+            .as_ref()
+            .map(|engine| engine.limiter.stats())
+            .unwrap_or(LimiterStats {
+                max_gr_db: 0.0,
+                p50_gr_db: 0.0,
+                p95_gr_db: 0.0,
+                samples: 0,
+            })
     }
 }
 
@@ -379,6 +416,14 @@ impl Processor for RouteV {
                 pack.eq_mode
             )));
         }
+        let bed_ref = bed_sum(&map_route_v(
+            1.0,
+            &row,
+            &hrtf_name,
+            &table.delays_ms,
+            &table.strength,
+        ))
+        .max(1e-9);
         let n_taps = pack.n_taps().max(1);
         let n_early = mapped.early_taps.max(1);
         let n_conv = EARLY0 + n_early;
@@ -427,6 +472,19 @@ impl Processor for RouteV {
             fdn: FdnReverb::new(sample_rate, row.t60, config.seed),
             fir: FirStereo::empty(),
             limiter: TruePeakLimiter::with_ceiling(sample_rate, DETECTOR_CEILING_DBTP),
+            bed_ref,
+            headroom_now: 1.0,
+            headroom_d: 0.0,
+            headroom_tgt: 1.0,
+            lf_k_now: 0.0,
+            lf_k_d: 0.0,
+            lf_k_tgt: 0.0,
+            lf_sos: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            lf_zi: [0.0; 2],
+            lf_peak_sos: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            lf_peak_zi: [0.0; 2],
+            lf_shelf_applied: f64::NAN,
+            lf_peak_applied: f64::NAN,
             center_i: N_SECTORS / 2,
             lateral_idx: [0; N_LATERAL],
             in_l: vec![0.0; mb],
@@ -486,6 +544,14 @@ impl Processor for RouteV {
             params.room,
             params.voice_distance,
         );
+        engine.bed_ref = bed_sum(&map_route_v(
+            1.0,
+            &row,
+            &engine.hrtf_name,
+            &engine.table.delays_ms,
+            &engine.table.strength,
+        ))
+        .max(1e-9);
         let anchors = apply_macros(&row, &controls, &engine.table.curves);
         let mapped = map_route_v(
             controls.strength,
@@ -633,6 +699,10 @@ impl Processor for RouteV {
         engine.fdn.reset();
         engine.fir.reset();
         engine.limiter.reset();
+        engine.lf_zi = [0.0; 2];
+        engine.lf_peak_zi = [0.0; 2];
+        engine.lf_shelf_applied = f64::NAN;
+        engine.lf_peak_applied = f64::NAN;
     }
 }
 
@@ -697,6 +767,10 @@ impl Engine {
         }
         let low_delay = N_FFT + self.hrir_peak + PART;
         self.delay_low = DelayLine::new(low_delay.max(1));
+        self.lf_shelf_applied = f64::NAN;
+        self.lf_peak_applied = f64::NAN;
+        self.lf_zi = [0.0; 2];
+        self.lf_peak_zi = [0.0; 2];
         if mapped.bypass || mapped.eq_gain_db.is_empty() || mapped.eq_bands_hz.is_empty() {
             self.fir.set_coeff(Vec::new());
         } else {
@@ -772,6 +846,13 @@ impl Engine {
         self.front_now = self.mapped.front_az;
         self.front_tgt = self.front_now;
         self.front_d = 0.0;
+        let (head, shelf_k) = self.level_targets();
+        self.headroom_now = head;
+        self.headroom_tgt = head;
+        self.headroom_d = 0.0;
+        self.lf_k_now = shelf_k;
+        self.lf_k_tgt = shelf_k;
+        self.lf_k_d = 0.0;
         self.smooth_left = 0;
         self.fir_tgt.clear();
         self.xfade_left = 0;
@@ -826,6 +907,9 @@ impl Engine {
         }
         self.front_tgt = mapped.front_az;
         self.front_d = (mapped.front_az - self.front_now) / steps;
+        let shelf_hz = mapped.lf_shelf_hz;
+        let peak_hz = mapped.lf_peak_hz;
+        let peak_q = mapped.lf_peak_q;
         let taps = shoebox_taps(&mapped, 48_000);
         self.early_d = [0.0; MAX_EARLY];
         self.early_tgt = self.early_now;
@@ -838,6 +922,18 @@ impl Engine {
         }
         let eq_changed = mapped.eq_gain_db != old.eq_gain_db;
         self.mapped = mapped;
+        if (old.lf_shelf_hz - shelf_hz).abs() > 0.1
+            || (old.lf_peak_hz - peak_hz).abs() > 0.1
+            || (old.lf_peak_q - peak_q).abs() > 1e-6
+        {
+            self.lf_shelf_applied = f64::NAN;
+            self.lf_peak_applied = f64::NAN;
+        }
+        let (head, shelf_k) = self.level_targets();
+        self.headroom_tgt = head;
+        self.headroom_d = (head - self.headroom_now) / steps;
+        self.lf_k_tgt = shelf_k;
+        self.lf_k_d = (shelf_k - self.lf_k_now) / steps;
         if !self.mapped.bypass
             && (eq_changed || self.fir.coeff.is_empty())
             && !self.mapped.eq_gain_db.is_empty()
@@ -899,14 +995,20 @@ impl Engine {
                 self.early_now[tap] += self.early_d[tap] * steps as f64;
             }
             self.front_now += self.front_d * steps as f64;
+            self.headroom_now += self.headroom_d * steps as f64;
+            self.lf_k_now += self.lf_k_d * steps as f64;
             self.smooth_left -= steps;
             if self.smooth_left == 0 {
                 self.gain_now = self.gain_tgt;
                 self.early_now = self.early_tgt;
                 self.front_now = self.front_tgt;
+                self.headroom_now = self.headroom_tgt;
+                self.lf_k_now = self.lf_k_tgt;
                 self.gain_d = [0.0; N_GAINS];
                 self.early_d = [0.0; MAX_EARLY];
                 self.front_d = 0.0;
+                self.headroom_d = 0.0;
+                self.lf_k_d = 0.0;
                 if !self.fir_tgt.is_empty() {
                     self.fir.copy_coeff_inplace(&self.fir_tgt);
                     self.fir_tgt.clear();
@@ -933,6 +1035,13 @@ impl Engine {
             &mut self.high_l[..m],
             &mut self.high_r[..m],
         );
+        for i in 0..m {
+            let gain = self.headroom_at(i);
+            self.low_l[i] *= gain;
+            self.low_r[i] *= gain;
+            self.high_l[i] *= gain;
+            self.high_r[i] *= gain;
+        }
         if self.smooth_left > 0 && self.front_d.abs() > 0.0 {
             let mut done = 0;
             while done < m {
@@ -1129,8 +1238,12 @@ impl Engine {
         }
         self.delay_low.process(&self.mono[..m], &mut self.feed[..m]);
         for i in 0..m {
-            self.mix_l[i] += self.feed[i];
-            self.mix_r[i] += self.feed[i];
+            self.design_lf(self.lf_k_at(i));
+            let shelved = biquad(&self.lf_sos, &mut self.lf_zi, self.feed[i]);
+            let shaped = biquad(&self.lf_peak_sos, &mut self.lf_peak_zi, shelved);
+            self.feed[i] = shaped;
+            self.mix_l[i] += shaped;
+            self.mix_r[i] += shaped;
         }
 
         if !self.fir.coeff.is_empty() {
@@ -1181,6 +1294,109 @@ impl Engine {
         self.commit_smooth(m);
         self.played = true;
     }
+
+    fn level_targets(&self) -> (f64, f64) {
+        if self.mapped.bypass {
+            return (1.0, 0.0);
+        }
+        let scale = if self.bed_ref > 1e-12 {
+            (bed_sum(&self.mapped) / self.bed_ref).max(0.0)
+        } else {
+            0.0
+        };
+        let head_lin = 10.0_f64.powf(-self.mapped.headroom_db * scale / 20.0);
+        (head_lin, scale)
+    }
+
+    fn design_lf(&mut self, scale: f64) {
+        let shelf_db = self.mapped.lf_shelf_db * scale;
+        let peak_db = self.mapped.lf_peak_db * scale;
+        if (shelf_db - self.lf_shelf_applied).abs() < 1e-4
+            && (peak_db - self.lf_peak_applied).abs() < 1e-4
+        {
+            return;
+        }
+        self.lf_sos = low_shelf_coeffs(self.mapped.lf_shelf_hz, shelf_db, 48_000.0);
+        self.lf_peak_sos = peak_coeffs(
+            self.mapped.lf_peak_hz,
+            peak_db,
+            self.mapped.lf_peak_q,
+            48_000.0,
+        );
+        self.lf_shelf_applied = shelf_db;
+        self.lf_peak_applied = peak_db;
+    }
+
+    fn headroom_db_value(&self) -> f64 {
+        if self.mapped.bypass {
+            return 0.0;
+        }
+        let (lin, _) = self.level_targets();
+        -20.0 * lin.max(1e-12).log10()
+    }
+
+    fn headroom_at(&self, sample: usize) -> f64 {
+        if self.smooth_left == 0 {
+            return self.headroom_now;
+        }
+        self.headroom_now + self.headroom_d * sample.min(self.smooth_left) as f64
+    }
+
+    fn lf_k_at(&self, sample: usize) -> f64 {
+        if self.smooth_left == 0 {
+            return self.lf_k_now;
+        }
+        self.lf_k_now + self.lf_k_d * sample.min(self.smooth_left) as f64
+    }
+}
+
+fn bed_sum(mapped: &MappedRouteV) -> f64 {
+    mapped.wide_lin + mapped.surround_lin + mapped.height_lin + mapped.early_lin + mapped.late_lin
+}
+
+fn biquad(sos: &[f64; 6], state: &mut [f64; 2], x: f64) -> f64 {
+    let yn = sos[0] * x + state[0];
+    state[0] = sos[1] * x - sos[4] * yn + state[1];
+    state[1] = sos[2] * x - sos[5] * yn;
+    yn
+}
+
+/// RBJ low shelf, S = 1. Coefficients are `[b0, b1, b2, 1, a1, a2]`.
+fn low_shelf_coeffs(fc: f64, gain_db: f64, sample_rate: f64) -> [f64; 6] {
+    if gain_db.abs() < 1e-6 {
+        return [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+    }
+    let a = 10.0_f64.powf(gain_db / 40.0);
+    let w0 = 2.0 * std::f64::consts::PI * fc / sample_rate;
+    let cos_w = w0.cos();
+    let alpha = w0.sin() / std::f64::consts::SQRT_2;
+    let a_sqrt = a.sqrt();
+    let two_sqrt = 2.0 * a_sqrt * alpha;
+    let b0 = a * ((a + 1.0) - (a - 1.0) * cos_w + two_sqrt);
+    let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w);
+    let b2 = a * ((a + 1.0) - (a - 1.0) * cos_w - two_sqrt);
+    let a0 = (a + 1.0) + (a - 1.0) * cos_w + two_sqrt;
+    let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_w);
+    let a2 = (a + 1.0) + (a - 1.0) * cos_w - two_sqrt;
+    [b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]
+}
+
+/// RBJ peaking EQ. Coefficients are `[b0, b1, b2, 1, a1, a2]`.
+fn peak_coeffs(fc: f64, gain_db: f64, q: f64, sample_rate: f64) -> [f64; 6] {
+    if gain_db.abs() < 1e-6 {
+        return [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+    }
+    let a = 10.0_f64.powf(gain_db / 40.0);
+    let w0 = 2.0 * std::f64::consts::PI * fc / sample_rate;
+    let alpha = w0.sin() / (2.0 * q.max(0.1));
+    let cos_w = w0.cos();
+    let b0 = 1.0 + alpha * a;
+    let b1 = -2.0 * cos_w;
+    let b2 = 1.0 - alpha * a;
+    let a0 = 1.0 + alpha / a;
+    let a1 = -2.0 * cos_w;
+    let a2 = 1.0 - alpha / a;
+    [b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]
 }
 
 fn gain_pack(mapped: &MappedRouteV) -> [f64; N_GAINS] {
@@ -1680,6 +1896,15 @@ mod tests {
         assert!((sum - 1.055_990_112_627_538_8).abs() < 1e-8, "{sum}");
         let energy: f64 = fir.iter().map(|v| v * v).sum();
         assert!((energy - 0.962_324_694_557_408_9).abs() < 1e-8, "{energy}");
+    }
+
+    #[test]
+    fn headroom_follows_strength_and_bypass_stays_exact() {
+        let on = prepared(128, 1.0, "V3");
+        let db = on.headroom_db();
+        assert!(db > 5.0 && db < 24.0, "{db}");
+        let off = prepared(128, 0.0, "V3");
+        assert_eq!(off.headroom_db(), 0.0);
     }
 
     #[test]
