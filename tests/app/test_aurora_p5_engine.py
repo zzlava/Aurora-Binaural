@@ -1,5 +1,6 @@
 """Engine selection fails closed; explicit stub mode remains available."""
 
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -8,11 +9,29 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aurora_binaural.api import create_app
-from aurora_binaural.catalog import CATALOG
+from aurora_binaural.catalog import CATALOG, DEFAULT_PRESET_ID
 from aurora_binaural.config import ServiceConfig
-from aurora_binaural.engine import RenderConfig, RustRenderer, StubRenderer, create_renderer, selected_engine
+from aurora_binaural.engine import (
+    RenderConfig,
+    RustRenderer,
+    StubRenderer,
+    core_version,
+    create_renderer,
+    selected_engine,
+)
 from aurora_binaural.exit_codes import ProcessingError
 from aurora_binaural.params import AuroraParams
+
+
+@pytest.mark.parametrize("distribution", ["aurora-py", "aurora_core", None])
+def test_core_without_version_uses_native_wheel_metadata(distribution: str | None) -> None:
+    def version(name: str) -> str:
+        if name == distribution:
+            return "0.9.7"
+        raise PackageNotFoundError(name)
+
+    with patch("aurora_binaural.engine.importlib.metadata.version", side_effect=version):
+        assert core_version(SimpleNamespace()) == ("0.9.7" if distribution else "unknown")
 
 
 def test_default_engine_missing_core_is_actionable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,6 +81,6 @@ def test_route_aware_binding_receives_toml_route_before_prepare() -> None:
         renderer = RustRenderer()
     renderer.prepare(48000, 256, RenderConfig())
     renderer.set_params(AuroraParams(strength=0.7, seed=123))
-    assert calls == {"route": "V", "preset_path": str(CATALOG["V2"].preset_path),
-                     "strength": 0.7, "seed": 123, "preset": "V2"}
+    assert calls == {"route": "V", "preset_path": str(CATALOG[DEFAULT_PRESET_ID].preset_path),
+                     "strength": 0.7, "seed": 123, "preset": DEFAULT_PRESET_ID}
     assert renderer.latency_samples() == 0

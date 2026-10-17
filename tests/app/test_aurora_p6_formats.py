@@ -16,7 +16,7 @@ from aurora_binaural.api import create_app
 from aurora_binaural.cli import run_cli
 from aurora_binaural.config import ServiceConfig
 from aurora_binaural.engine import StubRenderer
-from aurora_binaural.media import decode_to_f32le, ensure_ffmpeg_available, probe_audio
+from aurora_binaural.media import decode_to_f32le, ensure_ffmpeg_available, get_ffmpeg_version, probe_audio
 from aurora_binaural.params import AuroraParams, OutputSpec
 from aurora_binaural.pipeline import convert_audio
 from aurora_binaural.worker import AuroraWorker
@@ -73,7 +73,15 @@ def test_formats_preserve_tags_and_artwork(tagged_source: Path, tmp_path: Path, 
     assert any(s.get('disposition', {}).get('attached_pic') for s in info['streams'])
     assert report.output.codec == codec
     assert report.output.sample_rate == 48000
-    assert report.timeline.sync_within_tolerance
+    if fmt == 'm4a' and get_ffmpeg_version().major < 8:
+        expected = report.timeline.expected_output_samples
+        padding = (-expected) % 1024
+        assert report.output.samples == expected + padding
+        assert report.timeline.sample_diff == padding
+        assert report.timeline.sync_warning is not None
+        assert report.timeline.sync_within_tolerance == (padding <= report.timeline.tolerance_samples)
+    else:
+        assert report.timeline.sync_within_tolerance
     if spec.is_lossless:
         assert report.output.samples == report.input.samples
         assert report.output.bit_depth == (32 if depth == '32f' else depth)

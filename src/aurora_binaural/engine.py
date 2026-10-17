@@ -47,10 +47,12 @@ def selected_engine() -> str:
 
 def core_version(module: Any) -> str:
     """Use the installed native distribution version, never the application version."""
-    try:
-        return importlib.metadata.version("aurora_core")
-    except importlib.metadata.PackageNotFoundError:
-        return str(getattr(module, "__version__", "unknown"))
+    for distribution in ("aurora-py", "aurora_core"):
+        try:
+            return importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return str(getattr(module, "__version__", "unknown"))
 
 
 def engine_status(engine: str | None = None) -> dict[str, Any]:

@@ -35,6 +35,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -46,7 +47,7 @@ from aurora_binaural.api import create_app, export_openapi_schema
 from aurora_binaural.cli import run_cli
 from aurora_binaural.cli.remote import RemoteAuroraClient
 from aurora_binaural.config import ServiceConfig
-from aurora_binaural.exit_codes import ExitCode, RemoteServiceError
+from aurora_binaural.exit_codes import ExitCode, OperationCanceledError, ProcessingError, RemoteServiceError
 from aurora_binaural.media import compute_sha256, probe_audio
 from aurora_binaural.params import AuroraParams, InputSpec, OutputFormat, OutputSpec, PresetId, PresetSpec
 from aurora_binaural.storage import TaskStore
@@ -338,6 +339,44 @@ class TestApiContractAuthAndOpenApi:
 
 
 class TestFaultsRecoveryAndInvariants:
+    @pytest.mark.parametrize("failure", [OperationCanceledError("cancel"), ProcessingError("failure during cancel")])
+    def test_cancel_terminal_is_published_after_attempt_cleanup(self, tmp_path: Path, failure: Exception) -> None:
+        cfg = _make_test_config(tmp_path)
+        app = create_app(cfg)
+        client = TestClient(app)
+        source = _write_test_wav(tmp_path / "cancel.wav", sample_rate=48000, samples=4800)
+        asset_id = client.post("/v1/assets", content=source,
+                               headers=_auth_headers(extra={"Content-Type": "application/octet-stream"})).json()["asset_id"]
+        job_id = client.post("/v1/jobs", json={"input": {"asset_id": asset_id}},
+                             headers=_auth_headers()).json()["job_id"]
+        store = app.state.store
+        job = store.claim_next_job("cleanup-test", lease_duration_sec=30)
+        assert job is not None
+        store.request_cancel_job(job_id)
+        worker = AuroraWorker(cfg, store=store)
+        real_canceled, real_failed = store.finalize_job_canceled, store.finalize_job_failed
+
+        def assert_clean() -> None:
+            assert list(cfg.tmp_dir.glob(f"attempt_{job_id}_*")) == []
+            assert store.get_job(job_id).status == "running"
+
+        def cancel(*args: Any, **kwargs: Any) -> Any:
+            assert_clean()
+            return real_canceled(*args, **kwargs)
+
+        def fail(*args: Any, **kwargs: Any) -> Any:
+            assert_clean()
+            return real_failed(*args, **kwargs)
+
+        # Assert at the publication boundary, with no sleeps or probabilistic polling.
+        with (
+            patch("aurora_binaural.worker.convert_audio", side_effect=failure),
+            patch.object(store, "finalize_job_canceled", side_effect=cancel),
+            patch.object(store, "finalize_job_failed", side_effect=fail),
+        ):
+            result = worker.execute_claimed_job(job)
+        assert result is not None and result.status == "canceled"
+
     """Tests for Task 2 & Task 6 (docs/plan.md Section 16.4 fault & recovery scenarios)."""
 
     def test_idempotency_key_same_vs_different_params_409(self, tmp_path: Path) -> None:
