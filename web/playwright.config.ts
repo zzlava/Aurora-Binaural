@@ -2,10 +2,16 @@ import { defineConfig } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 const root = fileURLToPath(new URL("..", import.meta.url));
-const qa = path.join(root, "qa/p4/antigravity");
+const qa = path.join(root, "qa/p5/codex");
 const runtime = (name: string) => ({
+  AURORA_ENGINE: "stub",
   AURORA_DATA_DIR: path.join(qa, ".runtime", `${name}-${process.pid}`),
-  AURORA_DB_PATH: path.join(qa, ".runtime", `${name}-${process.pid}`, "aurora.db"),
+  AURORA_DB_PATH: path.join(
+    qa,
+    ".runtime",
+    `${name}-${process.pid}`,
+    "aurora.db",
+  ),
   AURORA_WORKER_BLOCK_DELAY_MS: "4",
   AURORA_HEARTBEAT_INTERVAL_SEC: "0.1",
   AURORA_CLEANUP_INTERVAL_SEC: "0.2",

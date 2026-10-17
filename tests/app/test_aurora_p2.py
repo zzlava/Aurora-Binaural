@@ -343,7 +343,7 @@ class TestCliCommandsCompareGuiBatchAndRemote:
         comp_rep = compare_audio(
             in_wav,
             ab_dir,
-            AuroraParams(preset=PresetSpec(id=PresetId.ROOM, version="1")),
+            AuroraParams(preset=PresetSpec(id=PresetId("room"), version="1")),
             renderer=attenuating_renderer,
         )
         assert Path(comp_rep.dry_output).exists()

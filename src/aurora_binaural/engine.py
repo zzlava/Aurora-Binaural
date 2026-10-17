@@ -29,22 +29,12 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
+from aurora_binaural.catalog import CATALOG
 from aurora_binaural.exit_codes import OperationCanceledError, ProcessingError
 from aurora_binaural.params import AuroraParams, TailPolicy
+from aurora_binaural.resources import asset_directory
 
 FloatBlock = NDArray[np.float32]
-
-
-def asset_directory(name: str) -> Path:
-    """Resolve explicit deployment assets, packaged wheel assets, or this checkout."""
-    override = os.environ.get(f"AURORA_{name.upper()}_DIR")
-    if override:
-        return Path(override).resolve()
-    packaged = Path(__file__).parent / "_data" / name
-    if packaged.is_dir():
-        return packaged
-    root = Path(__file__).resolve().parents[2]
-    return root / ("data/hrtf" if name == "hrtf" else name)
 
 
 def selected_engine() -> str:
@@ -183,8 +173,8 @@ class RustRenderer:
                 raise ProcessingError(f"Rust set_params failed: {exc}", error_code="CORE_ERROR") from exc
             return
         preset_id = str(params.preset.id)
-        route = "V" if preset_id.startswith("V") else "B"
-        preset_path = asset_directory("presets") / ("route_v.toml" if route == "V" else "p0_draft.toml")
+        entry = CATALOG[preset_id]
+        route, preset_path = entry.route, entry.preset_path
         kwargs: dict[str, Any] = {
             "strength": params.effective_strength, "seed": params.seed, "preset": preset_id,
         }

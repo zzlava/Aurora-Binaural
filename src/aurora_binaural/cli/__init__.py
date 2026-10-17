@@ -25,6 +25,7 @@ from typing import Any, NoReturn
 
 from pydantic import ValidationError
 
+from aurora_binaural.catalog import DEFAULT_PRESET_ID
 from aurora_binaural.cli.remote import RemoteAuroraClient
 from aurora_binaural.exit_codes import (
     AuroraError,
@@ -199,6 +200,7 @@ def _cmd_presets(_args: argparse.Namespace) -> int:
     payload = {
         "ok": True,
         "api_version": "v1",
+        "default_preset": DEFAULT_PRESET_ID,
         "presets": presets_list,
         "parameter_ranges": {
             "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},
@@ -533,8 +535,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_convert.add_argument("--output", "-o", required=True, help="Output audio file path (.wav, .m4a, .mp3)")
     p_convert.add_argument(
         "--preset",
-        default="room",
-        help="Preset identifier: room, surround, or orbit (default: room)",
+        default=DEFAULT_PRESET_ID,
+        help="Preset identifier from TOML (default: V2; room is classic route B)",
     )
     p_convert.add_argument("--preset-version", default="1", help="Preset version string (default: 1)")
     p_convert.add_argument(
@@ -640,7 +642,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_compare.add_argument("input", help="Input audio file path (.wav, .m4a, .mp3, .aac)")
     p_compare.add_argument("--output-dir", required=True, help="Directory for loudness-matched dry and effect files")
-    p_compare.add_argument("--preset", default="room", help="Preset identifier: room, surround, or orbit (default: room)")
+    p_compare.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset identifier from TOML (default: V2; room is classic route B)")
     p_compare.add_argument("--preset-version", default="1", help="Preset version string (default: 1)")
     p_compare.add_argument("--strength", type=float, default=None, help="Effect strength in [0.0, 1.0]")
     p_compare.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
@@ -724,7 +726,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_batch.add_argument("input_dir", help="Input directory containing audio files")
     p_batch.add_argument("--output-dir", required=True, help="Output directory for exported files")
-    p_batch.add_argument("--preset", default="room", help="Preset ID (room, surround, orbit)")
+    p_batch.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset ID from TOML (default V2)")
     p_batch.add_argument("--strength", type=float, default=None, help="Effect strength in [0.0, 1.0]")
     p_batch.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
     p_batch.add_argument("--format", default="wav", help="Output format: wav, m4a, or mp3")

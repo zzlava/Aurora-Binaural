@@ -85,3 +85,5 @@ Docker 增加独立 Rust wheel 构建阶段，最终镜像只安装 wheel、Pyth
 docker build -f deploy/Dockerfile -t aurora-binaural:p5 .
 docker run --rm aurora-binaural:p5 presets --json
 ```
+
+预设列表由 `presets/*.toml` 读取，默认 V2，界面列出 V1/V2/V3 与经典 room。`AURORA_PRESETS_DIR` 可指定外部目录，数据更新后重启服务。旧 surround/orbit 仅为既有任务保留显式调用兼容。当前 TOML 缺少 route/default 字段，应用依据共享 `[layout]` 判断路线 V，集中设置默认 V2，不维护第二份预设清单。

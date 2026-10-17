@@ -12,11 +12,6 @@ const statuses: Record<Job["status"], string> = {
   failed: "失败",
   canceled: "已取消",
 };
-const presetCopy: Record<string, string> = {
-  room: "稳定、自然的空间",
-  surround: "更宽阔的包围感",
-  orbit: "沿时间缓慢移动",
-};
 const seconds = (value: number) =>
   `${Math.floor(value / 60)
     .toString()
@@ -54,10 +49,14 @@ function App() {
   const [key, setKey] = useState(readSession("aurora.key"));
   const [api, setApi] = useState<Api | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [engine, setEngine] = useState<{ is_stub: boolean; available: boolean; message: string } | null>(null);
+  const [engine, setEngine] = useState<{
+    is_stub: boolean;
+    available: boolean;
+    message: string;
+  } | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
-  const [preset, setPreset] = useState("room");
-  const [strength, setStrength] = useState(0.4);
+  const [preset, setPreset] = useState("");
+  const [strength, setStrength] = useState(0.5);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [queue, setQueue] = useState<QueueEntry[]>([]);
@@ -145,10 +144,22 @@ function App() {
         writeSession("aurora.server", base);
       }
       const client = new Api(base, token, log);
-      const result = await client.request<{ presets: Preset[]; engine: { is_stub: boolean; available: boolean; message: string } }>("/v1/presets");
+      const result = await client.request<{
+        presets: Preset[];
+        default_preset: string;
+        engine: { is_stub: boolean; available: boolean; message: string };
+      }>("/v1/presets");
       if (epoch.current !== connectionEpoch) return;
       setPresets(result.presets);
       setEngine(result.engine);
+      const chosen =
+        result.presets.find((item) => item.id === preset) ??
+        result.presets.find((item) => item.id === result.default_preset) ??
+        result.presets[0];
+      if (chosen) {
+        setPreset(chosen.id);
+        setStrength(chosen.default_strength);
+      }
       setApi(client);
       setNotice("连接成功，可以导入音频。");
       log("连接成功");
@@ -486,7 +497,11 @@ function App() {
         <div class="engine-notice" role="note">
           <strong>{engine?.message ?? "正在读取效果引擎状态…"}</strong>
           <span>
-            {engine?.is_stub ? "当前使用桩，仅验证处理流程，未应用 HRTF。" : engine?.available ? "实际任务报告会记录引擎与 HRTF。" : "请安装 Rust 核心后再生成试听或导出。"}
+            {engine?.is_stub
+              ? "当前使用桩，仅验证处理流程，未应用 HRTF。"
+              : engine?.available
+                ? "实际任务报告会记录引擎与 HRTF。"
+                : "请安装 Rust 核心后再生成试听或导出。"}
           </span>
         </div>
         <section class="connection-bar" aria-label="连接设置">
@@ -725,7 +740,7 @@ function App() {
                     }}
                   />
                   <strong>{item.name}</strong>
-                  <span>{presetCopy[item.id] ?? item.description}</span>
+                  <span>{item.description}</span>
                 </label>
               ))}
             </fieldset>

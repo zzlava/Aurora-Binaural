@@ -14,4 +14,10 @@
 
 本机 `bash scripts/build-core.sh` 成功，CPython 3.12 / macOS ARM64，Rust 1.99.1 release。原生块烟测成功：4800 输入帧、4800 输出帧，延迟 1229 帧、尾巴 21600 帧，全部有限值。Docker 新增独立 Rust 编译阶段，最终镜像安装扩展；完整容器构建验证结果将在报告末尾补充。本机命令见 `deploy/README.md`。
 
+## 3. 数据驱动预设目录
+
+`catalog.py` 遍历只读 `presets/*.toml`，从命名表获取 ID、中文名称、版本、强度与源文件。当前 TOML 无 route/default 元数据，依据 `[layout]` 识别 V／其余识别 B，产品策略默认 V2。API、CLI、参数 JSON Schema、GUI 共用目录；GUI 不再保留独立文案或预设列表。公开 V1/V2/V3 与“经典 · 自然空间”room。旧 surround/orbit 仅保留显式请求兼容，不在默认目录／GUI 出现。
+
+wheel 内包含同一份 TOML；`AURORA_PRESETS_DIR` 可覆盖目录，修改数据后重启进程刷新。测试保留旧预设显式桩测试；新增自定义 V7 TOML 探测与 API/CLI 目录一致性。pytest 65 项通过，Ruff/mypy 通过；前端 build/lint 通过。
+
 其余子项进行中。

@@ -179,8 +179,8 @@ class TestApiContractAuthAndOpenApi:
     """Tests for Task 1 & Task 3: endpoints, OpenAPI artifact, Bearer auth, and upload limits."""
 
     def test_openapi_export_and_artifact_parity(self, tmp_path: Path) -> None:
-        qa_openapi_path = Path(__file__).resolve().parents[2] / "qa" / "p4" / "antigravity" / "openapi.json"
-        assert qa_openapi_path.is_file(), "qa/p4/antigravity/openapi.json must exist"
+        qa_openapi_path = Path(__file__).resolve().parents[2] / "qa" / "p5" / "codex" / "openapi.json"
+        assert qa_openapi_path.is_file(), "qa/p5/codex/openapi.json must exist"
 
         generated = export_openapi_schema(tmp_path / "openapi_check.json")
         on_disk = json.loads(qa_openapi_path.read_text(encoding="utf-8"))
@@ -265,7 +265,7 @@ class TestApiContractAuthAndOpenApi:
         assert r_presets.status_code == 200
         presets_data = r_presets.json()
         assert presets_data["ok"] is True
-        assert {p["id"] for p in presets_data["presets"]} == {"room", "surround", "orbit"}
+        assert {p["id"] for p in presets_data["presets"]} == {"V1", "V2", "V3", "room"}
 
     def test_asset_upload_size_limit_duration_limit_and_checksum(self, tmp_path: Path) -> None:
         in_wav = tmp_path / "sample.wav"
@@ -777,7 +777,7 @@ class TestFaultsRecoveryAndInvariants:
 
         params = AuroraParams(
             input=InputSpec(asset_id="asset_fence"),
-            preset=PresetSpec(id=PresetId.ROOM, version="1"),
+            preset=PresetSpec(id=PresetId("room"), version="1"),
             output=OutputSpec(format=OutputFormat.WAV, sample_rate=48000, bit_depth=24),
         )
         job, _ = store.create_or_get_job(params, retention_sec=3600.0, max_retries=2, now=100.0)

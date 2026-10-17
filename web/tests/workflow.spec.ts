@@ -15,7 +15,7 @@ declare global {
 }
 
 const screenshotDir = fileURLToPath(
-  new URL("../../qa/p4/antigravity/screenshots/", import.meta.url),
+  new URL("../../qa/p5/codex/screenshots/", import.meta.url),
 );
 function wav(duration = 5): Buffer {
   const rate = 48000,
@@ -83,14 +83,15 @@ test("上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => requests.push(request.url()));
   await open(page);
-  await expect(
-    page.getByText("效果引擎：桩（直通），P1 核心接入后替换"),
-  ).toBeVisible();
+  await expect(page.getByText("效果引擎：桩（直通）")).toBeVisible();
   await expect(page.locator(".developer")).not.toHaveAttribute("open");
+  await expect(page.locator(".preset-option")).toHaveCount(4);
+  await expect(page.locator(".preset-option")).not.toContainText(["缓慢环绕"]);
+  await expect(page.locator('input[name="preset"][value="V2"]')).toBeChecked();
   await importAudio(page);
   await page.getByRole("button", { name: "本地模式", exact: true }).click();
   await expect(page.locator(".asset-row")).toHaveCount(1);
-  await page.getByLabel("缓慢环绕", { exact: false }).check();
+  await page.getByLabel("V2，人声更远", { exact: false }).check();
   await page.getByLabel("空间强度", { exact: true }).fill("0.6");
   await page.getByLabel("起始位置（秒）").fill("1");
   await page.getByLabel("试听时长（秒）").fill("3");

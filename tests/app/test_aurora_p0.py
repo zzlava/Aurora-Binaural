@@ -82,7 +82,7 @@ class TestUnifiedParameterModel:
         }
         params = AuroraParams.model_validate(payload)
         assert params.api_version == "v1"
-        assert params.preset.id == PresetId.ROOM
+        assert params.preset.id == PresetId("room")
         assert params.preset.version == "1"
         assert params.strength == pytest.approx(0.4)
         assert params.seed == 20261016

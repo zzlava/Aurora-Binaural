@@ -33,6 +33,9 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/aurora_binaural"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"presets" = "aurora_binaural/_data/presets"
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120
