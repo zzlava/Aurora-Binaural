@@ -16,13 +16,11 @@ import json
 import math
 import os
 import re
-import shutil
 import subprocess
 import sys
 import uuid
 from collections.abc import Generator
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +28,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from aurora_binaural.exit_codes import InputAudioError, ProcessingError
+from aurora_binaural.ffmpeg_discovery import discover_ffmpeg
+from aurora_binaural.ffmpeg_discovery import require_soxr as require_soxr
 from aurora_binaural.params import OutputFormat, OutputSpec
 from aurora_binaural.report import AudioProbeInfo, LoudnessMetrics
 
@@ -63,31 +63,8 @@ def log_stderr(message: str) -> None:
 
 
 def ensure_ffmpeg_available() -> tuple[str, str]:
-    """Ensure both `ffmpeg` and `ffprobe` binaries exist on PATH."""
-    ffmpeg_bin = shutil.which(os.environ.get("AURORA_FFMPEG", "ffmpeg"))
-    ffprobe_bin = shutil.which(os.environ.get("AURORA_FFPROBE", "ffprobe"))
-    if not ffmpeg_bin or not ffprobe_bin:
-        raise ProcessingError(
-            "Required system binaries 'ffmpeg' and/or 'ffprobe' were not found on PATH.",
-            error_code="FFMPEG_NOT_FOUND",
-        )
-    return ffmpeg_bin, ffprobe_bin
-
-
-@lru_cache(maxsize=8)
-def require_soxr(ffmpeg_bin: str) -> None:
-    """Exercise the resampler: help can list soxr even when it was not compiled in."""
-    result = subprocess.run(
-        [ffmpeg_bin, "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "0.01",
-         "-af", "aresample=48000:resampler=soxr:precision=28", "-f", "null", "-"],
-        capture_output=True, check=False,
-    )
-    if result.returncode:
-        raise ProcessingError(
-            "This FFmpeg cannot run soxr VHQ. Install an FFmpeg build with --enable-libsoxr and set "
-            "AURORA_FFMPEG to its binary (Homebrew: /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg). "
-            "No lower-quality resampler was substituted.", error_code="SOXR_UNAVAILABLE",
-        )
+    """Honor explicit overrides, otherwise discover a working soxr FFmpeg automatically."""
+    return discover_ffmpeg()
 
 
 def _cover_stream(path: Path) -> int | None:
