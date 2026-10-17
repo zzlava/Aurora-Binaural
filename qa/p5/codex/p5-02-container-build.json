@@ -1,0 +1,57 @@
+{
+  "docker_context": "orbstack",
+  "image": {
+    "Id": "sha256:5a7e9da30d97efc3bbd2bc01bc1d85ee27a9aab5705ee071ba322bbd1f03f569",
+    "Os": "linux",
+    "Architecture": "arm64",
+    "Size": 787487510
+  },
+  "services": {
+    "api": {
+      "engine_env": "rust",
+      "engine": {
+        "name": "rust",
+        "is_stub": false,
+        "available": true,
+        "supported_routes": [
+          "B"
+        ],
+        "message": "效果引擎：Rust（当前核心仅支持经典 room）"
+      },
+      "native_module": "/usr/local/lib/python3.12/site-packages/aurora_core/__init__.py",
+      "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+      "uid": 10001,
+      "cargo": null,
+      "rustc": null
+    },
+    "worker": {
+      "engine_env": "rust",
+      "engine": {
+        "name": "rust",
+        "is_stub": false,
+        "available": true,
+        "supported_routes": [
+          "B"
+        ],
+        "message": "效果引擎：Rust（当前核心仅支持经典 room）"
+      },
+      "native_module": "/usr/local/lib/python3.12/site-packages/aurora_core/__init__.py",
+      "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers",
+      "uid": 10001,
+      "cargo": null,
+      "rustc": null
+    }
+  },
+  "build_log": "qa/p5/codex/.runtime/p5-02-build.log",
+  "build_core_cache_reused": true,
+  "compose_project": "aurora-p5-02",
+  "host_endpoint": "http://127.0.0.1:18765",
+  "job_id": "job_0a51167b7a3e4e5d",
+  "input_samples": 1200000,
+  "output_samples": 1200000,
+  "readback_samples": 1200000,
+  "sample_diff": 0,
+  "true_peak_dbtp": -0.6,
+  "true_peak_target_dbtp": -1,
+  "true_peak_target_passed": false
+}

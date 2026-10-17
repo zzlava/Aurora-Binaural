@@ -6,12 +6,13 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: aurora-binaural:p4-trixie
+    image: "${AURORA_IMAGE:-aurora-binaural:p5}"
     command: ["api", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${AURORA_HOST:-127.0.0.1}:${AURORA_PORT:-8000}:8000"
     environment:
-      AURORA_API_KEY: "${AURORA_API_KEY:-aurora_dev_placeholder_key_change_me}"
+      AURORA_API_KEY: "${AURORA_API_KEY:?Set AURORA_API_KEY in the environment or --env-file deploy/.env}"
+      AURORA_ENGINE: "rust"
       AURORA_HOST: "0.0.0.0"
       AURORA_CORS_ORIGINS: "${AURORA_CORS_ORIGINS:-}"
       AURORA_PORT: "8000"
@@ -27,6 +28,7 @@ services:
       AURORA_HEARTBEAT_INTERVAL_SEC: "${AURORA_HEARTBEAT_INTERVAL_SEC:-5}"
       AURORA_CLEANUP_INTERVAL_SEC: "${AURORA_CLEANUP_INTERVAL_SEC:-60}"
       AURORA_MAX_RETRIES: "${AURORA_MAX_RETRIES:-2}"
+      AURORA_STRICT_FFMPEG: "${AURORA_STRICT_FFMPEG:-0}"
     volumes:
       - aurora_runtime:/data/runtime
     healthcheck:
@@ -46,9 +48,10 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: aurora-binaural:p4-trixie
+    image: "${AURORA_IMAGE:-aurora-binaural:p5}"
     command: ["worker"]
     environment:
+      AURORA_ENGINE: "rust"
       AURORA_DATA_DIR: "/data/runtime"
       AURORA_DB_PATH: "/data/runtime/aurora.db"
       AURORA_HRTF_DIR: "/app/data/hrtf"
@@ -60,6 +63,7 @@ services:
       AURORA_CLEANUP_INTERVAL_SEC: "${AURORA_CLEANUP_INTERVAL_SEC:-60}"
       AURORA_WORKER_POLL_INTERVAL_SEC: "${AURORA_WORKER_POLL_INTERVAL_SEC:-0.15}"
       AURORA_MAX_RETRIES: "${AURORA_MAX_RETRIES:-2}"
+      AURORA_STRICT_FFMPEG: "${AURORA_STRICT_FFMPEG:-0}"
     volumes:
       - aurora_runtime:/data/runtime
     depends_on:

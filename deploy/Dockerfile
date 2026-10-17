@@ -74,7 +74,7 @@ COPY --from=web-build --chown=aurora:aurora /web/dist/ ./web/dist/
 COPY --from=core-build /wheels/ /wheels/
 RUN pip install --no-cache-dir . /wheels/*.whl && rm -rf /wheels \
     && cp -a deploy/licenses ./licenses && cp deploy/THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md \
-    && python -c 'import aurora_core'
+    && python -c 'import aurora_core; from aurora_binaural.engine import engine_status; s = engine_status("rust"); assert s["available"] and not s["is_stub"], s'
 
 USER aurora
 
