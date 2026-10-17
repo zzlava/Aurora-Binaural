@@ -1682,6 +1682,12 @@
           "hrtf": {
             "$ref": "#/components/schemas/HrtfDataInfo",
             "description": "HRTF dataset metadata."
+          },
+          "headroom_db": {
+            "type": "number",
+            "title": "Headroom Db",
+            "description": "Deterministic input attenuation in dB applied before spatial processing. 0 when bypassed or on the stub.",
+            "default": 0.0
           }
         },
         "additionalProperties": false,
