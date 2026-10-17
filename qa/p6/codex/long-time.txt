@@ -1,0 +1,23 @@
+[aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/long/stereo-20min.wav
+[aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/long/stereo-20min.wav
+[aurora] Streaming decode -> renderer (preset=V2, strength=0.5, block_size=1024) -> encode (wav, sr=48000)
+[aurora] Performing streaming readback decode verification (gapless & raw stream)
+[aurora] Completed conversion in 69549.8 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/long/stereo-20min.V2.wav
+       69.69 real        70.06 user         1.35 sys
+           131072000  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               32959  page reclaims
+                 599  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               70022  voluntary context switches
+              261471  involuntary context switches
+       1488827244247  instructions retired
+        248343700376  cycles elapsed
+           114819600  peak memory footprint

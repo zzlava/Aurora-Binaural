@@ -20,14 +20,14 @@
 | `openapi [--output FILE]` | 输出 OpenAPI 3.1，可同时写文件 |
 | `timeline-verify [--output FILE]` | 执行 WAV/M4A/MP3 的 44.1/48 kHz 时间线诊断，输出验证矩阵 |
 
-`--json` 为兼容标志，省略仍输出 JSON。当前公开目录含 V1/V2/V3 和 `room`，默认 V2；已交付的 Rust B 核心请指定 `--preset room`。旧 surround/orbit 仅保留显式兼容入口。
+`--json` 为兼容标志，省略仍输出 JSON。当前公开目录含 V1/V2/V3 和 `room`，默认真实 Rust 路线 V 的 V2 与 SADIE II D1；`--preset room` 选择经典路线 B。旧 surround/orbit 仅保留显式兼容入口。
 
 ### convert 参数
 
 | 参数 | 默认／范围 |
 |---|---|
 | `--output`, `-o` | 必填，扩展名 `.wav` / `.m4a` / `.mp3` |
-| `--preset`, `--preset-version` | V2、`1`；当前 Rust 用 `room` |
+| `--preset`, `--preset-version` | V2、`1`；`room` 为经典路线 B |
 | `--strength` | 预设默认值；0–1，0 旁路空间 DSP |
 | `--seed` | 20261016；0–4294967295 |
 | `--format` | 从输出扩展名推断；显式值须匹配扩展名；不支持裸 `.aac` 输出 |
@@ -52,7 +52,7 @@
 远程 Key 从 `AURORA_API_KEY` 读取；未设置时读取 `AURORA_CONFIG_PATH` 指定 JSON 的 `api_key`。命令行没有 Key 参数。
 
 ```bash
-uv run aurora batch ./inputs --preset room --format m4a --output-dir ./outputs/batch
+uv run aurora batch ./inputs --format m4a --output-dir ./outputs/batch
 uv run aurora job status job_example --server http://127.0.0.1:8000 --json
 uv run aurora schema --output outputs/params.schema.json
 uv run aurora timeline-verify --output outputs/timeline.json
@@ -66,7 +66,7 @@ uv run aurora timeline-verify --output outputs/timeline.json
 |---|---|
 | `ok`, `status`, `job_id`, `asset_id`, `preview` | 成功标志、succeeded；本地 ID 为 null；普通转换 preview 为 null |
 | `input`, `output` | `path`, `sha256`, `format`, `container`, `codec`, `sample_rate`, `channels`, `channel_layout`, `samples`, `duration_seconds`, `bit_depth`, `size_bytes`, `initial_padding`, `trailing_padding`；samples 是每声道帧数 |
-| `engine` | `name`, `version`, `git_commit`, `is_stub`, `block_size_frames`, `internal_sample_rate`, `hrtf`（name/version/sha256/license）；无 Git 元数据的安装可记录 unknown |
+| `engine` | `name`, `version`, `git_commit`, `is_stub`, `route`, `block_size_frames`, `internal_sample_rate`, `hrtf`（name/version/sha256/license）；原生核心版本来自已安装 aurora_core，git_commit 是运行时应用仓库提交号，无 Git 元数据的安装可记录 unknown |
 | `params` | 实际归一化的 api_version/mode/input/preset/strength/seed/output/timing/preview |
 | `timeline` | mode/tail_policy、engine_latency_samples/engine_tail_samples、extra_tail_samples_kept、input_samples/expected_output_samples/decoded_readback_samples/raw_decoded_samples、sample_diff/raw_sample_diff、codec_priming_samples/codec_trailing_padding_samples、residual_priming_shift_samples、compensation_strategy/tolerance_samples/sync_within_tolerance/sync_warning |
 | `loudness_before`, `loudness_after` | integrated_lufs/loudness_range_lu/true_peak_dbtp/is_silent/method；静音测量可能为 null |

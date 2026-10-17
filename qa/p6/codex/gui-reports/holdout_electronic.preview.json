@@ -1,0 +1,158 @@
+{
+  "ok": true,
+  "status": "succeeded",
+  "job_id": "job_6bcaabb2990343ac",
+  "asset_id": "asset_62d49074be424607",
+  "preview": {
+    "start_seconds": 1.0,
+    "requested_duration_seconds": 10.0,
+    "actual_duration_seconds": 10.0,
+    "start_sample": 48000,
+    "samples": 480000,
+    "sample_rate": 48000,
+    "timeline_strategy": "render-from-source-origin",
+    "original": {
+      "path": "result://job_6bcaabb2990343ac.original.wav",
+      "sha256": "29969e6dda3b3811539d5759d16ddb01ba3c63e9406c4ff2babb0633a7bf62eb",
+      "format": "wav",
+      "container": "wav",
+      "codec": "pcm_f32le",
+      "sample_rate": 48000,
+      "channels": 2,
+      "channel_layout": null,
+      "samples": 480000,
+      "duration_seconds": 10.0,
+      "bit_depth": 32,
+      "size_bytes": 3840092,
+      "initial_padding": 0,
+      "trailing_padding": 0
+    },
+    "original_loudness": {
+      "integrated_lufs": -9.3,
+      "loudness_range_lu": 0.5,
+      "true_peak_dbtp": -1.0,
+      "is_silent": false,
+      "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+    },
+    "target_lufs": -9.3,
+    "original_gain_db": -2.200000000000001,
+    "effect_gain_db": -0.40000000000000036,
+    "loudness_diff_lu": 0.0,
+    "match_status": "matched"
+  },
+  "input": {
+    "path": "asset://asset_62d49074be424607/holdout_electronic.wav",
+    "sha256": "ab36ce72e20d0241a8fcbeb27b4e6c4ccf3a332177d756064de9aa2ed848a039",
+    "format": "wav",
+    "container": "wav",
+    "codec": "pcm_s24le",
+    "sample_rate": 48000,
+    "channels": 2,
+    "channel_layout": "stereo",
+    "samples": 1200000,
+    "duration_seconds": 25.0,
+    "bit_depth": 24,
+    "size_bytes": 7200326,
+    "initial_padding": 0,
+    "trailing_padding": 0
+  },
+  "output": {
+    "path": "result://job_6bcaabb2990343ac.wav",
+    "sha256": "3b2275c32b1c1c34fa18375de76cc39db6616105c059627b6db1aedc2b1402c5",
+    "format": "wav",
+    "container": "wav",
+    "codec": "pcm_f32le",
+    "sample_rate": 48000,
+    "channels": 2,
+    "channel_layout": null,
+    "samples": 480000,
+    "duration_seconds": 10.0,
+    "bit_depth": 32,
+    "size_bytes": 3840092,
+    "initial_padding": 0,
+    "trailing_padding": 0
+  },
+  "engine": {
+    "name": "aurora_core",
+    "version": "0.1.0",
+    "git_commit": "bde27c526133",
+    "is_stub": false,
+    "route": "V",
+    "block_size_frames": 1024,
+    "internal_sample_rate": 48000,
+    "hrtf": {
+      "name": "SADIE II D1",
+      "version": "D1-48K-256tap",
+      "sha256": "e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31",
+      "license": "Apache-2.0"
+    }
+  },
+  "params": {
+    "preview": {
+      "start_seconds": 1.0,
+      "duration_seconds": 10.0
+    },
+    "api_version": "v1",
+    "mode": "enhance",
+    "input": {
+      "asset_id": "asset_62d49074be424607",
+      "path": null
+    },
+    "preset": {
+      "id": "V2",
+      "version": "1"
+    },
+    "strength": 0.5,
+    "seed": 20261016,
+    "output": {
+      "format": "wav",
+      "container": "wav",
+      "sample_rate": 48000,
+      "bit_depth": 32,
+      "bitrate_kbps": null
+    },
+    "timing": {
+      "mode": "preserve",
+      "tail": "trim",
+      "fade_out_ms": 0.0
+    }
+  },
+  "timeline": {
+    "mode": "preserve",
+    "tail_policy": "trim",
+    "engine_latency_samples": 1229,
+    "engine_tail_samples": 50400,
+    "extra_tail_samples_kept": 0,
+    "input_samples": 480000,
+    "expected_output_samples": 480000,
+    "decoded_readback_samples": 480000,
+    "raw_decoded_samples": 480000,
+    "sample_diff": 0,
+    "raw_sample_diff": 0,
+    "codec_priming_samples": 0,
+    "codec_trailing_padding_samples": 0,
+    "residual_priming_shift_samples": 0,
+    "compensation_strategy": "Source-origin render, latency compensated; matched float32 WAV excerpt.",
+    "tolerance_samples": 0,
+    "sync_within_tolerance": true,
+    "sync_warning": null
+  },
+  "loudness_before": {
+    "integrated_lufs": -7.1,
+    "loudness_range_lu": 0.5,
+    "true_peak_dbtp": 1.2,
+    "is_silent": false,
+    "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+  },
+  "loudness_after": {
+    "integrated_lufs": -9.3,
+    "loudness_range_lu": 0.4,
+    "true_peak_dbtp": -1.8,
+    "is_silent": false,
+    "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+  },
+  "elapsed_ms": 2007.3342081159353,
+  "attempts": 1,
+  "created_at": "2026-10-17T03:00:50.369912+00:00",
+  "expires_at": "2026-10-18T03:00:50.369912+00:00"
+}

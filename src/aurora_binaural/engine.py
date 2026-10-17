@@ -45,6 +45,14 @@ def selected_engine() -> str:
     return engine
 
 
+def core_version(module: Any) -> str:
+    """Use the installed native distribution version, never the application version."""
+    try:
+        return importlib.metadata.version("aurora_core")
+    except importlib.metadata.PackageNotFoundError:
+        return str(getattr(module, "__version__", "unknown"))
+
+
 def engine_status(engine: str | None = None) -> dict[str, Any]:
     """Describe the configured engine without rendering or silently changing it."""
     choice = engine or selected_engine()
@@ -59,6 +67,7 @@ def engine_status(engine: str | None = None) -> dict[str, Any]:
                 "message": "Rust 核心未安装。请运行 bash scripts/build-core.sh；测试流程可显式设置 AURORA_ENGINE=stub（桩）。"}
     supports_route = "route" in inspect.signature(module.Renderer).parameters
     return {"name": "rust", "is_stub": False, "available": True,
+            "version": core_version(module), "hrtf": {"name": "SADIE II D1"},
             "supported_routes": ["B", "V"] if supports_route else ["B"],
             "message": "效果引擎：Rust" if supports_route else "效果引擎：Rust（当前核心仅支持经典 room）"}
 
@@ -283,12 +292,9 @@ def renderer_metadata(renderer: Renderer, *, git_commit: str, block_size: int, s
     if isinstance(renderer, RustRenderer):
         with renderer.hrtf_source.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
-        try:
-            version = importlib.metadata.version("aurora_core")
-        except importlib.metadata.PackageNotFoundError:
-            version = str(getattr(renderer._module, "__version__", "unknown"))
         return EngineMetadata(
-            **common, name="aurora_core", version=version,
+            **common, name="aurora_core", version=core_version(renderer._module),
+            route=renderer._selection[0] if renderer._selection else None,
             is_stub=False, hrtf=HrtfDataInfo(name="SADIE II D1", version="D1-48K-256tap",
                                            sha256=digest, license="Apache-2.0"),
         )

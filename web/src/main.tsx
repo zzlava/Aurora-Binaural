@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Api, ApiError, serverAddress } from "./api";
 import { ABPlayer } from "./player";
-import type { Asset, Job, Preset, QueueEntry, Report } from "./types";
+import type { Asset, EngineStatus, Job, Preset, QueueEntry, Report } from "./types";
 import "./style.css";
 
 const statuses: Record<Job["status"], string> = {
@@ -49,11 +49,7 @@ function App() {
   const [key, setKey] = useState(readSession("aurora.key"));
   const [api, setApi] = useState<Api | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [engine, setEngine] = useState<{
-    is_stub: boolean;
-    available: boolean;
-    message: string;
-  } | null>(null);
+  const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [preset, setPreset] = useState("");
   const [strength, setStrength] = useState(0.5);
@@ -108,6 +104,7 @@ function App() {
   function resetConnection() {
     epoch.current++;
     setApi(null);
+    setEngine(null);
     setAssets([]);
     setSelectedId("");
     setQueue([]);
@@ -147,7 +144,7 @@ function App() {
       const result = await client.request<{
         presets: Preset[];
         default_preset: string;
-        engine: { is_stub: boolean; available: boolean; message: string };
+        engine: EngineStatus;
       }>("/v1/presets");
       if (epoch.current !== connectionEpoch) return;
       setPresets(result.presets);
@@ -402,7 +399,11 @@ function App() {
       setSide(0);
       setPosition(0);
       setLoaded(entry);
-      setNotice("A/B 试听已就绪。当前引擎为直通桩，尚无空间音效。");
+      setNotice(
+        entry.report?.engine.is_stub
+          ? "A/B 试听已就绪。当前引擎为直通桩，尚无空间音效。"
+          : "A/B 试听已就绪。可切换原声与效果，播放进度保持同步。",
+      );
     });
   }
   async function togglePlayback() {
@@ -500,8 +501,10 @@ function App() {
             {engine?.is_stub
               ? "当前使用桩，仅验证处理流程，未应用 HRTF。"
               : engine?.available
-                ? "实际任务报告会记录引擎与 HRTF。"
-                : "请安装 Rust 核心后再生成试听或导出。"}
+                ? `路线 ${selectedPreset?.route ?? "—"} · 预设 ${selectedPreset?.id ?? "—"} · HRTF ${engine.hrtf?.name ?? "未知"} · 核心 ${engine.version ?? "未知"}`
+                : engine
+                  ? "请安装 Rust 核心后再生成试听或导出。"
+                  : "连接后显示引擎、路线与预设。"}
           </span>
         </div>
         <section class="connection-bar" aria-label="连接设置">
@@ -837,7 +840,10 @@ function App() {
                   disabled={!loaded}
                   onClick={() => switchSide(1)}
                 >
-                  <kbd>B</kbd> 效果<span class="stub-label">直通桩</span>
+                  <kbd>B</kbd> 效果
+                  {loaded?.report?.engine.is_stub && (
+                    <span class="stub-label">直通桩</span>
+                  )}
                 </button>
               </div>
               <div class="transport">
@@ -1041,6 +1047,9 @@ function App() {
                           ? "SADIE II（桩未应用）"
                           : entry.report.engine.hrtf.name}
                         <span>
+                          {entry.report.engine.is_stub
+                            ? "直通桩 · "
+                            : `Rust ${entry.report.engine.version} · 路线 ${entry.report.engine.route ?? "未知"} · `}
                           预设 {entry.report.params.preset.id} v
                           {entry.report.params.preset.version} · 强度{" "}
                           {Math.round(entry.report.params.strength * 100)}% ·

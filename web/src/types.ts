@@ -4,6 +4,15 @@ export interface Preset {
   version: string;
   default_strength: number;
   description: string;
+  route: string;
+}
+export interface EngineStatus {
+  is_stub: boolean;
+  available: boolean;
+  message: string;
+  version?: string;
+  hrtf?: { name: string };
+  supported_routes?: string[];
 }
 export interface Asset {
   asset_id: string;
@@ -38,7 +47,13 @@ export interface Loudness {
   true_peak_dbtp: number | null;
 }
 export interface Report {
-  engine: { is_stub: boolean; hrtf: { name: string } };
+  engine: {
+    is_stub: boolean;
+    name: string;
+    version: string;
+    route: string | null;
+    hrtf: { name: string };
+  };
   output: { sample_rate: number; samples: number };
   loudness_before: Loudness;
   loudness_after: Loudness;

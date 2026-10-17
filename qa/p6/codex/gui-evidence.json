@@ -1,0 +1,43 @@
+{
+  "errors": [],
+  "evidence": [
+    {
+      "filename": "real_music",
+      "comparison": {
+        "totalSources": 2,
+        "a": {
+          "when": 0.030333333333333334,
+          "offset": 0,
+          "length": 480000,
+          "sampleRate": 48000
+        },
+        "b": {
+          "when": 0.030333333333333334,
+          "offset": 0,
+          "length": 480000,
+          "sampleRate": 48000
+        },
+        "differenceRms": 0.04115558688680135
+      }
+    },
+    {
+      "filename": "holdout_electronic",
+      "comparison": {
+        "totalSources": 4,
+        "a": {
+          "when": 6.4303333333333335,
+          "offset": 0,
+          "length": 480000,
+          "sampleRate": 48000
+        },
+        "b": {
+          "when": 6.4303333333333335,
+          "offset": 0,
+          "length": 480000,
+          "sampleRate": 48000
+        },
+        "differenceRms": 0.228689680437523
+      }
+    }
+  ]
+}

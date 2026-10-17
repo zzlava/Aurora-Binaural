@@ -81,6 +81,7 @@ class EngineMetadata(BaseModel):
     version: str = Field(default="0.2.0-p2-stub", description="Engine version string.")
     git_commit: str = Field(description="Git commit SHA of the repository.")
     is_stub: bool = Field(default=True, description="True when running passthrough stub core.")
+    route: str | None = Field(default=None, description="Native rendering route actually prepared (B or V).")
     block_size_frames: int = Field(default=1024, gt=0, description="Block size in frames used during block processing.")
     internal_sample_rate: int = Field(default=48000, gt=0, description="Engine processing sample rate in Hz.")
     hrtf: HrtfDataInfo = Field(default_factory=HrtfDataInfo, description="HRTF dataset metadata.")

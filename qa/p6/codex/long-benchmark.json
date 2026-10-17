@@ -1,0 +1,26 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "source_recipe": "real_music.wav (20 s), looped 60 times; FFmpeg PCM s16le stereo / 48 kHz / 1200 s",
+  "command": [
+    "~/Desktop/leo/Aurora Binaural/.agents/codex/.venv/bin/aurora",
+    "convert",
+    "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/long/stereo-20min.wav",
+    "--output",
+    "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/long/stereo-20min.V2.wav",
+    "--overwrite"
+  ],
+  "engine_override": null,
+  "preset_override": null,
+  "exit_code": 0,
+  "wall_seconds": 69.69752162508667,
+  "conversion_seconds": 69.54975,
+  "realtime_speed_x": 17.21725496144581,
+  "realtime_factor": 0.05808126802090555,
+  "max_rss_bytes": 131072000,
+  "max_rss_mib": 125.0,
+  "rss_method": "macOS /usr/bin/time -l maximum resident set size (bytes)",
+  "samples": 57600000,
+  "true_peak_dbtp": -9.4,
+  "output_sha256": "5cd1de957e925be0424ae1e92b02cb40acbb0104804a16a0781ebd2d6c800026"
+}

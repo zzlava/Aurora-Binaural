@@ -1,0 +1,47 @@
+
+> aurora-binaural-web@0.1.0 test:e2e
+> playwright test
+
+[WebServer] [aurora] Aurora GUI: http://127.0.0.1:8767 （Ctrl-C 退出）
+[WebServer] [aurora] [worker_82869_a2cbe5e4] Worker started (concurrency=1, lease=30.0s, max_retries=2)
+[WebServer] [aurora] [worker_82891_499d3acf] Worker started (concurrency=1, lease=30.0s, max_retries=2)
+
+Running 4 tests using 1 worker
+
+(node:82914) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [aurora] [worker_82869_a2cbe5e4] Claimed job 'job_397f2c3f653e4217' (attempt 1/3)
+[WebServer] [aurora] [worker_82869_a2cbe5e4] Claimed job 'job_a01c4e8149b94aed' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_fee8c8153f8e4971.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_fee8c8153f8e4971.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V1, strength=0.6, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 3191.6 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/tmp/attempt_job_a01c4e8149b94aed_1_lease_e41b4f43f1a14922ae2ef424c1ea2986/staged_out.wav
+  ✓  1 tests/workflow.spec.ts:61:1 › 上传 → 源时间试听 → 同步 A/B 与快捷键 → 导出下载；四种视口截图 (11.4s)
+[WebServer] [aurora] [worker_82891_499d3acf] Claimed job 'job_7ba82ca6d4a943b3' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/remote-82852/assets/asset_86a5817295654cc9.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/remote-82852/assets/asset_86a5817295654cc9.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=0.5, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 830.5 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/remote-82852/tmp/attempt_job_7ba82ca6d4a943b3_1_lease_a48d66e626464763a48a3c3bc8e0b35b/staged_out.wav
+  ✓  2 tests/workflow.spec.ts:210:1 › 远程错误 Key 明确提示；Key 只在 sessionStorage，URL 与日志均无 Key (2.4s)
+[WebServer] [aurora] [worker_82869_a2cbe5e4] Claimed job 'job_e7e554c41a9b4730' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_0a79544480e34199.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_0a79544480e34199.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=0.5, block_size=1024) -> encode (wav, sr=48000)
+  ✓  3 tests/workflow.spec.ts:255:1 › 取消正在运行的任务，状态稳定且不提供下载 (2.0s)
+[WebServer] [aurora] [worker_82869_a2cbe5e4] Claimed job 'job_8ffcebdc88c7490d' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_ea72383eda074887.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_ea72383eda074887.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=0.5, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 839.3 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/tmp/attempt_job_8ffcebdc88c7490d_1_lease_ba6d71e94c0748c6bdd9ed1996f755ed/staged_out.wav
+[WebServer] [aurora] [worker_82869_a2cbe5e4] Claimed job 'job_5be7a1154d5c4ea1' (attempt 1/3)
+[WebServer] [aurora] Probing input metadata: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_0640d487c47b4d22.wav
+[WebServer] [aurora] Measuring input BS.1770 loudness: ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/assets/asset_0640d487c47b4d22.wav
+[WebServer] [aurora] Streaming decode -> renderer (preset=V2, strength=0.5, block_size=1024) -> encode (wav, sr=48000)
+[WebServer] [aurora] Performing streaming readback decode verification (gapless & raw stream)
+[WebServer] [aurora] Completed conversion in 807.7 ms -> ~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/local-82852/tmp/attempt_job_5be7a1154d5c4ea1_1_lease_2870ecf5bcce4426bb6575a2f05c1b52/staged_out.wav
+  ✓  4 tests/workflow.spec.ts:268:1 › 多文件导入与批量导出；无效音频显示可恢复错误 (3.8s)
+
+  4 passed (20.8s)
