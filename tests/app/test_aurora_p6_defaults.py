@@ -33,6 +33,7 @@ def assert_native_default(report: dict[str, Any]) -> None:
     params = report["params"]
     assert isinstance(engine, dict) and isinstance(params, dict)
     assert engine["name"] == "aurora_core" and engine["is_stub"] is False
+    assert engine["route"] == "V"
     assert engine["hrtf"]["name"] == "SADIE II D1"
     assert params["preset"]["id"] == "V2"
     assert report["timeline"]["sample_diff"] == 0
@@ -60,6 +61,11 @@ def test_default_api_and_worker_render_v2(
     app = create_app(config)
     headers = {"Authorization": "Bearer p6-fixture"}
     with TestClient(app) as client:
+        status = client.get("/v1/presets", headers=headers).json()["engine"]
+        assert status["is_stub"] is False and status["available"] is True
+        assert status["version"] != "unknown"
+        assert status["hrtf"]["name"] == "SADIE II D1"
+        assert "V" in status["supported_routes"]
         uploaded = client.post("/v1/assets", headers=headers, files={"file": (source.name, source.read_bytes())})
         assert uploaded.status_code == 201
         asset_id = uploaded.json()["asset_id"]
