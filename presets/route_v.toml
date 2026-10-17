@@ -89,10 +89,12 @@ near_ild_scale = 1.0
 # Calibrated so a 0 dBFS loud master keeps limiter gain reduction within
 # 2 dB (95% of the time within 0.5 dB). See qa/p1/cursor/REPORT-P1c.md.
 headroom_db = 10.5
-# Mono low shelf and peaking trim on the path below crossover_hz. Both
-# gains are the strength-1 values and follow the same bed-gain scale as
-# headroom_db, so strength 0 applies 0 dB. The shelf lifts the deep bass
-# that never enters the spatial paths. The peak trims the crossover bump.
+# Stereo low shelf and peaking trim on the path below crossover_hz.
+# Left stays on the left ear and right on the right ear; a mono sum
+# cancels spaced-omni bass. Both gains are the strength-1 values and
+# follow the same bed-gain scale as headroom_db, so strength 0 applies
+# 0 dB. The shelf lifts the deep bass that never enters the spatial
+# paths. The peak trims the crossover bump.
 # A single curve cannot put pink noise and a loud master inside ±1 dB at
 # every third octave: their spatial tilts differ by more than 2 dB. These
 # values are the minimax fit. See qa/p1/cursor/REPORT-P1c.md.
@@ -101,6 +103,24 @@ lf_shelf_db = 2.4
 lf_peak_hz = 180.0
 lf_peak_db = -2.2
 lf_peak_q = 0.8
+# Extra peak on the finished mix. It turns on only while the low band
+# is decorrelated, so mono bass (ρ near 1) stays at 0 dB and pink keeps
+# the P1c balance. A hall recording gets the full boost around the
+# crossover, which the low path alone does not carry. The detector is
+# high-passed at 80 Hz, smoothed over lf_rho_tau_s, then slew-limited
+# to 4 dB/s. See qa/p1/cursor/REPORT-P1d.md.
+lf_rho_hz = 155.0
+lf_rho_db = 4.6
+lf_rho_q = 1.3
+lf_rho_tau_s = 0.8
+lf_rho_hi = 0.95
+lf_rho_lo = 0.0
+# Peaking cut on the four height HRIRs only. Wide, surround, early and
+# the center pair are left alone. Closing the height layer removed the
+# 500–800 Hz hump on the hall recording and barely moved pop.
+bed_notch_hz = 780.0
+bed_notch_db = -12.0
+bed_notch_q = 1.2
 
 # Linear curves. per_unit is the change for one full step of the control.
 # min / max are the safety limits (ADR 0005). The limiter stays on.

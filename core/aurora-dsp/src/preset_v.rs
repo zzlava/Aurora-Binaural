@@ -66,13 +66,24 @@ pub struct RouteVRow {
     /// Input attenuation in dB at strength 1 with this preset's stored
     /// anchors. The engine scales it with the live bed-gain sum.
     pub headroom_db: f64,
-    /// Low-shelf boost on the mono path below the crossover, at strength 1.
+    /// Low-shelf boost on the stereo path below the crossover, at strength 1.
     pub lf_shelf_hz: f64,
     pub lf_shelf_db: f64,
-    /// Peaking trim on that same mono path, at strength 1. 0 dB disables it.
+    /// Peaking trim on that same path, at strength 1. 0 dB disables it.
     pub lf_peak_hz: f64,
     pub lf_peak_db: f64,
     pub lf_peak_q: f64,
+    /// Extra peak on the low path. Full `lf_rho_db` when correlation is at
+    /// or below `lf_rho_lo`, none at or above `lf_rho_hi`. 0 dB disables it.
+    pub lf_rho_hz: f64,
+    pub lf_rho_db: f64,
+    pub lf_rho_q: f64,
+    pub lf_rho_tau_s: f64,
+    pub lf_rho_hi: f64,
+    pub lf_rho_lo: f64,
+    pub bed_notch_hz: f64,
+    pub bed_notch_db: f64,
+    pub bed_notch_q: f64,
 }
 
 /// User-facing controls, each in `[0, 1]`.
@@ -247,6 +258,15 @@ pub struct MappedRouteV {
     pub lf_peak_hz: f64,
     pub lf_peak_db: f64,
     pub lf_peak_q: f64,
+    pub lf_rho_hz: f64,
+    pub lf_rho_db: f64,
+    pub lf_rho_q: f64,
+    pub lf_rho_tau_s: f64,
+    pub lf_rho_hi: f64,
+    pub lf_rho_lo: f64,
+    pub bed_notch_hz: f64,
+    pub bed_notch_db: f64,
+    pub bed_notch_q: f64,
 }
 
 impl RouteVTable {
@@ -417,6 +437,15 @@ pub fn map_route_v(
         lf_peak_hz: row.lf_peak_hz.max(10.0),
         lf_peak_db: row.lf_peak_db,
         lf_peak_q: row.lf_peak_q.max(0.1),
+        lf_rho_hz: row.lf_rho_hz.max(20.0),
+        lf_rho_db: row.lf_rho_db,
+        lf_rho_q: row.lf_rho_q.max(0.1),
+        lf_rho_tau_s: row.lf_rho_tau_s.max(0.2),
+        lf_rho_hi: row.lf_rho_hi,
+        lf_rho_lo: row.lf_rho_lo,
+        bed_notch_hz: row.bed_notch_hz.max(20.0),
+        bed_notch_db: row.bed_notch_db,
+        bed_notch_q: row.bed_notch_q.max(0.1),
     }
 }
 
@@ -565,6 +594,15 @@ fn parse_row(
         lf_peak_hz: num("lf_peak_hz", 125.0).max(10.0),
         lf_peak_db: num("lf_peak_db", 0.0),
         lf_peak_q: num("lf_peak_q", 0.7).max(0.1),
+        lf_rho_hz: num("lf_rho_hz", 120.0).max(20.0),
+        lf_rho_db: num("lf_rho_db", 0.0),
+        lf_rho_q: num("lf_rho_q", 1.0).max(0.1),
+        lf_rho_tau_s: num("lf_rho_tau_s", 0.8).max(0.2),
+        lf_rho_hi: num("lf_rho_hi", 0.95),
+        lf_rho_lo: num("lf_rho_lo", 0.0),
+        bed_notch_hz: num("bed_notch_hz", 740.0).max(20.0),
+        bed_notch_db: num("bed_notch_db", 0.0),
+        bed_notch_q: num("bed_notch_q", 0.7).max(0.1),
     })
 }
 

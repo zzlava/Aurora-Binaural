@@ -9,7 +9,11 @@
 //! HRIR placement uses the existing uniform partitioned convolver. That adds
 //! one partition of delay relative to the prototype's `fftconvolve`. The low
 //! band and the FDN, which are not HRIR-convolved, are delayed by the same
-//! partition so the mix lines up. `process` does not allocate.
+//! partition so the mix lines up. Below the crossover each ear keeps its own
+//! channel. `(L+R)/2` cancels bass when left and right are weakly correlated,
+//! which is normal for spaced omnis in a hall. The two ears share one shelf
+//! and one peak, with separate filter state, so a mono low band stays
+//! coherent. `process` does not allocate.
 
 use crate::conv::{DelayLine, UniformConvolver};
 use crate::coords::{az_el_to_cart, cart_to_az_el};
@@ -201,6 +205,7 @@ struct Engine {
     delay_lift: DelayLine,
     delay_early: Vec<DelayLine>,
     delay_low: DelayLine,
+    delay_low_r: DelayLine,
     delay_fdn_l: DelayLine,
     delay_fdn_r: DelayLine,
     conv: Vec<UniformConvolver>,
@@ -220,6 +225,25 @@ struct Engine {
     lf_zi: [f64; 2],
     lf_peak_sos: [f64; 6],
     lf_peak_zi: [f64; 2],
+    lf_zi_r: [f64; 2],
+    lf_peak_zi_r: [f64; 2],
+    /// Smoothed low-band correlation detector. The boost follows it slowly
+    /// so a phrase cannot pump the 120 Hz peak.
+    rho_pl: f64,
+    rho_pr: f64,
+    rho_c: f64,
+    rho_a: f64,
+    rho_slew: f64,
+    rho_hp_a: f64,
+    rho_hp_yl: f64,
+    rho_hp_yr: f64,
+    rho_hp_xl: f64,
+    rho_hp_xr: f64,
+    rho_db_now: f64,
+    rho_applied: f64,
+    rho_sos: [f64; 6],
+    rho_zi_l: [f64; 2],
+    rho_zi_r: [f64; 2],
     lf_shelf_applied: f64,
     lf_peak_applied: f64,
     center_i: usize,
@@ -465,6 +489,7 @@ impl Processor for RouteV {
             delay_lift: DelayLine::new(1),
             delay_early: Vec::new(),
             delay_low: DelayLine::new(1),
+            delay_low_r: DelayLine::new(1),
             delay_fdn_l: DelayLine::new(PART),
             delay_fdn_r: DelayLine::new(PART),
             conv,
@@ -483,6 +508,23 @@ impl Processor for RouteV {
             lf_zi: [0.0; 2],
             lf_peak_sos: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             lf_peak_zi: [0.0; 2],
+            lf_zi_r: [0.0; 2],
+            lf_peak_zi_r: [0.0; 2],
+            rho_pl: 0.0,
+            rho_pr: 0.0,
+            rho_c: 0.0,
+            rho_a: 1.0,
+            rho_slew: 0.0,
+            rho_hp_a: 1.0,
+            rho_hp_yl: 0.0,
+            rho_hp_yr: 0.0,
+            rho_hp_xl: 0.0,
+            rho_hp_xr: 0.0,
+            rho_db_now: 0.0,
+            rho_applied: f64::NAN,
+            rho_sos: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            rho_zi_l: [0.0; 2],
+            rho_zi_r: [0.0; 2],
             lf_shelf_applied: f64::NAN,
             lf_peak_applied: f64::NAN,
             center_i: N_SECTORS / 2,
@@ -691,6 +733,7 @@ impl Processor for RouteV {
             delay.reset();
         }
         engine.delay_low.reset();
+        engine.delay_low_r.reset();
         engine.delay_fdn_l.reset();
         engine.delay_fdn_r.reset();
         for conv in &mut engine.conv {
@@ -701,6 +744,9 @@ impl Processor for RouteV {
         engine.limiter.reset();
         engine.lf_zi = [0.0; 2];
         engine.lf_peak_zi = [0.0; 2];
+        engine.lf_zi_r = [0.0; 2];
+        engine.lf_peak_zi_r = [0.0; 2];
+        engine.reset_rho();
         engine.lf_shelf_applied = f64::NAN;
         engine.lf_peak_applied = f64::NAN;
     }
@@ -767,10 +813,14 @@ impl Engine {
         }
         let low_delay = N_FFT + self.hrir_peak + PART;
         self.delay_low = DelayLine::new(low_delay.max(1));
+        self.delay_low_r = DelayLine::new(low_delay.max(1));
         self.lf_shelf_applied = f64::NAN;
         self.lf_peak_applied = f64::NAN;
         self.lf_zi = [0.0; 2];
         self.lf_peak_zi = [0.0; 2];
+        self.lf_zi_r = [0.0; 2];
+        self.lf_peak_zi_r = [0.0; 2];
+        self.arm_rho();
         if mapped.bypass || mapped.eq_gain_db.is_empty() || mapped.eq_bands_hz.is_empty() {
             self.fir.set_coeff(Vec::new());
         } else {
@@ -805,6 +855,18 @@ impl Engine {
             return;
         }
         idw_render(&self.pack, az, el, 3, &mut self.ir_l, &mut self.ir_r);
+        // Only the height speakers. Wide and surround carry decorrelated
+        // energy too, but the 500–800 Hz hump measured on hall recordings
+        // collapsed when the height layer was removed and barely moved
+        // when wide or surround was removed. A cut here leaves correlated
+        // pop, which stays in the center pair, alone.
+        if (H0..H0 + N_HEIGHT).contains(&index) {
+            let hz = self.mapped.bed_notch_hz;
+            let db = self.mapped.bed_notch_db;
+            let q = self.mapped.bed_notch_q;
+            color_bed(&mut self.ir_l, hz, db, q);
+            color_bed(&mut self.ir_r, hz, db, q);
+        }
         self.conv[index].set_ir(&self.ir_l, &self.ir_r);
     }
 
@@ -910,6 +972,8 @@ impl Engine {
         let shelf_hz = mapped.lf_shelf_hz;
         let peak_hz = mapped.lf_peak_hz;
         let peak_q = mapped.lf_peak_q;
+        let rho_hz = mapped.lf_rho_hz;
+        let rho_q = mapped.lf_rho_q;
         let taps = shoebox_taps(&mapped, 48_000);
         self.early_d = [0.0; MAX_EARLY];
         self.early_tgt = self.early_now;
@@ -925,9 +989,12 @@ impl Engine {
         if (old.lf_shelf_hz - shelf_hz).abs() > 0.1
             || (old.lf_peak_hz - peak_hz).abs() > 0.1
             || (old.lf_peak_q - peak_q).abs() > 1e-6
+            || (old.lf_rho_hz - rho_hz).abs() > 0.1
+            || (old.lf_rho_q - rho_q).abs() > 1e-6
         {
             self.lf_shelf_applied = f64::NAN;
             self.lf_peak_applied = f64::NAN;
+            self.rho_applied = f64::NAN;
         }
         let (head, shelf_k) = self.level_targets();
         self.headroom_tgt = head;
@@ -1233,17 +1300,24 @@ impl Engine {
             .process(&self.fdn_r[..m], &mut self.tmp_r[..m]);
         self.acc_gain(G_LATE, m);
 
-        for i in 0..m {
-            self.mono[i] = 0.5 * (self.low_l[i] + self.low_r[i]);
-        }
-        self.delay_low.process(&self.mono[..m], &mut self.feed[..m]);
+        // Keep each ear's own low band. `(L+R)/2` is exact only when the
+        // channels match; spaced-omni bass (ρ near 0 or negative) loses
+        // several dB in that sum. Identical coefficients with separate
+        // state leave L=R coherent and do not add delay. A slow peaking
+        // boost, scaled by how far ρ sits below lf_rho_hi, fills the
+        // upper low band on decorrelated hall recordings without lifting
+        // mono bass.
+        self.delay_low.process(&self.low_l[..m], &mut self.feed[..m]);
+        self.delay_low_r
+            .process(&self.low_r[..m], &mut self.mono[..m]);
         for i in 0..m {
             self.design_lf(self.lf_k_at(i));
-            let shelved = biquad(&self.lf_sos, &mut self.lf_zi, self.feed[i]);
-            let shaped = biquad(&self.lf_peak_sos, &mut self.lf_peak_zi, shelved);
-            self.feed[i] = shaped;
-            self.mix_l[i] += shaped;
-            self.mix_r[i] += shaped;
+            let shelved_l = biquad(&self.lf_sos, &mut self.lf_zi, self.feed[i]);
+            let shaped_l = biquad(&self.lf_peak_sos, &mut self.lf_peak_zi, shelved_l);
+            let shelved_r = biquad(&self.lf_sos, &mut self.lf_zi_r, self.mono[i]);
+            let shaped_r = biquad(&self.lf_peak_sos, &mut self.lf_peak_zi_r, shelved_r);
+            self.mix_l[i] += shaped_l;
+            self.mix_r[i] += shaped_r;
         }
 
         if !self.fir.coeff.is_empty() {
@@ -1270,6 +1344,14 @@ impl Engine {
             }
             self.mix_l[..m].copy_from_slice(&self.tmp_l[..m]);
             self.mix_r[..m].copy_from_slice(&self.tmp_r[..m]);
+        }
+        // Decorrelation peak on the finished mix, so it can lift the
+        // crossover region that never enters the low path. The detector
+        // watches the low band. Both ears share coefficients.
+        for i in 0..m {
+            self.follow_rho(self.low_l[i], self.low_r[i], self.lf_k_at(i));
+            self.mix_l[i] = biquad(&self.rho_sos, &mut self.rho_zi_l, self.mix_l[i]);
+            self.mix_r[i] = biquad(&self.rho_sos, &mut self.rho_zi_r, self.mix_r[i]);
         }
         if self.xfade_left > 0 {
             let len = self.xfade_len.max(1) as f64;
@@ -1327,6 +1409,61 @@ impl Engine {
         self.lf_peak_applied = peak_db;
     }
 
+    fn arm_rho(&mut self) {
+        let tau = self.mapped.lf_rho_tau_s.max(0.2);
+        self.rho_a = (-1.0 / (tau * 48_000.0)).exp();
+        // 4 dB/s. Correlation can move; the peak must not.
+        self.rho_slew = 4.0 / 48_000.0;
+        let fc = 80.0_f64;
+        self.rho_hp_a = (-2.0 * std::f64::consts::PI * fc / 48_000.0).exp();
+        self.reset_rho();
+    }
+
+    fn reset_rho(&mut self) {
+        self.rho_pl = 0.0;
+        self.rho_pr = 0.0;
+        self.rho_c = 0.0;
+        self.rho_hp_yl = 0.0;
+        self.rho_hp_yr = 0.0;
+        self.rho_hp_xl = 0.0;
+        self.rho_hp_xr = 0.0;
+        self.rho_db_now = 0.0;
+        self.rho_applied = f64::NAN;
+        self.rho_sos = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        self.rho_zi_l = [0.0; 2];
+        self.rho_zi_r = [0.0; 2];
+    }
+
+    fn follow_rho(&mut self, left: f64, right: f64, scale: f64) {
+        let hl = one_pole_hp(&mut self.rho_hp_yl, &mut self.rho_hp_xl, left, self.rho_hp_a);
+        let hr = one_pole_hp(&mut self.rho_hp_yr, &mut self.rho_hp_xr, right, self.rho_hp_a);
+        let a = self.rho_a;
+        let b = 1.0 - a;
+        self.rho_pl = a * self.rho_pl + b * hl * hl;
+        self.rho_pr = a * self.rho_pr + b * hr * hr;
+        self.rho_c = a * self.rho_c + b * hl * hr;
+        let den = (self.rho_pl * self.rho_pr).sqrt();
+        let rho = if den > 1e-12 {
+            (self.rho_c / den).clamp(-1.0, 1.0)
+        } else {
+            1.0
+        };
+        let span = (self.mapped.lf_rho_hi - self.mapped.lf_rho_lo).max(0.05);
+        let t = ((self.mapped.lf_rho_hi - rho) / span).clamp(0.0, 1.0);
+        let target = self.mapped.lf_rho_db * t * scale;
+        let step = (target - self.rho_db_now).clamp(-self.rho_slew, self.rho_slew);
+        self.rho_db_now += step;
+        if self.rho_applied.is_nan() || (self.rho_db_now - self.rho_applied).abs() > 0.02 {
+            self.rho_sos = peak_coeffs(
+                self.mapped.lf_rho_hz,
+                self.rho_db_now,
+                self.mapped.lf_rho_q,
+                48_000.0,
+            );
+            self.rho_applied = self.rho_db_now;
+        }
+    }
+
     fn headroom_db_value(&self) -> f64 {
         if self.mapped.bypass {
             return 0.0;
@@ -1359,6 +1496,24 @@ fn biquad(sos: &[f64; 6], state: &mut [f64; 2], x: f64) -> f64 {
     state[0] = sos[1] * x - sos[4] * yn + state[1];
     state[1] = sos[2] * x - sos[5] * yn;
     yn
+}
+
+fn one_pole_hp(y: &mut f64, prev: &mut f64, x: f64, a: f64) -> f64 {
+    let out = a * (*y + x - *prev);
+    *y = out;
+    *prev = x;
+    out
+}
+
+fn color_bed(ir: &mut [f64], hz: f64, db: f64, q: f64) {
+    if db.abs() < 0.05 {
+        return;
+    }
+    let sos = peak_coeffs(hz, db, q, 48_000.0);
+    let mut zi = [0.0; 2];
+    for sample in ir.iter_mut() {
+        *sample = biquad(&sos, &mut zi, *sample);
+    }
 }
 
 /// RBJ low shelf, S = 1. Coefficients are `[b0, b1, b2, 1, a1, a2]`.
@@ -1919,6 +2074,88 @@ mod tests {
         dsp.process(&[&left, &right], &mut [&mut ol, &mut or_], n);
         assert_eq!(ol, left);
         assert_eq!(or_, right);
+    }
+
+    #[test]
+    fn low_band_keeps_anticorrelated_energy_and_mono_stays_coherent() {
+        let n = 48_000 * 2;
+        let freq = 60.0_f32;
+        let mut left = vec![0.0f32; n];
+        let mut right_mono = vec![0.0f32; n];
+        let mut right_anti = vec![0.0f32; n];
+        for i in 0..n {
+            let s = 0.2 * (2.0 * std::f32::consts::PI * freq * i as f32 / 48_000.0).sin();
+            left[i] = s;
+            right_mono[i] = s;
+            right_anti[i] = -s;
+        }
+        let mut mono = prepared(256, 1.0, "V3");
+        let latency = mono.latency_samples();
+        let mono_out = render(&mut mono, &left, &right_mono, 256);
+        let mut anti = prepared(256, 1.0, "V3");
+        let anti_out = render(&mut anti, &left, &right_anti, 256);
+        let start = latency + 4_000;
+        let end = n - 2_000;
+        let (ml, mr) = split_range(&mono_out, start, end);
+        let (al, ar) = split_range(&anti_out, start, end);
+        let corr = correlation(&ml, &mr);
+        assert!(corr > 0.98, "mono low-band correlation {corr}");
+        let mono_db = tone_db(&ml, freq);
+        let anti_db = tone_db(&al, freq);
+        assert!(
+            anti_db + 3.0 > mono_db,
+            "60 Hz mono {mono_db:.2} dB vs anti-phase {anti_db:.2} dB"
+        );
+        let anti_r = tone_db(&ar, freq);
+        assert!(
+            (anti_db - anti_r).abs() < 0.5,
+            "anti-phase ears {anti_db:.2} / {anti_r:.2}"
+        );
+    }
+
+    fn split_range(interleaved: &[f32], start: usize, end: usize) -> (Vec<f32>, Vec<f32>) {
+        let mut left = Vec::with_capacity(end - start);
+        let mut right = Vec::with_capacity(end - start);
+        for i in start..end {
+            left.push(interleaved[i * 2]);
+            right.push(interleaved[i * 2 + 1]);
+        }
+        (left, right)
+    }
+
+    fn correlation(a: &[f32], b: &[f32]) -> f64 {
+        let n = a.len().min(b.len());
+        let mut mean_a = 0.0;
+        let mut mean_b = 0.0;
+        for i in 0..n {
+            mean_a += f64::from(a[i]);
+            mean_b += f64::from(b[i]);
+        }
+        mean_a /= n as f64;
+        mean_b /= n as f64;
+        let mut num = 0.0;
+        let mut da = 0.0;
+        let mut db = 0.0;
+        for i in 0..n {
+            let xa = f64::from(a[i]) - mean_a;
+            let xb = f64::from(b[i]) - mean_b;
+            num += xa * xb;
+            da += xa * xa;
+            db += xb * xb;
+        }
+        num / (da * db).sqrt().max(1e-30)
+    }
+
+    fn tone_db(x: &[f32], freq: f32) -> f64 {
+        let mut re = 0.0;
+        let mut im = 0.0;
+        for (i, sample) in x.iter().enumerate() {
+            let w = 2.0 * std::f64::consts::PI * f64::from(freq) * i as f64 / 48_000.0;
+            re += f64::from(*sample) * w.cos();
+            im += f64::from(*sample) * w.sin();
+        }
+        let power = (re * re + im * im) / (x.len() as f64 * x.len() as f64);
+        10.0 * power.max(1e-30).log10()
     }
 
     #[test]
