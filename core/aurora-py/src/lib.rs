@@ -5,16 +5,37 @@
 //! HRTF pack paths live on the constructor because `RenderConfig` only carries
 //! channel counts.
 
-use aurora_dsp::{Params, Processor, RenderConfig, RouteB};
+use aurora_dsp::{Params, Processor, RenderConfig, RouteB, RouteV};
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 use std::path::PathBuf;
 
+enum Core {
+    B(Box<RouteB>),
+    V(Box<RouteV>),
+}
+
+impl Core {
+    fn get(&self) -> &dyn Processor {
+        match self {
+            Core::B(dsp) => dsp.as_ref(),
+            Core::V(dsp) => dsp.as_ref(),
+        }
+    }
+
+    fn get_mut(&mut self) -> &mut dyn Processor {
+        match self {
+            Core::B(dsp) => dsp.as_mut(),
+            Core::V(dsp) => dsp.as_mut(),
+        }
+    }
+}
+
 #[pyclass(name = "Renderer")]
 struct PyRenderer {
-    inner: RouteB,
+    inner: Core,
     hrtf_pack: PathBuf,
     hrtf_source: PathBuf,
     preset_path: PathBuf,
@@ -23,6 +44,8 @@ struct PyRenderer {
     preset: String,
     limiter: bool,
     timbre_guard: bool,
+    route: String,
+    hrtf_name: String,
     max_block: usize,
     prepared: bool,
 }
@@ -31,7 +54,7 @@ struct PyRenderer {
 impl PyRenderer {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (hrtf_pack, hrtf_source, preset_path, strength=0.4, seed=20_261_016, preset="room", limiter=true, timbre_guard=false))]
+    #[pyo3(signature = (hrtf_pack, hrtf_source, preset_path, strength=0.4, seed=20_261_016, preset="room", limiter=true, timbre_guard=false, route="B", hrtf_name=""))]
     fn new(
         hrtf_pack: PathBuf,
         hrtf_source: PathBuf,
@@ -41,9 +64,17 @@ impl PyRenderer {
         preset: &str,
         limiter: bool,
         timbre_guard: bool,
+        route: &str,
+        hrtf_name: &str,
     ) -> Self {
+        let route_id = route.to_ascii_uppercase();
+        let inner = if route_id == "V" {
+            Core::V(Box::new(RouteV::new()))
+        } else {
+            Core::B(Box::new(RouteB::new()))
+        };
         Self {
-            inner: RouteB::new(),
+            inner,
             hrtf_pack,
             hrtf_source,
             preset_path,
@@ -52,6 +83,8 @@ impl PyRenderer {
             preset: preset.to_string(),
             limiter,
             timbre_guard,
+            route: route_id,
+            hrtf_name: hrtf_name.to_string(),
             max_block: 0,
             prepared: false,
         }
@@ -65,7 +98,11 @@ impl PyRenderer {
     ) -> PyResult<()> {
         let input_channels = optional_usize(config, "input_channels")?.unwrap_or(2);
         let output_channels = optional_usize(config, "output_channels")?.unwrap_or(2);
-        let mut cfg = RenderConfig::route_b(&self.hrtf_pack, &self.hrtf_source, &self.preset_path);
+        let mut cfg = if self.route == "V" {
+            RenderConfig::route_v(&self.hrtf_pack, &self.hrtf_source, &self.preset_path)
+        } else {
+            RenderConfig::route_b(&self.hrtf_pack, &self.hrtf_source, &self.preset_path)
+        };
         cfg.input_channels = input_channels;
         cfg.output_channels = output_channels;
         cfg.strength = self.strength;
@@ -73,7 +110,10 @@ impl PyRenderer {
         cfg.preset = self.preset.clone();
         cfg.limiter = self.limiter;
         cfg.timbre_guard = self.timbre_guard;
+        cfg.route = self.route.clone();
+        cfg.hrtf_name = self.hrtf_name.clone();
         self.inner
+            .get_mut()
             .prepare(sample_rate, max_block, &cfg)
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
         self.max_block = max_block;
@@ -93,7 +133,7 @@ impl PyRenderer {
         self.strength = strength;
         self.preset = preset.clone();
         self.seed = seed;
-        self.inner.set_params(&Params {
+        self.inner.get_mut().set_params(&Params {
             strength,
             preset,
             seed,
@@ -122,6 +162,7 @@ impl PyRenderer {
         let mut out_l = vec![0.0f32; frames];
         let mut out_r = vec![0.0f32; frames];
         self.inner
+            .get_mut()
             .process(&[&left, &right], &mut [&mut out_l, &mut out_r], frames);
         for i in 0..frames {
             out_slice[i * 2] = out_l[i];
@@ -131,18 +172,18 @@ impl PyRenderer {
     }
 
     fn latency_samples(&self) -> usize {
-        self.inner.latency_samples()
+        self.inner.get().latency_samples()
     }
 
     fn tail_samples(&self) -> usize {
-        self.inner.tail_samples()
+        self.inner.get().tail_samples()
     }
 
     fn flush<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         if !self.prepared {
             return Err(PyRuntimeError::new_err("prepare before flush"));
         }
-        let n = self.inner.latency_samples() + self.inner.tail_samples();
+        let n = self.inner.get().latency_samples() + self.inner.get().tail_samples();
         let out = empty_stereo(py, n)?;
         if n == 0 {
             return Ok(out);
@@ -152,7 +193,7 @@ impl PyRenderer {
         let out_slice = unsafe { std::slice::from_raw_parts_mut(out_ptr, n * 2) };
         let mut out_l = vec![0.0f32; n];
         let mut out_r = vec![0.0f32; n];
-        self.inner.flush(&mut [&mut out_l, &mut out_r]);
+        self.inner.get_mut().flush(&mut [&mut out_l, &mut out_r]);
         for i in 0..n {
             out_slice[i * 2] = out_l[i];
             out_slice[i * 2 + 1] = out_r[i];
@@ -161,7 +202,7 @@ impl PyRenderer {
     }
 
     fn reset(&mut self) {
-        self.inner.reset();
+        self.inner.get_mut().reset();
     }
 }
 

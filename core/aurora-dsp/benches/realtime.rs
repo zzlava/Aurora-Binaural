@@ -1,10 +1,11 @@
-//! Single-core route B cost at 48 kHz, stereo, block size 256.
+//! Single-core cost at 48 kHz, stereo, block size 256.
 //!
-//! Realtime factor is `(256 / 48000) / mean_seconds`. The acceptance target
-//! is at least 20×.
+//! Realtime factor is `(256 / 48000) / mean_seconds`. Route B's target is
+//! 20×. Route V runs the same block with every virtual speaker, so its
+//! target is 10×.
 
 use aurora_dsp::hrir::{sha256_file, MAGIC, VERSION};
-use aurora_dsp::{Processor, RenderConfig, RouteB};
+use aurora_dsp::{Processor, RenderConfig, RouteB, RouteV};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::time::Duration;
 
@@ -70,5 +71,40 @@ fn route_b(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, route_b);
+fn route_v(c: &mut Criterion) {
+    let dir = std::env::temp_dir().join("aurora_bench_hrir_v");
+    let _ = std::fs::create_dir_all(&dir);
+    let (pack, source) = write_pack(&dir);
+    let preset =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../presets/route_v.toml");
+    let mut cfg = RenderConfig::route_v(pack, source, preset);
+    cfg.preset = "V2".to_string();
+    cfg.strength = 1.0;
+    cfg.hrtf_name = "sadie".to_string();
+    let mut dsp = RouteV::new();
+    dsp.prepare(48_000, 256, &cfg).unwrap();
+    let n = 256;
+    let left = vec![0.2f32; n];
+    let right = vec![0.1f32; n];
+    let mut out_l = vec![0.0f32; n];
+    let mut out_r = vec![0.0f32; n];
+    for _ in 0..8 {
+        dsp.process(&[&left, &right], &mut [&mut out_l, &mut out_r], n);
+    }
+    let mut group = c.benchmark_group("route_v");
+    group.sample_size(20);
+    group.measurement_time(Duration::from_secs(4));
+    group.bench_function("block_256", |b| {
+        b.iter(|| {
+            dsp.process(
+                black_box(&[&left, &right]),
+                black_box(&mut [&mut out_l, &mut out_r]),
+                n,
+            );
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(benches, route_b, route_v);
 criterion_main!(benches);

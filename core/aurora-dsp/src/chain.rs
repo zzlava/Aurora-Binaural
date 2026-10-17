@@ -14,7 +14,7 @@ use crate::fdn::FdnReverb;
 use crate::guard::TimbreGuard;
 use crate::hrir::HrirPack;
 use crate::interpolate::idw_render;
-use crate::limiter::{TruePeakLimiter, LOOKAHEAD};
+use crate::limiter::{TruePeakLimiter, DETECTOR_CEILING_DBTP, LOOKAHEAD};
 use crate::params::{map_strength, MappedStrength, PresetTable};
 use crate::processor::{Params, Processor, RenderConfig};
 use crate::upmix::{StreamingUpmix, N_FFT, N_SECTORS, N_STEMS, REAR_DEG, WIDE_DEG};
@@ -192,7 +192,9 @@ impl Processor for RouteB {
             delay_fdn_r: DelayLine::new(PART),
             delay_room_l: DelayLine::new(N_FFT),
             delay_room_r: DelayLine::new(N_FFT),
-            limiter: TruePeakLimiter::new(sample_rate),
+            // Same detector offset as route V. An internal −1 dBTP lets
+            // scipy / ebur128 read about −0.6 dBTP on holdout_electronic.
+            limiter: TruePeakLimiter::with_ceiling(sample_rate, DETECTOR_CEILING_DBTP),
             guard: if config.timbre_guard {
                 TimbreGuard::from_fir(&[1.0])
             } else {
