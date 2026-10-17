@@ -30,7 +30,9 @@ uv --version
 node --version
 npm --version
 
-uv sync --locked
+# PyO3 0.25 supports the project's Python 3.12 baseline, not arbitrary future
+# interpreters selected by uv on a machine without Python already installed.
+uv sync --locked --python 3.12
 uv run python -c 'from aurora_binaural.ffmpeg_discovery import configure_local_ffmpeg; configure_local_ffmpeg()'
 bash scripts/build-core.sh
 (
