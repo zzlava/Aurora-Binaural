@@ -1,0 +1,25 @@
+{
+  "source_commit": "e71c1e15d022865b275165952ec5779c68a9f3ff",
+  "core_tree": "16c992340ef28b67310c70d2a1c5de22a9d72fae",
+  "core_version": "0.1.0",
+  "binding_signature": "(hrtf_pack, hrtf_source, preset_path, strength=0.4, seed=20261016, preset='room', limiter=True, timbre_guard=False, route='B', hrtf_name='')",
+  "defaults": {
+    "engine": "rust",
+    "route": "V",
+    "preset": "V2",
+    "hrtf": "SADIE II D1"
+  },
+  "status": {
+    "name": "rust",
+    "is_stub": false,
+    "available": true,
+    "supported_routes": [
+      "B",
+      "V"
+    ],
+    "message": "效果引擎：Rust"
+  },
+  "binary_sha256": "c4448981b7d454d086031e02278c1be76b76cc98ab244adb77f74c1186085ffa",
+  "platform": "arm64",
+  "build_log": "Resolved 33 packages in 3ms\nUninstalled 1 package in 0.78ms\n - aurora-core==0.1.0 (from file:///var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.rKHsnA/wheels/aurora_core-0.1.0-cp312-cp312-macosx_11_0_arm64.whl)\n🐍 Found CPython 3.12 at ~/Desktop/leo/Aurora Binaural/.agents/codex/.venv/bin/python\n🔗 Found pyo3 bindings\n💻 Using `MACOSX_DEPLOYMENT_TARGET=11.0` for aarch64-apple-darwin by default\n   Compiling target-lexicon v0.13.5\n   Compiling autocfg v1.5.1\n   Compiling proc-macro2 v1.0.107\n   Compiling once_cell v1.21.4\n   Compiling quote v1.0.47\n   Compiling unicode-ident v1.0.27\n   Compiling serde_core v1.0.229\n   Compiling version_check v0.9.5\n   Compiling serde v1.0.229\n   Compiling libc v0.2.190\n   Compiling typenum v1.20.1\n   Compiling hashbrown v0.17.1\n   Compiling generic-array v0.14.7\n   Compiling num-traits v0.2.19\n   Compiling equivalent v1.0.3\n   Compiling strength_reduce v0.2.4\n   Compiling indexmap v2.14.2\n   Compiling memoffset v0.9.1\n   Compiling toml_write v0.1.2\n   Compiling thiserror v2.0.21\n   Compiling heck v0.5.0\n   Compiling winnow v0.7.15\n   Compiling cfg-if v1.0.5\n   Compiling unindent v0.2.4\n   Compiling indoc v2.0.8\n   Compiling syn v3.0.9\n   Compiling syn v2.0.119\n   Compiling pyo3-build-config v0.25.1\n   Compiling cpufeatures v0.2.17\n   Compiling crypto-common v0.1.7\n   Compiling block-buffer v0.10.4\n   Compiling thiserror-impl v2.0.21\n   Compiling digest v0.10.7\n   Compiling sha2 v0.10.9\n   Compiling num-integer v0.1.47\n   Compiling num-complex v0.4.6\n   Compiling transpose v0.2.3\n   Compiling primal-check v0.3.4\n   Compiling pyo3-ffi v0.25.1\n   Compiling pyo3-macros-backend v0.25.1\n   Compiling pyo3 v0.25.1\n   Compiling rustfft v6.4.1\n   Compiling toml_datetime v0.6.11\n   Compiling serde_spanned v0.6.9\n   Compiling toml_edit v0.22.27\n   Compiling toml v0.8.23\n   Compiling realfft v3.5.0\n   Compiling aurora-dsp v0.1.0 (/private/var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.3qzNIr/core/aurora-dsp)\n   Compiling pyo3-macros v0.25.1\n   Compiling aurora-py v0.1.0 (/private/var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.3qzNIr/core/aurora-py)\n    Finished `release` profile [optimized] target(s) in 9.44s\n📦 Built wheel for CPython 3.12 to /var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T//aurora-core.3qzNIr/wheels/aurora_core-0.1.0-cp312-cp312-macosx_11_0_arm64.whl\nResolved 2 packages in 1ms\nPrepared 1 package in 5ms\nInstalled 1 package in 0.72ms\n + aurora-core==0.1.0 (from file:///var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.3qzNIr/wheels/aurora_core-0.1.0-cp312-cp312-macosx_11_0_arm64.whl)\naurora_core loaded: ~/Desktop/leo/Aurora Binaural/.agents/codex/.venv/lib/python3.12/site-packages/aurora_core/__init__.py\nDefault core smoke passed: Rust 0.1.0 / V / V2 / SADIE II D1\n"
+}
