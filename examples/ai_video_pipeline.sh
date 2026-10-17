@@ -106,14 +106,14 @@ if abs(Fraction(len(input_pcm) // 2, rate) - video_duration) > Fraction(1, rate)
 if args.server:
     command([sys.executable, root / "examples/python_client.py", normalized, "--server", args.server,
              "--output", spatial, "--report", report_path, "--state", directory / "client-state.json",
-             "--preset", "room", "--require-rust"])
+             "--require-rust"])
 else:
     aurora = root / ".venv/bin/aurora"
     if not aurora.is_file():
         aurora = shutil.which("aurora")
     if not aurora:
         raise SystemExit("build/install Aurora first: bash scripts/build-core.sh")
-    command([aurora, "convert", normalized, "--preset", "room", "--strength", "0.4", "--output", spatial,
+    command([aurora, "convert", normalized, "--output", spatial,
              "--sample-rate", str(rate), "--bit-depth", "24", "--timing-mode", "preserve", "--tail", "trim",
              "--report", report_path])
 report = json.loads(report_path.read_text())

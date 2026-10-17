@@ -248,8 +248,8 @@ def main() -> int:
     parser.add_argument("--report", type=Path)
     parser.add_argument("--state", type=Path, help="persistent resume state; default OUTPUT.state.json")
     parser.add_argument("--idempotency-key", help="optional logical operation key, persisted before upload")
-    parser.add_argument("--preset", default="room")
-    parser.add_argument("--strength", type=float, default=0.4)
+    parser.add_argument("--preset", default="V2")
+    parser.add_argument("--strength", type=float, help="0–1; omitted uses the preset default")
     parser.add_argument("--seed", type=int, default=20261016)
     parser.add_argument("--timeout", type=float, default=300, help="workflow deadline in seconds")
     parser.add_argument("--request-timeout", type=float, default=30)
@@ -261,7 +261,7 @@ def main() -> int:
     if args.idempotency_key is not None and (not args.idempotency_key.strip()
                                              or any(c in args.idempotency_key for c in "\r\n")):
         parser.error("--idempotency-key must be nonempty and contain no line breaks")
-    if (not math.isfinite(args.strength) or not 0 <= args.strength <= 1
+    if ((args.strength is not None and (not math.isfinite(args.strength) or not 0 <= args.strength <= 1))
             or not 0 <= args.seed <= 4294967295 or not 0 <= args.retries <= 10
             or any(not math.isfinite(v) or v <= 0 for v in
                    (args.timeout, args.request_timeout, args.poll_interval))):

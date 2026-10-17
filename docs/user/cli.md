@@ -66,7 +66,7 @@ uv run aurora timeline-verify --output outputs/timeline.json
 |---|---|
 | `ok`, `status`, `job_id`, `asset_id`, `preview` | 成功标志、succeeded；本地 ID 为 null；普通转换 preview 为 null |
 | `input`, `output` | `path`, `sha256`, `format`, `container`, `codec`, `sample_rate`, `channels`, `channel_layout`, `samples`, `duration_seconds`, `bit_depth`, `size_bytes`, `initial_padding`, `trailing_padding`；samples 是每声道帧数 |
-| `engine` | `name`, `version`, `git_commit`, `is_stub`, `block_size_frames`, `internal_sample_rate`, `hrtf`（name/version/sha256/license）；无 Git 元数据的安装可记录 unknown |
+| `engine` | `name`, `version`, `git_commit`, `is_stub`, `route`, `block_size_frames`, `internal_sample_rate`, `hrtf`（name/version/sha256/license）；原生核心版本来自已安装 aurora_core，git_commit 是运行时应用仓库提交号，无 Git 元数据的安装可记录 unknown |
 | `params` | 实际归一化的 api_version/mode/input/preset/strength/seed/output/timing/preview |
 | `timeline` | mode/tail_policy、engine_latency_samples/engine_tail_samples、extra_tail_samples_kept、input_samples/expected_output_samples/decoded_readback_samples/raw_decoded_samples、sample_diff/raw_sample_diff、codec_priming_samples/codec_trailing_padding_samples、residual_priming_shift_samples、compensation_strategy/tolerance_samples/sync_within_tolerance/sync_warning |
 | `loudness_before`, `loudness_after` | integrated_lufs/loudness_range_lu/true_peak_dbtp/is_silent/method；静音测量可能为 null |

@@ -68,7 +68,7 @@ test("真实音乐 → Rust V2 试听与同步 A/B → WAV 导出下载；四种
     expect(comparison.a.length).toBe(comparison.a.sampleRate * 10);
     expect(comparison.differenceRms).toBeGreaterThan(1e-5);
     expect(comparison.totalSources).toBe(evidence.length * 2 + 2); // A/B toggles do not restart sources.
-    await expect(page.locator(".ab-controls .stub-label")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "B 效果" }).locator(".stub-label")).toHaveCount(0);
     const previewReportPromise = page.waitForEvent("download");
     await preview.getByRole("button", { name: "下载报告", exact: true }).click();
     await (await previewReportPromise).saveAs(`${qa}/gui-reports/${filename}.preview.json`);
