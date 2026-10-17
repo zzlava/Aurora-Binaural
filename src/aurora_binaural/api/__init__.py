@@ -544,26 +544,7 @@ def create_app(
                 with contextlib.suppress(OSError):
                     tmp_upload_path.unlink(missing_ok=True)
 
-    @app.post(
-        "/v1/jobs",
-        status_code=status.HTTP_202_ACCEPTED,
-        response_model=JobStatusResponseModel,
-        responses={
-            401: {"model": ErrorResponseModel},
-            404: {"model": ErrorResponseModel},
-            409: {"model": ErrorResponseModel},
-            410: {"model": ErrorResponseModel},
-            422: {"model": ErrorResponseModel},
-        },
-        dependencies=[Depends(require_api_key)],
-        summary="Create an asynchronous spatial rendering job (HTTP 202)",
-        tags=["v1"],
-    )
-    async def create_job(
-        params: AuroraParams,
-        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-    ) -> JobStatusResponseModel:
-        """Create an asynchronous job with `Idempotency-Key` deduplication and conflict protection."""
+    def enqueue_job(params: AuroraParams, idempotency_key: str | None) -> JobStatusResponseModel:
         if params.input is None or not params.input.asset_id:
             raise ApiServiceError(
                 "HTTP job creation requires 'input.asset_id'.",
@@ -600,6 +581,31 @@ def create_app(
         return JobStatusResponseModel.model_validate(job_record.to_api_dict())
 
     @app.post(
+        "/v1/jobs",
+        status_code=status.HTTP_202_ACCEPTED,
+        response_model=JobStatusResponseModel,
+        responses={
+            401: {"model": ErrorResponseModel},
+            404: {"model": ErrorResponseModel},
+            409: {"model": ErrorResponseModel},
+            410: {"model": ErrorResponseModel},
+            422: {"model": ErrorResponseModel},
+        },
+        dependencies=[Depends(require_api_key)],
+        summary="Create an asynchronous spatial rendering job (HTTP 202)",
+        tags=["v1"],
+    )
+    async def create_job(
+        params: AuroraParams,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> JobStatusResponseModel:
+        """Create an asynchronous job with `Idempotency-Key` deduplication and conflict protection."""
+        if params.preview is not None:
+            raise ApiServiceError("试听任务请通过 POST /v1/previews 创建。", http_status=422,
+                                  error_code="INVALID_PARAMETERS", exit_code=ExitCode.PARAM_ERROR)
+        return enqueue_job(params, idempotency_key)
+
+    @app.post(
         "/v1/previews", status_code=202, response_model=JobStatusResponseModel,
         dependencies=[Depends(require_api_key)], tags=["v1"],
         responses={401: {"model": ErrorResponseModel}, 422: {"model": ErrorResponseModel}},
@@ -619,7 +625,7 @@ def create_app(
         if asset is not None and request.start_seconds >= asset.duration_seconds:
             raise ApiServiceError("试听起点必须小于音频时长。", http_status=422,
                                   error_code="PREVIEW_OUT_OF_RANGE", exit_code=ExitCode.PARAM_ERROR)
-        return await create_job(params, idempotency_key)
+        return enqueue_job(params, idempotency_key)
 
     @app.get(
         "/v1/jobs/{id}",
