@@ -83,6 +83,24 @@ hrtf_ref_m = 1.5
 near_lf_hz = 280.0
 near_lf_max_db = 4.0
 near_ild_scale = 1.0
+# Input attenuation at strength 1, before spatial processing. The engine
+# scales it by the live bed-gain sum over this layout's strength-1 sum, so
+# strength 0 applies 0 dB and a louder room macro asks for more attenuation.
+# Calibrated so a 0 dBFS loud master keeps limiter gain reduction within
+# 2 dB (95% of the time within 0.5 dB). See qa/p1/cursor/REPORT-P1c.md.
+headroom_db = 10.5
+# Mono low shelf and peaking trim on the path below crossover_hz. Both
+# gains are the strength-1 values and follow the same bed-gain scale as
+# headroom_db, so strength 0 applies 0 dB. The shelf lifts the deep bass
+# that never enters the spatial paths. The peak trims the crossover bump.
+# A single curve cannot put pink noise and a loud master inside ±1 dB at
+# every third octave: their spatial tilts differ by more than 2 dB. These
+# values are the minimax fit. See qa/p1/cursor/REPORT-P1c.md.
+lf_shelf_hz = 90.0
+lf_shelf_db = 2.4
+lf_peak_hz = 180.0
+lf_peak_db = -2.2
+lf_peak_q = 0.8
 
 # Linear curves. per_unit is the change for one full step of the control.
 # min / max are the safety limits (ADR 0005). The limiter stays on.

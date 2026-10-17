@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>P1c 低频试听</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; line-height: 1.5; }
+    button { margin: 0.25rem 0.4rem 0.25rem 0; padding: 0.4rem 0.7rem; }
+    button[aria-pressed="true"] { outline: 2px solid #1f4b99; }
+    audio { width: 100%; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <h1>P1c 低频试听</h1>
+  <p>同一首里，原声、旧版 V3、新版 V3 已按 BS.1770 对齐响度。页面只有一个播放器，切换音源会停在当前时间附近继续播。</p>
+  <audio id="player" controls preload="none"></audio>
+  <p id="label">还没有选择音源</p>
+  <div id="groups"></div>
+  <script>
+    const groups = [
+      ["holdout_electronic", "holdout electronic"],
+      ["real_music", "real music"],
+    ];
+    const kinds = [
+      ["dry", "原声"],
+      ["v3_before", "旧版 V3"],
+      ["v3_new", "新版 V3"],
+    ];
+    const player = document.querySelector("#player");
+    const label = document.querySelector("#label");
+    const root = document.querySelector("#groups");
+    let current = null;
+
+    function select(src, text, button) {
+      const at = current ? player.currentTime : 0;
+      current = src;
+      for (const el of root.querySelectorAll("button")) el.setAttribute("aria-pressed", "false");
+      button.setAttribute("aria-pressed", "true");
+      label.textContent = text;
+      player.src = src;
+      player.load();
+      player.addEventListener("loadedmetadata", function once() {
+        player.removeEventListener("loadedmetadata", once);
+        if (at > 0 && Number.isFinite(player.duration)) {
+          player.currentTime = Math.min(at, player.duration);
+        }
+        player.play().catch(() => {});
+      });
+    }
+
+    for (const [id, title] of groups) {
+      const heading = document.createElement("h2");
+      heading.textContent = title;
+      root.appendChild(heading);
+      for (const [kind, name] of kinds) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = name;
+        const src = `${id}_${kind}.wav`;
+        button.addEventListener("click", () => select(src, `${title} · ${name}`, button));
+        root.appendChild(button);
+      }
+    }
+  </script>
+</body>
+</html>

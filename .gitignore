@@ -49,3 +49,6 @@ Claude outputs/
 # 用户放在仓库根目录的试听音频（不入库，避免阻塞合并）
 /*.wav
 /*.flac
+
+# P1c 低频试听样本（本地生成，见 qa/p1/cursor/REPORT-P1c.md）
+qa/p1/cursor/lf/*.wav

@@ -85,6 +85,10 @@ class EngineMetadata(BaseModel):
     block_size_frames: int = Field(default=1024, gt=0, description="Block size in frames used during block processing.")
     internal_sample_rate: int = Field(default=48000, gt=0, description="Engine processing sample rate in Hz.")
     hrtf: HrtfDataInfo = Field(default_factory=HrtfDataInfo, description="HRTF dataset metadata.")
+    headroom_db: float = Field(
+        default=0.0,
+        description="Deterministic input attenuation in dB applied before spatial processing. 0 when bypassed or on the stub.",
+    )
 
 
 class TimelineVerification(BaseModel):

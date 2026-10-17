@@ -63,6 +63,16 @@ pub struct RouteVRow {
     pub fixed_eq: Option<FixedEq>,
     /// Control values that reproduce this preset's stored parameters.
     pub controls: MacroControls,
+    /// Input attenuation in dB at strength 1 with this preset's stored
+    /// anchors. The engine scales it with the live bed-gain sum.
+    pub headroom_db: f64,
+    /// Low-shelf boost on the mono path below the crossover, at strength 1.
+    pub lf_shelf_hz: f64,
+    pub lf_shelf_db: f64,
+    /// Peaking trim on that same mono path, at strength 1. 0 dB disables it.
+    pub lf_peak_hz: f64,
+    pub lf_peak_db: f64,
+    pub lf_peak_q: f64,
 }
 
 /// User-facing controls, each in `[0, 1]`.
@@ -231,6 +241,12 @@ pub struct MappedRouteV {
     pub delays_ms: Vec<f64>,
     pub eq_bands_hz: Vec<f64>,
     pub eq_gain_db: Vec<f64>,
+    pub headroom_db: f64,
+    pub lf_shelf_hz: f64,
+    pub lf_shelf_db: f64,
+    pub lf_peak_hz: f64,
+    pub lf_peak_db: f64,
+    pub lf_peak_q: f64,
 }
 
 impl RouteVTable {
@@ -395,6 +411,12 @@ pub fn map_route_v(
         delays_ms: delays_ms.to_vec(),
         eq_bands_hz,
         eq_gain_db,
+        headroom_db: row.headroom_db.max(0.0),
+        lf_shelf_hz: row.lf_shelf_hz.max(10.0),
+        lf_shelf_db: row.lf_shelf_db,
+        lf_peak_hz: row.lf_peak_hz.max(10.0),
+        lf_peak_db: row.lf_peak_db,
+        lf_peak_q: row.lf_peak_q.max(0.1),
     }
 }
 
@@ -537,6 +559,12 @@ fn parse_row(
         hf_direct_end_hz: num("hf_direct_end_hz", 0.0),
         fixed_eq: parse_fixed_eq(row.get("fixed_eq")),
         controls: parse_controls(row),
+        headroom_db: num("headroom_db", 0.0).max(0.0),
+        lf_shelf_hz: num("lf_shelf_hz", 70.0).max(10.0),
+        lf_shelf_db: num("lf_shelf_db", 0.0),
+        lf_peak_hz: num("lf_peak_hz", 125.0).max(10.0),
+        lf_peak_db: num("lf_peak_db", 0.0),
+        lf_peak_q: num("lf_peak_q", 0.7).max(0.1),
     })
 }
 

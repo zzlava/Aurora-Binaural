@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import math
 import importlib.metadata
 import inspect
 import os
@@ -284,23 +285,41 @@ def create_renderer(
     return RustRenderer(hrtf_dir=hrtf_dir)
 
 
+def _renderer_headroom_db(renderer: Renderer) -> float:
+    """Read the engine's target input attenuation, or 0 when it has none."""
+    native = getattr(renderer, "_native", None)
+    reader = getattr(native, "headroom_db", None)
+    if reader is None:
+        return 0.0
+    try:
+        value = float(reader())
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(value) or value < 0.0:
+        return 0.0
+    return value
+
+
 def renderer_metadata(renderer: Renderer, *, git_commit: str, block_size: int, sample_rate: int) -> Any:
     """Report the renderer actually used, including verified native HRTF provenance."""
     from aurora_binaural.report import EngineMetadata, HrtfDataInfo
 
     common = {"git_commit": git_commit, "block_size_frames": block_size, "internal_sample_rate": sample_rate}
+    headroom_db = _renderer_headroom_db(renderer)
     if isinstance(renderer, StubRenderer):
-        return EngineMetadata(**common)
+        return EngineMetadata(**common, headroom_db=headroom_db)
     if isinstance(renderer, RustRenderer):
         with renderer.hrtf_source.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
         return EngineMetadata(
             **common, name="aurora_core", version=core_version(renderer._module),
             route=renderer._selection[0] if renderer._selection else None,
-            is_stub=False, hrtf=HrtfDataInfo(name="SADIE II D1", version="D1-48K-256tap",
+            is_stub=False, headroom_db=headroom_db,
+            hrtf=HrtfDataInfo(name="SADIE II D1", version="D1-48K-256tap",
                                            sha256=digest, license="Apache-2.0"),
         )
     return EngineMetadata(**common, name=type(renderer).__name__, version="custom", is_stub=False,
+                          headroom_db=headroom_db,
                           hrtf=HrtfDataInfo(name="custom renderer; unspecified HRTF", version="unknown"))
 
 
