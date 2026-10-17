@@ -1,0 +1,79 @@
+# Route V presets. V2 is the default: anchor G (wide field, four height
+# speakers, ceiling reflections) with the voice kept closer than the room.
+# V1 is that same space with the voice farther, so the closeness can be
+# checked. V3 is V2 with a stronger height layer.
+#
+# strength scales wide / surround / height / early / late gains linearly
+# and opens front_az from 30 degrees to front_az. strength 0 bypasses.
+# It does not scale center_distance_m or direct_room_send_db: those are
+# the voice-distance controls, not the space intensity.
+#
+# direct_room_send_db is how many dB the coherent direct path (the voice
+# body) is turned down before it enters early reflections and the FDN,
+# relative to the incoherent bed. center_distance_m sets a mild proximity
+# shelf and parallax ILD on the center pair. center_spread_deg is the
+# half-angle of that pair; it stays inside front_az.
+#
+# room_db is the late-reverb gain in dB against the direct speakers
+# (negative means a higher direct-to-reverb ratio). early_db is the same
+# for the image-source taps. [layout] is the shared G baseline; each
+# preset only writes what it changes.
+
+version = 1
+
+[engine]
+decorrelator_delays_ms = [3.2, 6.4, 10.0, 13.5, 4.4, 7.6, 11.2, 14.8, 3.8, 6.0, 9.2, 12.4]
+
+[layout]
+front_az = 45.0
+wide_az = 90.0
+surround_az = 130.0
+wide_db = 1.0
+surround_db = -4.0
+surround_delay_ms = 18.0
+height_el = 45.0
+height_az = [45.0, -45.0, 135.0, -135.0]
+height_db = -6.0
+height_direct_db = -14.0
+center_height_db = -22.0
+height_rear_delay_ms = 12.0
+direct_height_delay_ms = 9.0
+center_distance_m = 0.90
+center_spread_deg = 28.0
+center_far_m = 2.0
+direct_room_send_db = -8.0
+early_db = 7.0
+room_db = 4.0
+t60 = 0.95
+ceiling_db = 4.0
+floor_db = 0.0
+crossover_hz = 150.0
+coherence_floor = 0.22
+coherence_power = 2.0
+pan_gamma = 1.0
+absorption = 0.22
+early_order = 1
+early_taps = 12
+room_size_m = [7.0, 4.6, 2.7]
+listener_m = [2.2, 2.3, 1.25]
+source_m = [4.8, 2.3, 1.25]
+hrtf_ref_m = 1.5
+near_lf_hz = 280.0
+near_lf_max_db = 4.0
+near_ild_scale = 1.0
+
+[V2]
+name = "G，人声更近"
+
+[V1]
+name = "V2，人声更远"
+center_distance_m = 2.20
+center_spread_deg = 45.0
+direct_room_send_db = 0.0
+
+[V3]
+name = "V2，高度更强"
+height_db = -2.0
+height_el = 55.0
+ceiling_db = 6.0
+height_direct_db = -10.0
