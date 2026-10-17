@@ -84,3 +84,58 @@ route_v/block_256  time: [261.10 µs  261.50 µs  261.91 µs]
 - `cargo fmt --all -- --check` 通过
 - `cargo clippy --all-targets --offline -- -D warnings` 通过
 - `cargo test -p aurora-dsp --lib`：40 passed
+
+## P1a-cursor-05
+
+日期：2026-10-17。同一分支 `agent/cursor/P1a-03`。审查记录 `qa/p1/REVIEW-cursor-p1a-04.md` 的两个阻断都在这节里收口。
+
+### B1：可变块大小
+
+出错的是 `StreamingUpmix` 的输入 FIFO（`in_l` / `in_r`）。均匀分块卷积的输出 FIFO 按样本弹出，占用最高是 `partition + 1`，容量是 `2 * partition + 2`，块长变化不会把它写满。
+
+上混的 hop 是 256，FFT 是 1024。输入容量是 `n_fft + max(max_block, n_fft)`：`max_block` 为 4096 时是 5120。`compact_input` 原先只在「已经送进完结帧、还堆在缓冲前面」的前缀**长于一个 hop** 时才把它移走。前缀正好是 256 点时函数直接返回。缓冲里于是同时有这段死样本，和还没构成下一帧的活尾巴（短于 1024）。下一块接近 4096 时，三者加起来超过 5120。
+
+`append` 把装不下的尾部丢掉，`consumed` 只增加实际写入的点数，`emit` 的 `read` 仍按宿主给的整块长度前进。从下一块开始，STFT 帧的时间线比输出时间线少了丢掉的那些样本，后面整段都对不上按 256 处理的结果。误差大约是整段波形错位，不是尾巴上的舍入。
+
+种子 3 就是 `numpy.random.default_rng(3).integers(1, 4097, size=200)`，`prepare` 的 `max_block` 为 4096。第 43 块（从 0 数）长 3988，起点样本 83101，前一块是 316。进入这块时缓冲里有 1181 点，死前缀 `drop` 正好是 256，压缩不发生，只剩 3939 个空位，尾部 49 个样本被丢掉。审查脚本看到的第一个错样本在下一块（起点 87089，块长 3867，样本 87401）：丢掉的洞要等下一帧做完 IFFT，再经过 HRIR 的分区延时，才会出现在最终输出里。
+
+修复没有把容量改大。`compact_input` 只要死前缀长度大于 0 就收回。收回之后活尾巴短于 1024，再加一块不超过 `max_block`，现有的 5120 点够用。重叠相加的累加器原先也是「死前缀短于一个 FFT 就不压缩」，同样改成有间隙就收回，避免后面的帧写过 `acc_cap`。种子 3 的占用模拟里累加器没有越界，当时写爆的是输入 FIFO。
+
+回归：
+
+- 种子 3 的 200 块写进测试，并断言第 42–44 块是 316、3988、3867。路线 B、路线 V、以及上混本身，都和固定块长 256 比较，误差 ≤ −100 dBFS。
+- 另外 200 个种子（0 到 199），`max_block` 取 512 和 4096，块长用同一个 NumPy 整数生成器在 1 到 `max_block` 之间抽取，每条序列至少 8192 个样本。路线 B 和路线 V 都对固定块长 256。
+
+### B2：路线 B 的真峰值
+
+路线 B 的限制器原来把检测天花板放在 −1 dBTP。8 点四倍多相比 `scipy.signal.resample_poly` 少看零点几 dB，Codex 在 `holdout_electronic`、预设 room、强度 0.4、SADIE、种子 20261016 上用 FFmpeg ebur128 读到 −0.6 dBTP。路线 B 现在和路线 V 共用 `DETECTOR_CEILING_DBTP`（−1.8）。低于这个天花板时增益仍是 1，输出仍是 32 点纯延时。
+
+测量脚本 `qa/p1/cursor/measure_route_b_truepeak.py`。真峰值是原型的 `true_peak_dbtp`（`resample_poly` 四倍过采样）。扫频是 20 Hz 到 20 kHz 的 5 秒对数正弦，振幅 1（0 dBFS），左右同相，两端各 5 ms 淡化，免得把突变的咔嗒算进峰值。
+
+| 信号 | 强度 | 真峰值 |
+|---|---|---|
+| holdout_electronic | 0.4 | −1.407 dBTP |
+| holdout_electronic | 1.0 | −1.506 dBTP |
+| 0 dBFS 对数扫频 | 0.4 | −1.659 dBTP |
+| 0 dBFS 对数扫频 | 1.0 | −1.793 dBTP |
+
+四行都 ≤ −1.0 dBTP。强度 0.4 的电子乐从 −0.6 降到 −1.407，和天花板下移 0.8 dB 一致。
+
+### 门禁重跑
+
+与原型路线 V 的对照按 `qa/p1/cursor/compare_route_v.py` 再跑了一遍。Rust 仍是 256 样本逐块。固定块长不会踩到上面的 FIFO 条件，表和上一节一致：不计限制器时最差 1/3 倍频程差 **0.007 dB**，最差 IACC 差 **0.0000**。电子乐六行的真峰值仍 ≤ −1 dBTP，最热的是 V1 强度 1.0 的 −1.10 dBTP。标了限制器的 7 行，关掉限制器之后都回到门内（人声 V1 强度 1.0 是 0.004 dB / IACC 0.0000，六行电子乐都是 0.001 dB / IACC 0.0000）。
+
+在 `core/` 下：
+
+- `cargo fmt --all -- --check` 通过
+- `cargo clippy --all-targets --offline -- -D warnings` 通过
+- `cargo test -p aurora-dsp --lib`：47 passed（原先 40，加上种子 3 和 200 种子的块长测试）
+
+`cargo bench -p aurora-dsp --bench realtime`，criterion，Mac ARM64，单线程。48 kHz，块大小 256，计时只有 `process`。路线 V 是预设 V2、强度 1。
+
+```text
+route_b/block_256  time: [119.52 µs  119.76 µs  120.03 µs]
+route_v/block_256  time: [260.85 µs  260.98 µs  261.12 µs]
+```
+
+一块是 5.333 ms。路线 V 按中位 260.98 µs 是 **20.4×**（门槛 10×），区间慢端 261.12 µs 仍是 20.4×。路线 B 按中位 119.76 µs 是 **44.5×**。基准信号是常数 0.2 / 0.1，低于 −1.8 dBTP，走的仍是增益为 1 的纯延时；criterion 相对上次保存的基线给路线 B 标了约 +1.7%，路线 V 没有变化。

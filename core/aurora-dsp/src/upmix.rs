@@ -94,6 +94,10 @@ impl StreamingUpmix {
         let forward = planner.plan_fft_forward(n_fft);
         let inverse = planner.plan_fft_inverse(n_fft);
         let bins = n_fft / 2 + 1;
+        // After `compact_input`, the live tail is shorter than one FFT. One
+        // host block is at most `max_block`. The extra `max(max_block, n_fft)`
+        // term is that block, not spare room for a stale prefix — see
+        // `compact_input`.
         let acc_cap = 4 * n_fft + max_block.max(n_fft);
         let in_cap = n_fft + max_block.max(n_fft);
         let mut up = Self {
@@ -267,6 +271,16 @@ impl StreamingUpmix {
         if self.in_len + n > self.in_l.len() {
             self.compact_input();
         }
+        // A block larger than `max_block` is a broken prepare contract. Truncating
+        // here used to drop the tail and advance `consumed` by less than `read`,
+        // so every later STFT frame was shifted against the output timeline.
+        debug_assert!(
+            self.in_len + n <= self.in_l.len(),
+            "upmix input fifo overflow: live {} + block {} > cap {}",
+            self.in_len,
+            n,
+            self.in_l.len()
+        );
         let room = self.in_l.len() - self.in_len;
         let n = n.min(room);
         let end = self.in_len + n;
@@ -495,7 +509,14 @@ impl StreamingUpmix {
     fn overlap(&mut self, start: i64, stem: usize) {
         let end = start + self.n_fft as i64;
         self.ensure_acc(end);
-        let local = (start - self.acc_origin) as usize;
+        let local_i = start - self.acc_origin;
+        debug_assert!(
+            local_i >= 0 && local_i as usize + self.n_fft <= self.acc_cap,
+            "upmix overlap-add out of range: start {start} origin {} cap {}",
+            self.acc_origin,
+            self.acc_cap
+        );
+        let local = local_i.max(0) as usize;
         let row = stem * self.acc_cap;
         for i in 0..self.n_fft {
             self.acc[row + local + i] += self.frame_buf[i];
@@ -547,9 +568,21 @@ impl StreamingUpmix {
     }
 
     fn compact_input(&mut self) {
+        // `keep` is the first sample of the next frame. Everything before it
+        // has already been windowed. Reclaim it whenever it is sitting in
+        // front of the live tail.
+        //
+        // The previous test was `drop > hop`. That left exactly one hop (256
+        // samples) of dead input in the FIFO. Capacity is `n_fft + max_block`
+        // once `max_block` exceeds `n_fft`, so the live tail (< `n_fft`) plus
+        // that dead hop plus a host block near `max_block` does not fit.
+        // Seed 3 (`numpy.random.default_rng(3)`, blocks in 1..=4096) hits this
+        // on block 43: 1181 samples buffered, `drop == 256`, the next block is
+        // 3988, and 49 samples are discarded. `read` still advances by the full
+        // block, so from the following block the STFT timeline is shifted.
         let keep = self.frame * self.hop as i64;
         let drop = keep - self.in_origin;
-        if drop > self.hop as i64 && (drop as usize) < self.in_len {
+        if drop > 0 && (drop as usize) < self.in_len {
             let d = drop as usize;
             self.in_l.copy_within(d..self.in_len, 0);
             self.in_r.copy_within(d..self.in_len, 0);
@@ -559,31 +592,37 @@ impl StreamingUpmix {
     }
 
     fn compact_acc(&mut self) {
+        // Same pattern as the input FIFO: a stale prefix shorter than one FFT
+        // used to be retained, and a later overlap-add could run past `acc_cap`.
+        // Samples before `keep` have already been emitted (with one extra FFT
+        // of margin). Drop any positive gap.
         let keep = (self.read - self.latency as i64 - self.n_fft as i64).max(0);
         let drop = keep - self.acc_origin;
-        if drop > self.n_fft as i64
-            && (drop as usize) < self.acc_end
-            && (drop as usize) < self.acc_cap
-        {
-            let d = drop as usize;
-            let end = self.acc_end.min(self.acc_cap);
-            if d >= end {
-                return;
-            }
-            for s in 0..N_STEMS {
-                let row = s * self.acc_cap;
-                self.acc.copy_within(row + d..row + end, row);
-                for i in (end - d)..self.acc_cap {
-                    self.acc[row + i] = 0.0;
-                }
-            }
-            self.w.copy_within(d..end, 0);
-            for i in (end - d)..self.acc_cap {
-                self.w[i] = 0.0;
-            }
-            self.acc_origin = keep;
-            self.acc_end = end - d;
+        if drop <= 0 {
+            return;
         }
+        let d = drop as usize;
+        if d >= self.acc_end || d >= self.acc_cap {
+            self.acc.fill(0.0);
+            self.w.fill(0.0);
+            self.acc_origin = keep;
+            self.acc_end = 0;
+            return;
+        }
+        let end = self.acc_end.min(self.acc_cap);
+        for s in 0..N_STEMS {
+            let row = s * self.acc_cap;
+            self.acc.copy_within(row + d..row + end, row);
+            for i in (end - d)..self.acc_cap {
+                self.acc[row + i] = 0.0;
+            }
+        }
+        self.w.copy_within(d..end, 0);
+        for i in (end - d)..self.acc_cap {
+            self.w[i] = 0.0;
+        }
+        self.acc_origin = keep;
+        self.acc_end = end - d;
     }
 }
 
@@ -661,6 +700,51 @@ mod tests {
             worst = worst.max((g - e).abs());
         }
         assert!(worst < 1e-5, "upmix worst abs {worst}");
+    }
+
+    #[test]
+    fn seed3_numpy_blocks_match_fixed_256() {
+        // numpy.random.default_rng(3).integers(1, 4097, size=200)
+        // Block 43 is 3988 samples while the input FIFO still holds one
+        // unreclaimed hop. That used to drop 49 samples and shift the rest.
+        let max_block = 4096usize;
+        let mut rng = crate::rng::NumpyGenerator::new(3);
+        let blocks: Vec<usize> = (0..200)
+            .map(|_| rng.integers(1, (max_block as i64) + 1) as usize)
+            .collect();
+        assert_eq!(blocks[42], 316);
+        assert_eq!(blocks[43], 3988);
+        assert_eq!(blocks[44], 3867);
+        let n: usize = blocks.iter().sum();
+        let (left, right) = sine_pair(n);
+        let render = |blocks: &[usize]| {
+            let mut up = StreamingUpmix::new(48_000.0, max_block, 60.8, 0.4);
+            let mut stems = vec![0.0; N_STEMS * n];
+            let mut o = 0;
+            for &block in blocks {
+                let m = block.min(n - o);
+                up.process(&left[o..o + m], &right[o..o + m], &mut stems, n, o);
+                o += m;
+            }
+            stems
+        };
+        let mut fixed = Vec::with_capacity(n.div_ceil(256));
+        let mut left_n = n;
+        while left_n > 0 {
+            let m = 256.min(left_n);
+            fixed.push(m);
+            left_n -= m;
+        }
+        let a = render(&fixed);
+        let b = render(&blocks);
+        let mut worst = -1000.0_f64;
+        for (u, v) in a.iter().zip(b.iter()) {
+            let db = 20.0 * (u - v).abs().max(1e-20).log10();
+            if db > worst {
+                worst = db;
+            }
+        }
+        assert!(worst <= -100.0, "seed 3 upmix {worst} dBFS");
     }
 
     #[test]

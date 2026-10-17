@@ -18,7 +18,7 @@ use crate::error::DspError;
 use crate::fdn::FdnReverb;
 use crate::hrir::HrirPack;
 use crate::interpolate::idw_render;
-use crate::limiter::{TruePeakLimiter, LOOKAHEAD};
+use crate::limiter::{TruePeakLimiter, DETECTOR_CEILING_DBTP, LOOKAHEAD};
 use crate::preset_v::{map_route_v, MappedRouteV, RouteVTable};
 use crate::processor::{Params, Processor, RenderConfig};
 use crate::rng::numpy_round;
@@ -302,9 +302,7 @@ impl Processor for RouteV {
             early: Vec::new(),
             fdn: FdnReverb::new(sample_rate, row.t60, config.seed),
             fir: FirStereo::empty(),
-            // Detector ceiling sits ~0.7 dB under scipy's 4× resample, so an
-            // internal −1.8 dBTP still measures at or under −1 dBTP.
-            limiter: TruePeakLimiter::with_ceiling(sample_rate, -1.8),
+            limiter: TruePeakLimiter::with_ceiling(sample_rate, DETECTOR_CEILING_DBTP),
             center_i: N_SECTORS / 2,
             lateral_idx: [0; N_LATERAL],
             in_l: vec![0.0; mb],

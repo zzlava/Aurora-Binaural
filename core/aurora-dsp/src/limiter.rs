@@ -1,4 +1,8 @@
-//! 4× oversampled true-peak limiter, ceiling −1 dBTP.
+//! 4× oversampled true-peak limiter.
+//!
+//! [`TruePeakLimiter::new`] aims at −1 dBTP. The 8-tap 4× polyphase reads low
+//! compared with `scipy.signal.resample_poly`, so both routes hold
+//! [`DETECTOR_CEILING_DBTP`] and a scipy measurement stays at or under −1.
 //!
 //! Stereo channels share one gain. Attack is instant inside the lookahead
 //! window; release is about 40 ms at the oversampled rate, matching the
@@ -7,6 +11,9 @@
 //! The lookahead is [`LOOKAHEAD`] samples and is part of `latency_samples`.
 
 pub const LOOKAHEAD: usize = 32;
+/// Detector ceiling passed by both routes. Holding the short polyphase here
+/// keeps a 4× `resample_poly` measurement at or under −1.0 dBTP.
+pub const DETECTOR_CEILING_DBTP: f64 = -1.8;
 const OS: usize = 4;
 const TAPS: usize = 8;
 

@@ -26,6 +26,9 @@ pub mod route_v;
 pub mod upmix;
 mod ziggurat_tables;
 
+#[cfg(test)]
+mod block_fuzz;
+
 pub use chain::RouteB;
 pub use processor::{Params, Processor, RenderConfig};
 pub use route_v::RouteV;
