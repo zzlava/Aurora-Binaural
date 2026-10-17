@@ -52,6 +52,84 @@ def _image_sources(
     return out[:12]
 
 
+def shoebox_image_taps(
+    source: np.ndarray,
+    listener: np.ndarray,
+    size: np.ndarray,
+    max_order: int = 1,
+    absorption: float = 0.22,
+    n_keep: int = 12,
+    c: float = 343.0,
+) -> list[tuple[float, float, float, float]]:
+    """Allen & Berkley image sources for route V.
+
+    Route B keeps ``_image_sources``. This one uses the even/odd formula
+    ``n*L + src`` / ``n*L + (L - src)``, so the near wall, the far wall,
+    the ceiling and the floor each produce a first-order tap.
+
+    Returns the earliest ``n_keep`` taps, after reserving the highest
+    ceiling tap and the lowest floor tap. Each item is
+    ``(delay_s, gain, azimuth_deg, elevation_deg)``. Gain is
+    ``(1 - absorption) ** bounces / distance``.
+    """
+    source = np.asarray(source, dtype=np.float64)
+    listener = np.asarray(listener, dtype=np.float64)
+    size = np.asarray(size, dtype=np.float64)
+    out: list[tuple[float, float, float, float]] = []
+    for nx in range(-max_order, max_order + 1):
+        for ny in range(-max_order, max_order + 1):
+            for nz in range(-max_order, max_order + 1):
+                if nx == 0 and ny == 0 and nz == 0:
+                    continue
+                image = np.array(
+                    [
+                        _image_coord(source[0], nx, size[0]),
+                        _image_coord(source[1], ny, size[1]),
+                        _image_coord(source[2], nz, size[2]),
+                    ],
+                    dtype=np.float64,
+                )
+                vec = image - listener
+                dist = float(np.linalg.norm(vec))
+                if dist < 1e-6:
+                    continue
+                bounces = abs(nx) + abs(ny) + abs(nz)
+                gain = ((1.0 - absorption) ** bounces) / dist
+                delay = dist / c
+                az = float(np.rad2deg(np.arctan2(vec[1], vec[0])))
+                el = float(np.rad2deg(np.arcsin(np.clip(vec[2] / dist, -1.0, 1.0))))
+                out.append((delay, gain, az, el))
+    out.sort(key=lambda t: t[0])
+    return _reserve_vertical(out, n_keep)
+
+
+def _image_coord(src: float, n: int, length: float) -> float:
+    if n % 2 == 0:
+        return n * length + src
+    return n * length + (length - src)
+
+
+def _reserve_vertical(
+    taps: list[tuple[float, float, float, float]], n_keep: int
+) -> list[tuple[float, float, float, float]]:
+    if n_keep <= 0 or len(taps) <= n_keep:
+        return taps
+    ceiling = max(taps, key=lambda t: t[3])
+    floor = min(taps, key=lambda t: t[3])
+    chosen: list[tuple[float, float, float, float]] = []
+    for tap in (ceiling, floor):
+        if abs(tap[3]) >= 20.0 and tap not in chosen:
+            chosen.append(tap)
+    for tap in taps:
+        if tap in chosen:
+            continue
+        chosen.append(tap)
+        if len(chosen) >= n_keep:
+            break
+    chosen.sort(key=lambda t: t[0])
+    return chosen
+
+
 class EarlyReflections:
     def __init__(
         self,
@@ -139,14 +217,17 @@ class FDNReverb:
     block-size consistent.
     """
 
-    def __init__(self, sr: int, params: RoomParams, ir_len: int | None = None):
+    def __init__(self, sr: int, params: RoomParams, ir_len: int | None = None, ir: np.ndarray | None = None):
         self.sr = sr
         self.params = params
         self.level = 1.0  # already in baked IR
-        ir_len = ir_len or int(min(max(params.t60 * 2.0, 0.2), 0.45) * sr)
-        impulse = np.zeros(ir_len, dtype=np.float64)
-        impulse[0] = 1.0
-        self.ir = _run_fdn_stream(impulse, sr, params)  # (2, ir_len)
+        if ir is not None:
+            self.ir = np.asarray(ir, dtype=np.float64)
+        else:
+            ir_len = ir_len or int(min(max(params.t60 * 2.0, 0.2), 0.45) * sr)
+            impulse = np.zeros(ir_len, dtype=np.float64)
+            impulse[0] = 1.0
+            self.ir = _run_fdn_stream(impulse, sr, params)  # (2, ir_len)
         self._hist = np.zeros((2, self.ir.shape[1] - 1), dtype=np.float64)
 
     def reset(self) -> None:

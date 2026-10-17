@@ -1,4 +1,4 @@
-"""Block-processing render engine for routes A / B / C."""
+"""Block-processing render engine for routes A / B / C / V."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ from .fixed_eq import apply_stereo, minphase_from_bands
 from .hrtf import HrtfDataset, apply_equalization, interpolate_hrir, load_sofa
 from .room import EarlyReflections, FDNReverb, RoomParams
 from .strength import StrengthParams, map_strength
+from .route_v import RouteVProcessor
 from .upmix import decorrelate, set_decorrelation_delays, streaming_upmix_file
 
 # Process-wide caches (seeded / path-keyed) to keep the sample matrix tractable
@@ -57,7 +58,7 @@ def _get_hrtf(path: Path, name: str, eq_mode: str, sr: int, directional_power: b
 
 @dataclass
 class RenderConfig:
-    route: str  # "A" | "B" | "C"
+    route: str  # "A" | "B" | "C" | "V"
     strength: float = 0.4
     preset: str = "room"
     hrtf_path: Path | None = None
@@ -94,6 +95,7 @@ class Processor:
         self._spatial_latency = 0
         self._hrir_delay = 0
         self._eq_fir: np.ndarray | None = None
+        self._route_v: RouteVProcessor | None = None
 
     def prepare(self, sample_rate: int, max_block: int, config: RenderConfig) -> None:
         if sample_rate != SAMPLE_RATE:
@@ -108,6 +110,14 @@ class Processor:
             sample_rate,
             config.directional_power,
         )
+        self._route_v = None
+        if config.route.upper() == "V":
+            self._route_v = RouteVProcessor()
+            self._route_v.prepare(self.ds, config)
+            self.params = None
+            self._latency = self._route_v.latency
+            self.last_stats = {}
+            return
         self.params = map_strength(config.strength, config.preset, config.hrtf_name)
         if self.params.delays_ms:
             set_decorrelation_delays(self.params.delays_ms)
@@ -267,6 +277,11 @@ class Processor:
         )
 
     def process_file(self, stereo: np.ndarray) -> np.ndarray:
+        if self._route_v is not None:
+            out = self._route_v.process_file(stereo)
+            self.last_stats = dict(self._route_v.last_stats)
+            self._latency = int(self._route_v.latency)
+            return out
         assert self.cfg and self.params and self.ds
         if self.params.bypass:
             self._latency = 0
