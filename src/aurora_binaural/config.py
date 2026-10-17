@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -73,6 +73,7 @@ def _env_bool(env: Mapping[str, str], key: str, default: bool = False) -> bool:
 class ServiceConfig:
     """Immutable runtime configuration for the Aurora Binaural API and Worker."""
 
+    engine: str = field(default_factory=lambda: os.environ.get("AURORA_ENGINE", "rust"))
     api_key: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
@@ -128,7 +129,11 @@ class ServiceConfig:
         db_path = Path(raw_db.strip()).resolve() if raw_db and raw_db.strip() else (data_dir / "aurora.db")
         hrtf_dir = Path(_env_str(env, "AURORA_HRTF_DIR", "./data/hrtf")).resolve()
 
+        engine = _env_str(env, "AURORA_ENGINE", "rust").lower()
+        if engine not in ("rust", "stub"):
+            raise ValueError("AURORA_ENGINE must be rust or stub.")
         return cls(
+            engine=engine,
             api_key=api_key,
             host=_env_str(env, "AURORA_HOST", "127.0.0.1"),
             port=_env_int(env, "AURORA_PORT", 8000, minimum=1),

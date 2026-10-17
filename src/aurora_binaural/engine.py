@@ -17,9 +17,14 @@ Implements ADR 0002 & docs/plan.md Sections 7 & 8:
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import inspect
+import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,6 +33,40 @@ from aurora_binaural.exit_codes import OperationCanceledError, ProcessingError
 from aurora_binaural.params import AuroraParams, TailPolicy
 
 FloatBlock = NDArray[np.float32]
+
+
+def asset_directory(name: str) -> Path:
+    """Resolve explicit deployment assets, packaged wheel assets, or this checkout."""
+    override = os.environ.get(f"AURORA_{name.upper()}_DIR")
+    if override:
+        return Path(override).resolve()
+    packaged = Path(__file__).parent / "_data" / name
+    if packaged.is_dir():
+        return packaged
+    root = Path(__file__).resolve().parents[2]
+    return root / ("data/hrtf" if name == "hrtf" else name)
+
+
+def selected_engine() -> str:
+    engine = os.environ.get("AURORA_ENGINE", "rust").strip().lower()
+    if engine not in ("rust", "stub"):
+        raise ProcessingError("AURORA_ENGINE must be rust or stub.", error_code="INVALID_ENGINE")
+    return engine
+
+
+def engine_status(engine: str | None = None) -> dict[str, Any]:
+    """Describe the configured engine without rendering or silently changing it."""
+    choice = engine or selected_engine()
+    if choice == "stub":
+        return {"name": "stub", "is_stub": True, "available": True, "message": "效果引擎：桩（直通）"}
+    if choice != "rust":
+        raise ProcessingError("AURORA_ENGINE must be rust or stub.", error_code="INVALID_ENGINE")
+    try:
+        importlib.import_module("aurora_core")
+    except ImportError:
+        return {"name": "rust", "is_stub": False, "available": False,
+                "message": "Rust 核心未安装。请运行 bash scripts/build-core.sh；测试流程可显式设置 AURORA_ENGINE=stub（桩）。"}
+    return {"name": "rust", "is_stub": False, "available": True, "message": "效果引擎：Rust"}
 
 
 @dataclass(frozen=True)
@@ -98,6 +137,151 @@ def _normalize_input_block(block: FloatBlock, expected_in_channels: int, max_blo
     if in_ch == 1:
         return np.repeat(arr, 2, axis=1)
     return np.ascontiguousarray(arr, dtype=np.float32)
+
+
+class RustRenderer:
+    """Validated application adapter for the optional local ``aurora_core`` extension.
+
+    Native construction is deferred until set_params so prepare sees the selected
+    route, strength and seed. Both the legacy route B binding and the upcoming
+    route= binding are supported; route V is never substituted with route B.
+    """
+
+    def __init__(self, *, hrtf_dir: Path | None = None) -> None:
+        try:
+            self._module = importlib.import_module("aurora_core")
+        except ImportError as exc:
+            raise ProcessingError(engine_status("rust")["message"], error_code="CORE_NOT_INSTALLED") from exc
+        self._hrtf_dir = hrtf_dir or asset_directory("hrtf")
+        self._native: Any = None
+        self._config = RenderConfig()
+        self._sample_rate = 48000
+        self._max_block = 1024
+        self._prepared = False
+        self._flushed = False
+        self.hrtf_source = self._hrtf_dir / "sadie2_d1/D1_48K_24bit_256tap_FIR_SOFA.sofa"
+        self.hrtf_pack = self._hrtf_dir / "sadie_d1_frontal.ahrp"
+
+    def prepare(self, sample_rate: int, max_block: int, config: RenderConfig) -> None:
+        if sample_rate <= 0 or max_block <= 0:
+            raise ProcessingError("sample_rate and max_block must be positive.")
+        if config.input_channels not in (1, 2) or config.output_channels != 2:
+            raise ProcessingError("Rust renderer requires mono/stereo input and stereo output.")
+        if config.simulated_latency_samples or config.simulated_tail_samples:
+            raise ProcessingError("Simulated latency/tail require AURORA_ENGINE=stub.")
+        self._sample_rate, self._max_block, self._config = sample_rate, max_block, config
+        self._native = None
+        self._prepared, self._flushed = True, False
+
+    def set_params(self, params: AuroraParams) -> None:
+        if not self._prepared:
+            raise ProcessingError("prepare before set_params.")
+        if self._native is not None:
+            try:
+                self._native.set_params(params)
+            except Exception as exc:
+                raise ProcessingError(f"Rust set_params failed: {exc}", error_code="CORE_ERROR") from exc
+            return
+        preset_id = str(params.preset.id)
+        route = "V" if preset_id.startswith("V") else "B"
+        preset_path = asset_directory("presets") / ("route_v.toml" if route == "V" else "p0_draft.toml")
+        kwargs: dict[str, Any] = {
+            "strength": params.effective_strength, "seed": params.seed, "preset": preset_id,
+        }
+        supports_route = "route" in inspect.signature(self._module.Renderer).parameters
+        if supports_route:
+            kwargs["route"] = route
+        elif route != "B":
+            raise ProcessingError(
+                "已安装的 aurora_core 仅支持路线 B。请构建支持 route='V' 的新版核心，或显式选择经典 room。",
+                error_code="CORE_ROUTE_UNSUPPORTED",
+            )
+        try:
+            self._native = self._module.Renderer(str(self.hrtf_pack), str(self.hrtf_source), str(preset_path), **kwargs)
+            self._native.prepare(self._sample_rate, self._max_block, self._config)
+            self._native.set_params(params)
+        except Exception as exc:
+            self._native = None
+            raise ProcessingError(f"Rust prepare failed: {exc}", error_code="CORE_ERROR") from exc
+
+    def _require_native(self) -> Any:
+        if self._native is None:
+            raise ProcessingError("prepare and set_params before processing.")
+        return self._native
+
+    def _validate_output(self, output: Any, frames: int) -> FloatBlock:
+        arr = np.asarray(output)
+        if arr.dtype != np.float32 or arr.shape != (frames, 2) or not np.all(np.isfinite(arr)):
+            raise ProcessingError("Rust core violated float32 (frames, 2) output contract.", error_code="CORE_CONTRACT_ERROR")
+        return np.ascontiguousarray(arr)
+
+    def process(self, block: FloatBlock) -> FloatBlock:
+        native = self._require_native()
+        if self._flushed:
+            raise ProcessingError("reset before process after flush.")
+        stereo = _normalize_input_block(block, self._config.input_channels, self._max_block)
+        normalized = stereo[:, :1].copy() if self._config.input_channels == 1 else stereo
+        try:
+            output = native.process(normalized)
+        except Exception as exc:
+            raise ProcessingError(f"Rust process failed: {exc}", error_code="CORE_ERROR") from exc
+        return self._validate_output(output, len(stereo))
+
+    def latency_samples(self) -> int:
+        return int(self._require_native().latency_samples())
+
+    def tail_samples(self) -> int:
+        return int(self._require_native().tail_samples())
+
+    def flush(self) -> FloatBlock:
+        native = self._require_native()
+        if self._flushed:
+            return np.zeros((0, 2), dtype=np.float32)
+        expected = self.latency_samples() + self.tail_samples()
+        try:
+            output = native.flush()
+        except Exception as exc:
+            raise ProcessingError(f"Rust flush failed: {exc}", error_code="CORE_ERROR") from exc
+        result = self._validate_output(output, expected)
+        self._flushed = True
+        return result
+
+    def reset(self) -> None:
+        self._require_native().reset()
+        self._flushed = False
+
+
+def create_renderer(
+    *, engine: str | None = None, hrtf_dir: Path | None = None,
+    latency_samples: int = 0, tail_samples: int = 0,
+) -> Renderer:
+    choice = engine or selected_engine()
+    if choice == "stub":
+        return StubRenderer(latency_samples=latency_samples, tail_samples=tail_samples)
+    if choice != "rust":
+        raise ProcessingError("AURORA_ENGINE must be rust or stub.", error_code="INVALID_ENGINE")
+    if latency_samples or tail_samples:
+        raise ProcessingError("Simulated latency/tail require AURORA_ENGINE=stub.")
+    return RustRenderer(hrtf_dir=hrtf_dir)
+
+
+def renderer_metadata(renderer: Renderer, *, git_commit: str, block_size: int, sample_rate: int) -> Any:
+    """Report the renderer actually used, including verified native HRTF provenance."""
+    from aurora_binaural.report import EngineMetadata, HrtfDataInfo
+
+    common = {"git_commit": git_commit, "block_size_frames": block_size, "internal_sample_rate": sample_rate}
+    if isinstance(renderer, StubRenderer):
+        return EngineMetadata(**common)
+    if isinstance(renderer, RustRenderer):
+        with renderer.hrtf_source.open("rb") as source:
+            digest = hashlib.file_digest(source, "sha256").hexdigest()
+        return EngineMetadata(
+            **common, name="aurora_core", version=str(getattr(renderer._module, "__version__", "unversioned")),
+            is_stub=False, hrtf=HrtfDataInfo(name="SADIE II D1", version="D1-48K-256tap",
+                                           sha256=digest, license="Apache-2.0"),
+        )
+    return EngineMetadata(**common, name=type(renderer).__name__, version="custom", is_stub=False,
+                          hrtf=HrtfDataInfo(name="custom renderer; unspecified HRTF", version="unknown"))
 
 
 class StubRenderer:
@@ -498,7 +682,7 @@ def run_offline_block_pipeline(
     if not np.all(np.isfinite(in_arr)):
         raise ProcessingError("Input PCM contains NaN or Inf values.", error_code="NON_FINITE_SAMPLES")
 
-    active_renderer: Renderer = renderer or StubRenderer(
+    active_renderer: Renderer = renderer or create_renderer(
         latency_samples=simulated_latency_samples,
         tail_samples=simulated_tail_samples,
     )

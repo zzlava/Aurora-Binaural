@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from aurora_binaural.config import ServiceConfig
+from aurora_binaural.engine import engine_status
 from aurora_binaural.exit_codes import AuroraError, ExitCode
 from aurora_binaural.media import probe_audio
 from aurora_binaural.params import (
@@ -121,6 +122,7 @@ class PresetsResponseModel(BaseModel):
 
     ok: Literal[True] = True
     api_version: Literal["v1"] = "v1"
+    engine: dict[str, Any]
     presets: list[PresetMetadata]
     parameter_ranges: dict[str, Any]
 
@@ -388,6 +390,7 @@ def create_app(
     async def get_presets() -> PresetsResponseModel:
         """Return built-in spatial presets, parameter ranges, and version metadata."""
         return PresetsResponseModel(
+            engine=engine_status(cfg.engine),
             presets=list(PRESET_CATALOG.values()),
             parameter_ranges={
                 "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},

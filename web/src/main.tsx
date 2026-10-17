@@ -54,6 +54,7 @@ function App() {
   const [key, setKey] = useState(readSession("aurora.key"));
   const [api, setApi] = useState<Api | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [engine, setEngine] = useState<{ is_stub: boolean; available: boolean; message: string } | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [preset, setPreset] = useState("room");
   const [strength, setStrength] = useState(0.4);
@@ -144,9 +145,10 @@ function App() {
         writeSession("aurora.server", base);
       }
       const client = new Api(base, token, log);
-      const result = await client.request<{ presets: Preset[] }>("/v1/presets");
+      const result = await client.request<{ presets: Preset[]; engine: { is_stub: boolean; available: boolean; message: string } }>("/v1/presets");
       if (epoch.current !== connectionEpoch) return;
       setPresets(result.presets);
+      setEngine(result.engine);
       setApi(client);
       setNotice("连接成功，可以导入音频。");
       log("连接成功");
@@ -482,9 +484,9 @@ function App() {
           </span>
         </div>
         <div class="engine-notice" role="note">
-          <strong>效果引擎：桩（直通），P1 核心接入后替换</strong>
+          <strong>{engine?.message ?? "正在读取效果引擎状态…"}</strong>
           <span>
-            当前仅验证处理流程，未应用 HRTF，原声与效果暂无空间听感差异。
+            {engine?.is_stub ? "当前使用桩，仅验证处理流程，未应用 HRTF。" : engine?.available ? "实际任务报告会记录引擎与 HRTF。" : "请安装 Rust 核心后再生成试听或导出。"}
           </span>
         </div>
         <section class="connection-bar" aria-label="连接设置">

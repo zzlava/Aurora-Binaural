@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from aurora_binaural.engine import Renderer, RendererStreamProcessor, StubRenderer
+from aurora_binaural.engine import Renderer, RendererStreamProcessor, create_renderer, renderer_metadata
 from aurora_binaural.exit_codes import InputAudioError
 from aurora_binaural.media import (
     StreamingF32LeEncoder,
@@ -44,7 +44,6 @@ from aurora_binaural.report import (
     AudioProbeInfo,
     CompareReport,
     ConversionReport,
-    EngineMetadata,
     TimelineVerification,
 )
 
@@ -208,7 +207,7 @@ def convert_audio(
     log_stderr(f"Measuring input BS.1770 loudness: {input_path}")
     loudness_before = measure_loudness_file(input_path)
 
-    active_renderer: Renderer = renderer or StubRenderer(
+    active_renderer: Renderer = renderer or create_renderer(
         latency_samples=simulated_latency_samples,
         tail_samples=simulated_tail_samples,
     )
@@ -355,10 +354,8 @@ def convert_audio(
     report = ConversionReport(
         input=input_probe,
         output=output_probe,
-        engine=EngineMetadata(
-            git_commit=get_git_commit_sha(),
-            block_size_frames=block_size,
-            internal_sample_rate=target_sr,
+        engine=renderer_metadata(
+            active_renderer, git_commit=get_git_commit_sha(), block_size=block_size, sample_rate=target_sr,
         ),
         params=effective_params,
         timeline=timeline,
