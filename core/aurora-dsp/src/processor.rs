@@ -79,6 +79,11 @@ pub struct Params {
     pub strength: f64,
     pub preset: String,
     pub seed: u64,
+    /// `None` keeps that control on the selected preset's default.
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub room: Option<f64>,
+    pub voice_distance: Option<f64>,
 }
 
 /// Block processor aligned with `aurora_binaural.engine.Renderer`.

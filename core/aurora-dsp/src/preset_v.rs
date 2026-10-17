@@ -61,12 +61,125 @@ pub struct RouteVRow {
     pub hf_direct_start_hz: f64,
     pub hf_direct_end_hz: f64,
     pub fixed_eq: Option<FixedEq>,
+    /// Control values that reproduce this preset's stored parameters.
+    pub controls: MacroControls,
+}
+
+/// User-facing controls, each in `[0, 1]`.
+#[derive(Debug, Clone, Copy)]
+pub struct MacroControls {
+    pub strength: f64,
+    pub width: f64,
+    pub height: f64,
+    pub room: f64,
+    pub voice_distance: f64,
+}
+
+impl MacroControls {
+    pub fn neutral() -> Self {
+        Self {
+            strength: 1.0,
+            width: 0.5,
+            height: 0.5,
+            room: 0.5,
+            voice_distance: 0.5,
+        }
+    }
+}
+
+/// `value = clamp(anchor + (control - default) * per_unit, min, max)`.
+/// A zero `per_unit` leaves the anchor untouched.
+#[derive(Debug, Clone, Copy)]
+pub struct AnchorCurve {
+    pub per_unit: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+impl AnchorCurve {
+    fn identity() -> Self {
+        Self {
+            per_unit: 0.0,
+            min: f64::NEG_INFINITY,
+            max: f64::INFINITY,
+        }
+    }
+
+    pub fn eval(self, anchor: f64, control: f64, default: f64) -> f64 {
+        let value = anchor + (control - default) * self.per_unit;
+        value.clamp(self.min, self.max)
+    }
+}
+
+/// Linear curves for the four spatial controls. Read from `[macros]`.
+#[derive(Debug, Clone, Copy)]
+pub struct MacroCurves {
+    pub width_front_az: AnchorCurve,
+    pub width_wide_db: AnchorCurve,
+    pub width_surround_db: AnchorCurve,
+    pub height_db: AnchorCurve,
+    pub height_el: AnchorCurve,
+    pub ceiling_db: AnchorCurve,
+    pub height_direct_db: AnchorCurve,
+    pub room_db: AnchorCurve,
+    pub t60: AnchorCurve,
+    pub voice_distance_m: AnchorCurve,
+    pub voice_send_db: AnchorCurve,
+}
+
+impl MacroCurves {
+    fn identity() -> Self {
+        Self {
+            width_front_az: AnchorCurve::identity(),
+            width_wide_db: AnchorCurve::identity(),
+            width_surround_db: AnchorCurve::identity(),
+            height_db: AnchorCurve::identity(),
+            height_el: AnchorCurve::identity(),
+            ceiling_db: AnchorCurve::identity(),
+            height_direct_db: AnchorCurve::identity(),
+            room_db: AnchorCurve::identity(),
+            t60: AnchorCurve::identity(),
+            voice_distance_m: AnchorCurve::identity(),
+            voice_send_db: AnchorCurve::identity(),
+        }
+    }
+}
+
+/// Existing strength law: open `front_az` from `front_az_at_0`, and multiply
+/// the named anchor gains. `strength == 0` is still a bypass.
+#[derive(Debug, Clone)]
+pub struct StrengthScale {
+    pub front_az_at_0: f64,
+    pub front_az_max: f64,
+    pub scales: Vec<String>,
+}
+
+impl StrengthScale {
+    pub fn legacy() -> Self {
+        Self {
+            front_az_at_0: 30.0,
+            front_az_max: 60.0,
+            scales: vec![
+                "wide_db".into(),
+                "surround_db".into(),
+                "height_db".into(),
+                "early_db".into(),
+                "room_db".into(),
+            ],
+        }
+    }
+
+    fn scales(&self, name: &str) -> bool {
+        self.scales.iter().any(|item| item == name)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct RouteVTable {
     pub version: i64,
     pub delays_ms: Vec<f64>,
+    pub curves: MacroCurves,
+    pub strength: StrengthScale,
     rows: HashMap<String, RouteVRow>,
 }
 
@@ -148,9 +261,12 @@ impl RouteVTable {
             .and_then(toml::Value::as_table)
             .cloned()
             .unwrap_or_default();
+        let macros = table.get("macros").and_then(toml::Value::as_table);
+        let curves = parse_curves(macros);
+        let strength = parse_strength(macros);
         let mut rows = HashMap::new();
         for (key, item) in table {
-            if key == "version" || key == "engine" || key == "layout" {
+            if key == "version" || key == "engine" || key == "layout" || key == "macros" {
                 continue;
             }
             let Some(preset) = item.as_table() else {
@@ -174,6 +290,8 @@ impl RouteVTable {
         Ok(Self {
             version,
             delays_ms,
+            curves,
+            strength,
             rows,
         })
     }
@@ -191,18 +309,20 @@ pub fn map_route_v(
     row: &RouteVRow,
     hrtf_name: &str,
     delays_ms: &[f64],
+    scale: &StrengthScale,
 ) -> MappedRouteV {
     let s = strength.clamp(0.0, 1.0);
-    let front_1 = row.front_az.clamp(30.0, 60.0);
+    let open = scale.front_az_at_0;
+    let front_1 = row.front_az.clamp(open, scale.front_az_max);
     let (eq_bands_hz, eq_gain_db) = if s <= 0.0 {
         (Vec::new(), Vec::new())
     } else {
         eq_for(row, hrtf_name, s)
     };
     let front = if s <= 0.0 {
-        30.0
+        open
     } else {
-        30.0 + s * (front_1 - 30.0)
+        open + s * (front_1 - open)
     };
     let spread = if row.center_spread_deg > 0.0 {
         if s > 0.0 {
@@ -215,6 +335,14 @@ pub fn map_route_v(
         front * (0.65 + 0.35 * t)
     };
     let bed = if s <= 0.0 { 0.0 } else { s };
+    let lin = |name: &str, db_value: f64| -> f64 {
+        let gain = db(db_value);
+        if scale.scales(name) {
+            bed * gain
+        } else {
+            gain
+        }
+    };
     let height_az = if row.height_az.is_empty() {
         vec![45.0, -45.0, 135.0, -135.0]
     } else {
@@ -226,18 +354,18 @@ pub fn map_route_v(
         front_az: front,
         wide_az: row.wide_az,
         surround_az: row.surround_az,
-        wide_lin: bed * db(row.wide_db),
-        surround_lin: bed * db(row.surround_db),
-        height_lin: bed * db(row.height_db),
-        early_lin: bed * db(row.early_db),
-        late_lin: bed * db(row.room_db),
+        wide_lin: lin("wide_db", row.wide_db),
+        surround_lin: lin("surround_db", row.surround_db),
+        height_lin: lin("height_db", row.height_db),
+        early_lin: lin("early_db", row.early_db),
+        late_lin: lin("room_db", row.room_db),
         height_el: row.height_el,
         height_az,
-        height_direct_lin: db(row.height_direct_db),
-        center_height_lin: db(row.center_height_db),
+        height_direct_lin: lin("height_direct_db", row.height_direct_db),
+        center_height_lin: lin("center_height_db", row.center_height_db),
         center_distance_m: row.center_distance_m,
         center_spread_deg: spread,
-        direct_room_send_lin: db(row.direct_room_send_db),
+        direct_room_send_lin: lin("direct_room_send_db", row.direct_room_send_db),
         surround_delay_ms: row.surround_delay_ms,
         height_rear_delay_ms: row.height_rear_delay_ms,
         direct_height_delay_ms: row.direct_height_delay_ms,
@@ -408,7 +536,164 @@ fn parse_row(
         hf_direct_start_hz: num("hf_direct_start_hz", 0.0),
         hf_direct_end_hz: num("hf_direct_end_hz", 0.0),
         fixed_eq: parse_fixed_eq(row.get("fixed_eq")),
+        controls: parse_controls(row),
     })
+}
+
+fn parse_controls(row: &toml::map::Map<String, toml::Value>) -> MacroControls {
+    let Some(table) = row.get("controls").and_then(toml::Value::as_table) else {
+        return MacroControls::neutral();
+    };
+    let num = |name: &str, default: f64| -> f64 {
+        table
+            .get(name)
+            .and_then(toml_number)
+            .unwrap_or(default)
+            .clamp(0.0, 1.0)
+    };
+    MacroControls {
+        strength: num("strength", 1.0),
+        width: num("width", 0.5),
+        height: num("height", 0.5),
+        room: num("room", 0.5),
+        voice_distance: num("voice_distance", 0.5),
+    }
+}
+
+fn parse_curves(macros: Option<&toml::map::Map<String, toml::Value>>) -> MacroCurves {
+    let Some(macros) = macros else {
+        return MacroCurves::identity();
+    };
+    let curve = |group: &str, field: &str| -> AnchorCurve {
+        let Some(group_table) = macros.get(group).and_then(toml::Value::as_table) else {
+            return AnchorCurve::identity();
+        };
+        let Some(field_table) = group_table.get(field).and_then(toml::Value::as_table) else {
+            return AnchorCurve::identity();
+        };
+        AnchorCurve {
+            per_unit: field_table
+                .get("per_unit")
+                .and_then(toml_number)
+                .unwrap_or(0.0),
+            min: field_table
+                .get("min")
+                .and_then(toml_number)
+                .unwrap_or(f64::NEG_INFINITY),
+            max: field_table
+                .get("max")
+                .and_then(toml_number)
+                .unwrap_or(f64::INFINITY),
+        }
+    };
+    MacroCurves {
+        width_front_az: curve("width", "front_az"),
+        width_wide_db: curve("width", "wide_db"),
+        width_surround_db: curve("width", "surround_db"),
+        height_db: curve("height", "height_db"),
+        height_el: curve("height", "height_el"),
+        ceiling_db: curve("height", "ceiling_db"),
+        height_direct_db: curve("height", "height_direct_db"),
+        room_db: curve("room", "room_db"),
+        t60: curve("room", "t60"),
+        voice_distance_m: curve("voice_distance", "center_distance_m"),
+        voice_send_db: curve("voice_distance", "direct_room_send_db"),
+    }
+}
+
+fn parse_strength(macros: Option<&toml::map::Map<String, toml::Value>>) -> StrengthScale {
+    let Some(table) = macros
+        .and_then(|m| m.get("strength"))
+        .and_then(toml::Value::as_table)
+    else {
+        return StrengthScale::legacy();
+    };
+    let scales = table
+        .get("scales")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty())
+        .unwrap_or_else(|| StrengthScale::legacy().scales);
+    StrengthScale {
+        front_az_at_0: table
+            .get("front_az_at_0")
+            .and_then(toml_number)
+            .unwrap_or(30.0),
+        front_az_max: table
+            .get("front_az_max")
+            .and_then(toml_number)
+            .unwrap_or(60.0),
+        scales,
+    }
+}
+
+/// Edit the stored anchors with the four spatial controls. `strength` is not
+/// applied here; [`map_route_v`] still does that on the returned row.
+pub fn apply_macros(row: &RouteVRow, controls: &MacroControls, curves: &MacroCurves) -> RouteVRow {
+    let mut out = row.clone();
+    let defaults = row.controls;
+    out.front_az = curves
+        .width_front_az
+        .eval(row.front_az, controls.width, defaults.width);
+    out.wide_db = curves
+        .width_wide_db
+        .eval(row.wide_db, controls.width, defaults.width);
+    out.surround_db =
+        curves
+            .width_surround_db
+            .eval(row.surround_db, controls.width, defaults.width);
+    out.height_db = curves
+        .height_db
+        .eval(row.height_db, controls.height, defaults.height);
+    out.height_el = curves
+        .height_el
+        .eval(row.height_el, controls.height, defaults.height);
+    out.ceiling_db = curves
+        .ceiling_db
+        .eval(row.ceiling_db, controls.height, defaults.height);
+    out.height_direct_db =
+        curves
+            .height_direct_db
+            .eval(row.height_direct_db, controls.height, defaults.height);
+    out.room_db = curves
+        .room_db
+        .eval(row.room_db, controls.room, defaults.room);
+    out.t60 = curves.t60.eval(row.t60, controls.room, defaults.room);
+    out.center_distance_m = curves.voice_distance_m.eval(
+        row.center_distance_m,
+        controls.voice_distance,
+        defaults.voice_distance,
+    );
+    out.direct_room_send_db = curves.voice_send_db.eval(
+        row.direct_room_send_db,
+        controls.voice_distance,
+        defaults.voice_distance,
+    );
+    out
+}
+
+/// Missing controls stay on the preset default. Strength is the explicit value.
+pub fn resolve_controls(
+    defaults: MacroControls,
+    strength: f64,
+    width: Option<f64>,
+    height: Option<f64>,
+    room: Option<f64>,
+    voice_distance: Option<f64>,
+) -> MacroControls {
+    let unit = |value: Option<f64>, default: f64| value.unwrap_or(default).clamp(0.0, 1.0);
+    MacroControls {
+        strength: strength.clamp(0.0, 1.0),
+        width: unit(width, defaults.width),
+        height: unit(height, defaults.height),
+        room: unit(room, defaults.room),
+        voice_distance: unit(voice_distance, defaults.voice_distance),
+    }
 }
 
 fn f64_vec(value: &toml::Value) -> Option<Vec<f64>> {
@@ -435,7 +720,7 @@ mod tests {
         assert_eq!(table.version, 1);
         assert_eq!(table.delays_ms.len(), 12);
         let row = table.get("V2").unwrap();
-        let m = map_route_v(1.0, row, "sadie", &table.delays_ms);
+        let m = map_route_v(1.0, row, "sadie", &table.delays_ms, &table.strength);
         assert!(!m.bypass);
         assert!((m.front_az - 45.0).abs() < 1e-12);
         assert!((m.center_spread_deg - 28.0).abs() < 1e-12);
@@ -450,12 +735,12 @@ mod tests {
         assert_eq!(m.eq_bands_hz.len(), 26);
         assert!((m.t60 - 0.95).abs() < 1e-12);
         assert!((m.hf_pan_floor - 1.0).abs() < 1e-12);
-        let half = map_route_v(0.5, row, "sadie", &table.delays_ms);
+        let half = map_route_v(0.5, row, "sadie", &table.delays_ms, &table.strength);
         assert!((half.front_az - 37.5).abs() < 1e-12);
         assert!((half.center_spread_deg - 28.0).abs() < 1e-12);
         assert!((half.wide_lin - 0.561_009_227_150_981_7).abs() < 1e-12);
         assert!((half.eq_gain_db[0] - (-0.25)).abs() < 1e-12);
-        let off = map_route_v(0.0, row, "sadie", &table.delays_ms);
+        let off = map_route_v(0.0, row, "sadie", &table.delays_ms, &table.strength);
         assert!(off.bypass);
         assert!(off.eq_gain_db.is_empty());
     }
@@ -463,19 +748,195 @@ mod tests {
     #[test]
     fn v1_and_v3_override_layout() {
         let table = table();
-        let v1 = map_route_v(1.0, table.get("V1").unwrap(), "sadie", &table.delays_ms);
+        let v1 = map_route_v(
+            1.0,
+            table.get("V1").unwrap(),
+            "sadie",
+            &table.delays_ms,
+            &table.strength,
+        );
         assert!((v1.center_distance_m - 2.2).abs() < 1e-12);
         assert!((v1.center_spread_deg - 45.0).abs() < 1e-12);
         assert!((v1.direct_room_send_lin - 1.0).abs() < 1e-12);
         assert!((v1.eq_gain_db[0] - 3.34).abs() < 1e-12);
         assert!((v1.wide_az - 90.0).abs() < 1e-12);
-        let v3 = map_route_v(1.0, table.get("V3").unwrap(), "sadie", &table.delays_ms);
+        let v3 = map_route_v(
+            1.0,
+            table.get("V3").unwrap(),
+            "sadie",
+            &table.delays_ms,
+            &table.strength,
+        );
         assert!((v3.height_el - 55.0).abs() < 1e-12);
         assert!((v3.height_lin - 0.794_328_234_724_281_5).abs() < 1e-12);
         assert!((v3.ceiling_db - 6.0).abs() < 1e-12);
         assert!((v3.height_direct_lin - 10.0_f64.powf(-10.0 / 20.0)).abs() < 1e-12);
-        let v1_half = map_route_v(0.5, table.get("V1").unwrap(), "sadie", &table.delays_ms);
+        let v1_half = map_route_v(
+            0.5,
+            table.get("V1").unwrap(),
+            "sadie",
+            &table.delays_ms,
+            &table.strength,
+        );
         assert!((v1_half.front_az - 37.5).abs() < 1e-12);
         assert!((v1_half.center_spread_deg - 37.5).abs() < 1e-12);
+    }
+
+    fn same_bits(a: f64, b: f64) -> bool {
+        a.to_bits() == b.to_bits()
+    }
+
+    #[test]
+    fn default_controls_match_the_stored_preset() {
+        let table = table();
+        let legacy = StrengthScale::legacy();
+        assert!((table.strength.front_az_at_0 - legacy.front_az_at_0).abs() < 1e-12);
+        assert_eq!(table.strength.scales, legacy.scales);
+        for id in ["V1", "V2", "V3"] {
+            let row = table.get(id).unwrap();
+            for strength in [0.0_f64, 0.5, 1.0] {
+                let mut controls = row.controls;
+                controls.strength = strength;
+                let anchors = apply_macros(row, &controls, &table.curves);
+                assert!(same_bits(anchors.front_az, row.front_az), "{id} front");
+                assert!(same_bits(anchors.wide_db, row.wide_db), "{id} wide");
+                assert!(
+                    same_bits(anchors.surround_db, row.surround_db),
+                    "{id} surround"
+                );
+                assert!(
+                    same_bits(anchors.height_db, row.height_db),
+                    "{id} height_db"
+                );
+                assert!(
+                    same_bits(anchors.height_el, row.height_el),
+                    "{id} height_el"
+                );
+                assert!(
+                    same_bits(anchors.ceiling_db, row.ceiling_db),
+                    "{id} ceiling"
+                );
+                assert!(
+                    same_bits(anchors.height_direct_db, row.height_direct_db),
+                    "{id} height_direct"
+                );
+                assert!(same_bits(anchors.room_db, row.room_db), "{id} room");
+                assert!(same_bits(anchors.t60, row.t60), "{id} t60");
+                assert!(
+                    same_bits(anchors.center_distance_m, row.center_distance_m),
+                    "{id} distance"
+                );
+                assert!(
+                    same_bits(anchors.direct_room_send_db, row.direct_room_send_db),
+                    "{id} send"
+                );
+                let before = map_route_v(strength, row, "sadie", &table.delays_ms, &legacy);
+                let after = map_route_v(
+                    strength,
+                    &anchors,
+                    "sadie",
+                    &table.delays_ms,
+                    &table.strength,
+                );
+                assert!(
+                    same_bits(before.front_az, after.front_az),
+                    "{id} s={strength} front"
+                );
+                assert!(
+                    same_bits(before.wide_lin, after.wide_lin),
+                    "{id} s={strength} wide"
+                );
+                assert!(same_bits(before.surround_lin, after.surround_lin));
+                assert!(same_bits(before.height_lin, after.height_lin));
+                assert!(same_bits(before.early_lin, after.early_lin));
+                assert!(same_bits(before.late_lin, after.late_lin));
+                assert!(same_bits(before.height_el, after.height_el));
+                assert!(same_bits(before.ceiling_db, after.ceiling_db));
+                assert!(same_bits(before.height_direct_lin, after.height_direct_lin));
+                assert!(same_bits(before.center_distance_m, after.center_distance_m));
+                assert!(same_bits(
+                    before.direct_room_send_lin,
+                    after.direct_room_send_lin
+                ));
+                assert!(same_bits(before.t60, after.t60));
+                assert!(same_bits(before.center_spread_deg, after.center_spread_deg));
+                assert_eq!(before.bypass, after.bypass);
+                assert_eq!(before.eq_gain_db, after.eq_gain_db);
+            }
+        }
+    }
+
+    #[test]
+    fn controls_move_in_the_documented_direction() {
+        let table = table();
+        let row = table.get("V3").unwrap();
+        let at = |width, height, room, voice| {
+            let controls = MacroControls {
+                strength: 1.0,
+                width,
+                height,
+                room,
+                voice_distance: voice,
+            };
+            apply_macros(row, &controls, &table.curves)
+        };
+        let narrow = at(
+            0.0,
+            row.controls.height,
+            row.controls.room,
+            row.controls.voice_distance,
+        );
+        let wide = at(
+            1.0,
+            row.controls.height,
+            row.controls.room,
+            row.controls.voice_distance,
+        );
+        assert!(wide.front_az > narrow.front_az);
+        assert!(wide.wide_db > narrow.wide_db);
+        assert!(wide.surround_db > narrow.surround_db);
+        let low = at(
+            row.controls.width,
+            0.0,
+            row.controls.room,
+            row.controls.voice_distance,
+        );
+        let high = at(
+            row.controls.width,
+            1.0,
+            row.controls.room,
+            row.controls.voice_distance,
+        );
+        assert!(high.height_el > low.height_el);
+        assert!(high.height_db > low.height_db);
+        assert!(high.ceiling_db > low.ceiling_db);
+        let dry = at(
+            row.controls.width,
+            row.controls.height,
+            0.0,
+            row.controls.voice_distance,
+        );
+        let wet = at(
+            row.controls.width,
+            row.controls.height,
+            1.0,
+            row.controls.voice_distance,
+        );
+        assert!(wet.room_db > dry.room_db);
+        assert!(wet.t60 > dry.t60);
+        let near = at(
+            row.controls.width,
+            row.controls.height,
+            row.controls.room,
+            0.0,
+        );
+        let far = at(
+            row.controls.width,
+            row.controls.height,
+            row.controls.room,
+            1.0,
+        );
+        assert!(far.center_distance_m > near.center_distance_m);
+        assert!(far.direct_room_send_db > near.direct_room_send_db);
     }
 }

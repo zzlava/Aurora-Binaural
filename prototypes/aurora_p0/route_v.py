@@ -119,26 +119,97 @@ def _vec3(row: dict, key: str, default: tuple[float, float, float]) -> tuple[flo
     return vals  # type: ignore[return-value]
 
 
+def _controls_of(row: dict) -> dict[str, float]:
+    raw = row.get("controls")
+    table = raw if isinstance(raw, dict) else {}
+    def unit(key: str, default: float) -> float:
+        return float(np.clip(float(table.get(key, default)), 0.0, 1.0))
+    return {
+        "strength": unit("strength", 1.0),
+        "width": unit("width", 0.5),
+        "height": unit("height", 0.5),
+        "room": unit("room", 0.5),
+        "voice_distance": unit("voice_distance", 0.5),
+    }
+
+
+def _curve(macros: dict, group: str, field: str) -> tuple[float, float, float]:
+    block = macros.get(group)
+    table = block.get(field) if isinstance(block, dict) else None
+    if not isinstance(table, dict):
+        return 0.0, float("-inf"), float("inf")
+    return (
+        float(table.get("per_unit", 0.0)),
+        float(table.get("min", float("-inf"))),
+        float(table.get("max", float("inf"))),
+    )
+
+
+def _anchor(stored: float, control: float, default: float, curve: tuple[float, float, float]) -> float:
+    per_unit, lo, hi = curve
+    return float(np.clip(stored + (control - default) * per_unit, lo, hi))
+
+
+def apply_macro_anchors(row: dict, controls: dict[str, float], macros: dict) -> dict:
+    """Edit stored anchors. At each preset default the stored value is unchanged."""
+    out = dict(row)
+    defaults = _controls_of(row)
+    out["front_az"] = _anchor(_num(row, "front_az", 40.0), controls["width"], defaults["width"], _curve(macros, "width", "front_az"))
+    out["wide_db"] = _anchor(_num(row, "wide_db", -3.0), controls["width"], defaults["width"], _curve(macros, "width", "wide_db"))
+    out["surround_db"] = _anchor(_num(row, "surround_db", -8.0), controls["width"], defaults["width"], _curve(macros, "width", "surround_db"))
+    out["height_db"] = _anchor(_num(row, "height_db", -6.0), controls["height"], defaults["height"], _curve(macros, "height", "height_db"))
+    out["height_el"] = _anchor(_num(row, "height_el", 45.0), controls["height"], defaults["height"], _curve(macros, "height", "height_el"))
+    out["ceiling_db"] = _anchor(_num(row, "ceiling_db", 4.0), controls["height"], defaults["height"], _curve(macros, "height", "ceiling_db"))
+    out["height_direct_db"] = _anchor(_num(row, "height_direct_db", -14.0), controls["height"], defaults["height"], _curve(macros, "height", "height_direct_db"))
+    out["room_db"] = _anchor(_num(row, "room_db", -6.0), controls["room"], defaults["room"], _curve(macros, "room", "room_db"))
+    out["t60"] = _anchor(_num(row, "t60", 0.95), controls["room"], defaults["room"], _curve(macros, "room", "t60"))
+    out["center_distance_m"] = _anchor(_num(row, "center_distance_m", 0.9), controls["voice_distance"], defaults["voice_distance"], _curve(macros, "voice_distance", "center_distance_m"))
+    out["direct_room_send_db"] = _anchor(_num(row, "direct_room_send_db", -8.0), controls["voice_distance"], defaults["voice_distance"], _curve(macros, "voice_distance", "direct_room_send_db"))
+    return out
+
+
+def resolve_controls(preset: str = "V2", strength: float = 1.0, controls: dict | None = None, path: str | None = None) -> dict[str, float]:
+    """Fill omitted controls from the preset. ``strength`` wins when the dict omits it."""
+    data = load_route_v_file(path)
+    defaults = _controls_of(_resolved_row(data, preset))
+    given = controls or {}
+    def unit(key: str) -> float:
+        if key == "strength":
+            raw = given.get(key, strength)
+        else:
+            raw = given.get(key, defaults[key])
+        return float(np.clip(float(raw), 0.0, 1.0))
+    return {key: unit(key) for key in ("strength", "width", "height", "room", "voice_distance")}
+
+
 def map_route_v(
     strength: float,
     preset: str = "V2",
     hrtf_name: str = "",
     path: str | None = None,
+    controls: dict | None = None,
 ) -> RouteVParams:
-    """Map strength in [0, 1] onto route V. Zero is a full bypass."""
-    s = float(np.clip(strength, 0.0, 1.0))
+    """Map strength and the other macro controls onto route V. Zero strength bypasses."""
     data = load_route_v_file(path)
-    row = _resolved_row(data, preset)
+    base = _resolved_row(data, preset)
+    chosen = resolve_controls(preset, strength, controls, path)
+    macros = data.get("macros") if isinstance(data.get("macros"), dict) else {}
+    row = apply_macro_anchors(base, chosen, macros)
+    s = chosen["strength"]
+    strength_law = macros.get("strength") if isinstance(macros.get("strength"), dict) else {}
+    open_az = float(strength_law.get("front_az_at_0", 30.0))
+    front_max = float(strength_law.get("front_az_max", 60.0))
+    scales = set(strength_law.get("scales") or ("wide_db", "surround_db", "height_db", "early_db", "room_db"))
     engine = data.get("engine") if isinstance(data.get("engine"), dict) else {}
     delays = _f64_list(row.get("decorrelator_delays_ms") or engine.get("decorrelator_delays_ms"))
-    front_1 = float(np.clip(_num(row, "front_az", 40.0), 30.0, 60.0))
+    front_1 = float(np.clip(_num(row, "front_az", 40.0), open_az, front_max))
     bands, eq = _eq_for(row, hrtf_name, s if s > 0.0 else 1.0)
     if s <= 0.0:
         bands, eq = (), ()
     distance = _num(row, "center_distance_m", 0.9)
     far = _num(row, "center_far_m", 2.0)
     explicit = _num(row, "center_spread_deg", 0.0)
-    front = 30.0 if s <= 0.0 else 30.0 + s * (front_1 - 30.0)
+    front = open_az if s <= 0.0 else open_az + s * (front_1 - open_az)
     if explicit > 0.0:
         spread = min(explicit, front if s > 0.0 else explicit)
     else:
@@ -146,17 +217,22 @@ def map_route_v(
         spread = front * (0.65 + 0.35 * t)
     height_az = _f64_list(row.get("height_az")) or (45.0, -45.0, 135.0, -135.0)
     bed = 0.0 if s <= 0.0 else s
+
+    def lin(name: str, db_value: float) -> float:
+        gain = db(db_value)
+        return bed * gain if name in scales else gain
+
     return RouteVParams(
         strength=s,
         bypass=s <= 0.0,
         front_az=front,
         wide_az=_num(row, "wide_az", 90.0),
         surround_az=_num(row, "surround_az", 130.0),
-        wide_lin=bed * db(_num(row, "wide_db", -3.0)),
-        surround_lin=bed * db(_num(row, "surround_db", -8.0)),
-        height_lin=bed * db(_num(row, "height_db", -6.0)),
-        early_lin=bed * db(_num(row, "early_db", -3.0)),
-        late_lin=bed * db(_num(row, "room_db", -6.0)),
+        wide_lin=lin("wide_db", _num(row, "wide_db", -3.0)),
+        surround_lin=lin("surround_db", _num(row, "surround_db", -8.0)),
+        height_lin=lin("height_db", _num(row, "height_db", -6.0)),
+        early_lin=lin("early_db", _num(row, "early_db", -3.0)),
+        late_lin=lin("room_db", _num(row, "room_db", -6.0)),
         height_el=_num(row, "height_el", 45.0),
         height_az=height_az,
         height_direct_db=_num(row, "height_direct_db", -14.0),

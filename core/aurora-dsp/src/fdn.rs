@@ -23,6 +23,9 @@ pub struct FdnReverb {
     a_l: f64,
     a_r: f64,
     scale: f64,
+    decay_step: [f64; N],
+    decay_target: [f64; N],
+    decay_left: usize,
 }
 
 impl FdnReverb {
@@ -42,6 +45,9 @@ impl FdnReverb {
             a_l: 0.82,
             a_r: 0.80,
             scale: 0.12,
+            decay_step: [0.0; N],
+            decay_target: [0.0; N],
+            decay_left: 0,
         };
         fdn.reseed(sample_rate, t60, seed);
         fdn
@@ -103,11 +109,35 @@ impl FdnReverb {
         self.len
     }
 
+    /// Move the decay gains toward `t60` over `samples` without clearing the
+    /// delay memory or drawing a new feedback matrix.
+    pub fn start_decay(&mut self, sample_rate: u32, t60: f64, samples: usize) {
+        let sr = f64::from(sample_rate);
+        let t60 = t60.max(1e-3);
+        let mut target = [0.0; N];
+        for i in 0..N {
+            target[i] = 10.0_f64.powf(-3.0 * self.len[i] as f64 / (t60 * sr));
+        }
+        if samples == 0 {
+            self.gains = target;
+            self.decay_left = 0;
+            self.decay_step = [0.0; N];
+            return;
+        }
+        for i in 0..N {
+            self.decay_step[i] = (target[i] - self.gains[i]) / samples as f64;
+        }
+        self.decay_target = target;
+        self.decay_left = samples;
+    }
+
     pub fn reset(&mut self) {
         self.buf.fill(0.0);
         self.idx = [0; N];
         self.lp_l = 0.0;
         self.lp_r = 0.0;
+        self.decay_left = 0;
+        self.decay_step = [0.0; N];
     }
 
     pub fn process(&mut self, input: &[f64], out_l: &mut [f64], out_r: &mut [f64]) {
@@ -115,6 +145,16 @@ impl FdnReverb {
         let mut taps = [0.0; N];
         let mut fb = [0.0; N];
         for i in 0..n {
+            if self.decay_left > 0 {
+                for k in 0..N {
+                    self.gains[k] += self.decay_step[k];
+                }
+                self.decay_left -= 1;
+                if self.decay_left == 0 {
+                    self.gains = self.decay_target;
+                    self.decay_step = [0.0; N];
+                }
+            }
             for k in 0..N {
                 taps[k] = self.buf[k * self.stride + self.idx[k]];
             }
