@@ -9,13 +9,13 @@
 | FFmpeg 旧版仍显示成功 | 默认低于 7 只警告；`--strict-ffmpeg` 或服务端 AURORA_STRICT_FFMPEG=1 可拒绝，最终以回读报告为准 |
 | 裸 .aac 无法输出 | 使用 `.m4a`（AAC-LC + MP4 容器）；裸 ADTS 无精确 gapless 元数据 |
 | CORE_NOT_INSTALLED / import aurora_core 失败 | 用当前仓库的 `bash scripts/build-core.sh`，确认 `.venv/bin/python` 导入成功；`uv sync` 后可能需要重建；不要用 stub 代替真实验收 |
-| CORE_ROUTE_UNSUPPORTED，默认转换失败 | 当前 Rust 只有路线 B，显式 `--preset room`；V2 为目录默认但路线 V 尚未接入 |
+| CORE_ROUTE_UNSUPPORTED，默认转换失败 | 安装的是旧核心，重新运行当前仓库的 `bash scripts/build-core.sh` 并重启 GUI／API／Worker；默认 V2 需要支持路线 V 的核心。确需经典路线 B 时显式 `--preset room` |
 | HRIR/SOFA 哈希或数据错误 | 检查 AURORA_HRTF_DIR、数据文件和分发许可证；恢复同版本 SADIE II D1 的 SOFA/pack，不要混用自制或其他来源 pack |
 | GUI_BUILD_MISSING | `npm --prefix web ci` 后 `npm --prefix web run build`；或设置 AURORA_WEB_DIR 指向含 index.html 的 dist |
 | Address already in use / 端口占用 | `lsof -nP -iTCP:8765 -sTCP:LISTEN` 查进程；GUI 省略端口自动选择，API 换 `--port`，Compose 改 AURORA_PORT 后 up；不要盲目杀进程 |
 | 401 UNAUTHORIZED | 检查客户端与服务的 AURORA_API_KEY 一致、无首尾空格；Compose 使用显式 `--env-file deploy/.env`；本地 GUI 使用临时会话 Key |
 | health 正常、ready=503 | 查看 checks；确认 Worker 运行、共享同一 DB/volume、SOFA 非空；查看 api/worker 日志 |
-| ready=200 但任务失败 | ready 不检测引擎／预设兼容；查询任务 error 并检查原生扩展、room 预设与 HRTF 哈希 |
+| ready=200 但任务失败 | ready 不检测引擎／预设兼容；查询任务 error 并检查原生扩展、所选预设与 HRTF 哈希 |
 | 任务一直 queued | 启动 `aurora worker`；确认 API 和 Worker 的 AURORA_DATA_DIR/AURORA_DB_PATH 相同，心跳新鲜；容器看 compose ps/logs |
 | 运行中重启后还在 running | 等待租约过期和 Worker 回收；不要手改数据库；达到重试上限会失败 |
 | 409 IDEMPOTENCY_KEY_CONFLICT | 相同 key 必须复用相同 asset_id 和参数；真正的新操作使用新 key；恢复客户端复用 state 文件 |
@@ -23,7 +23,8 @@
 | OUTPUT_ALREADY_EXISTS / REPORT_ALREADY_EXISTS | 换新路径或明确加 `--overwrite`；示例脚本默认也不覆盖 |
 | MP3 96 kHz 参数错误 | MP3 输出改 44.1/48 kHz，或使用 WAV/M4A |
 | 浏览器跨域失败 | 服务端 AURORA_CORS_ORIGINS 填准确 scheme/host/port，重启 API；本地 CLI 和 Python 客户端不受浏览器 CORS 限制 |
-| 真峰值高于 −1 dBTP | 当前路线 B 有已知核心限制器问题；保留实测报告交核心负责人，不能据“任务成功”宣称质量验收通过 |
+| 真峰值高于 −1 dBTP | 先构建最新核心，保留实测报告、素材、预设、强度交核心负责人；不能据“任务成功”宣称质量验收通过 |
+| 波形起点前有微弱能量 | 处理后峰值是对齐的，在起点前约 2 ms 处有一段低电平（约 −40 dB）预振铃，这是正常现象。来自 STFT 上混和 FIR，见 [P1a 核心验收记录](../../qa/p1/ACCEPTANCE-cursor-p1a-05.md)；用很低阈值检测到的最早能量不等于峰值或口型整体提前 |
 
 ## 视频音画同步
 

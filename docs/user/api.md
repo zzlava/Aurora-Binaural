@@ -40,7 +40,7 @@ asset_id=$(python3 -c 'import json; print(json.load(open("outputs/api/asset.json
 python3 - "$asset_id" > outputs/api/request.json <<'PY'
 import json, sys
 json.dump({"api_version":"v1", "mode":"enhance", "input":{"asset_id":sys.argv[1]},
-           "preset":{"id":"room", "version":"1"}, "strength":0.4, "seed":20261016,
+           "preset":{"id":"V2", "version":"1"}, "strength":0.4, "seed":20261016,
            "output":{"format":"wav", "sample_rate":48000, "bit_depth":24},
            "timing":{"mode":"preserve", "tail":"trim"}}, sys.stdout)
 PY
@@ -73,14 +73,14 @@ PY
 
 上传支持 multipart 的 `file` 字段，也支持 `Content-Type: application/octet-stream` 加 `--data-binary @FILE`；原始上传用 `X-Asset-Filename: voice.wav` 指定文件名，可附 `X-Asset-Sha256` 校验内容。文件名会清理，服务器不接收本地路径或 URL 抓取。上传响应字段为 ok/asset_id/filename/sha256/size_bytes/format/container/codec/sample_rate/channels/samples/duration_seconds/created_at/expires_at。
 
-任务请求字段：api_version 固定 v1，mode 固定 enhance，input 必须含 asset_id 且禁止 path；preset 为 id/version，strength 0–1，seed 为 uint32。output 为 format/container/sample_rate/bit_depth/bitrate_kbps；timing 为 mode=preserve、tail=trim|preserve、fade_out_ms（默认 10）。字段默认与约束见 [CLI](cli.md) 或 schema；未知字段会拒绝。当前 Rust B 请用 `room`，默认 V2 会在 Worker 中以 `CORE_ROUTE_UNSUPPORTED` 失败。
+任务请求字段：api_version 固定 v1，mode 固定 enhance，input 必须含 asset_id 且禁止 path；preset 为 id/version，strength 0–1，seed 为 uint32。output 为 format/container/sample_rate/bit_depth/bitrate_kbps；timing 为 mode=preserve、tail=trim|preserve、fade_out_ms（默认 10）。字段默认与约束见 [CLI](cli.md) 或 schema；未知字段会拒绝。默认使用真实 Rust 路线 V、V2 与 SADIE II D1；省略 preset 即选 V2。`room` 是经典路线 B，需要时显式选择。旧核心报 `CORE_ROUTE_UNSUPPORTED` 时重新构建核心并重启服务。
 
 试听示例（复用已上传的 asset_id）：
 
 ```bash
 curl --fail-with-body -sS -H "Authorization: Bearer $AURORA_API_KEY" \
   -H 'Content-Type: application/json' -H "Idempotency-Key: preview-$idem_key" \
-  -d "{\"asset_id\":\"$asset_id\",\"preset\":{\"id\":\"room\",\"version\":\"1\"},\"strength\":0.4,\"seed\":20261016,\"start_seconds\":0,\"duration_seconds\":5}" \
+  -d "{\"asset_id\":\"$asset_id\",\"preset\":{\"id\":\"V2\",\"version\":\"1\"},\"strength\":0.4,\"seed\":20261016,\"start_seconds\":0,\"duration_seconds\":5}" \
   "$AURORA_SERVER/v1/previews"
 ```
 
