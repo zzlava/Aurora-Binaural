@@ -4,7 +4,7 @@ Implements docs/plan.md Sections 6.8, 6.10, 8, 9, and 10:
 - preset: PresetSpec (TOML catalog, versioned; TOML default)
 - strength: perceptual spatial intensity in [0.0, 1.0] (dry/wet mixing forbidden)
 - seed: explicit PRNG seed for deterministic FDN reverb and decorrelation
-- output: OutputSpec (wav / m4a / mp3, separated format & container, sample_rate, bit_depth, bitrate)
+- output: OutputSpec (wav / flac / alac / aiff / m4a / mp3, separated format & container, sample_rate, bit_depth, bitrate)
 - timing: TimingSpec (mode=preserve, tail=trim|preserve)
 """
 
@@ -198,7 +198,7 @@ class TimingSpec(BaseModel):
 
     mode: TimingMode = Field(
         default=TimingMode.PRESERVE,
-        description="Timeline synchronization mode. 'preserve' guarantees exact sample alignment.",
+        description="Preserve source duration and compensate reported engine/codec latency; impulse peaks require separate measurement.",
     )
     tail: TailPolicy = Field(
         default=TailPolicy.TRIM,

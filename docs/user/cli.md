@@ -70,11 +70,11 @@ uv run aurora timeline-verify --output outputs/timeline.json
 | `input`, `output` | `path`, `sha256`, `format`, `container`, `codec`, `sample_rate`, `channels`, `channel_layout`, `samples`, `duration_seconds`, `bit_depth`, `size_bytes`, `initial_padding`, `trailing_padding`；samples 是每声道帧数 |
 | `engine` | `name`, `version`, `git_commit`, `is_stub`, `route`, `block_size_frames`, `internal_sample_rate`, `hrtf`（name/version/sha256/license）；原生核心版本来自已安装 aurora_core，git_commit 是运行时应用仓库提交号，无 Git 元数据的安装可记录 unknown |
 | `params` | 实际归一化的参数；params.output.sample_rate 可保留 source，实际数值读 output.sample_rate。包含 api_version/mode/input/preset/strength/seed/output/timing/preview |
-| `timeline` | mode/tail_policy、engine_latency_samples/engine_tail_samples、extra_tail_samples_kept、input_samples/expected_output_samples/decoded_readback_samples/raw_decoded_samples、sample_diff/raw_sample_diff、codec_priming_samples/codec_trailing_padding_samples、residual_priming_shift_samples、compensation_strategy/tolerance_samples/sync_within_tolerance/sync_warning |
+| `timeline` | mode/tail_policy、engine_latency_samples/engine_tail_samples、extra_tail_samples_kept、input_samples/processing_input_samples/processing_output_samples/resampler/duration_rounding_adjustment_samples/expected_output_samples/decoded_readback_samples/raw_decoded_samples、sample_diff/raw_sample_diff、codec_priming_samples/codec_trailing_padding_samples、residual_priming_shift_samples、compensation_strategy/tolerance_samples/sync_within_tolerance/sync_warning |
 | `loudness_before`, `loudness_after` | integrated_lufs/loudness_range_lu/true_peak_dbtp/is_silent/method；静音测量可能为 null |
 | `elapsed_ms`, `attempts`, `created_at`, `expires_at` | 耗时、尝试次数、UTC ISO 时间；本地 expires_at 为 null |
 
-`timeline.sync_within_tolerance` 仅核对回读样本数；冲激峰值的位置需另行测量，当前路线 V 的已知偏移见 [故障排查](troubleshooting.md)。
+源时长按 round(源样本数 × 输出率 / 源率) 锚定；重采样后的取整误差通过末端补零／裁切对齐，处理帧数及 duration_rounding_adjustment_samples 写入报告。`timeline.sync_within_tolerance` 仅核对回读样本数；冲激峰值的位置需另行测量，当前路线 V 的已知偏移见 [故障排查](troubleshooting.md)。
 
 `inspect` 返回 `ok/audio/loudness` 和可选 `sync_warning`；audio/loudness 同上。`presets` 返回 `ok/api_version/default_preset/presets/parameter_ranges`；每个 preset 为 id/name/version/default_strength/description/algorithm_summary/route/is_default。HTTP 的预设响应另有 engine。
 

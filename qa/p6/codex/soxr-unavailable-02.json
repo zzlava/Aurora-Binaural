@@ -1,0 +1,10 @@
+{
+  "ok": false,
+  "error": {
+    "code": "SOXR_UNAVAILABLE",
+    "message": "This FFmpeg cannot run soxr VHQ. Install an FFmpeg build with --enable-libsoxr and set AURORA_FFMPEG to its binary (Homebrew: /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg). No lower-quality resampler was substituted.",
+    "exit_code": 4,
+    "retryable": false,
+    "details": {}
+  }
+}
