@@ -8,9 +8,9 @@
 
 - 参数模型接受五个可选控件及 `controls` 对象，未传值来自 `[Vx.controls]`。有限越界值截断到 `[0,1]`，stderr 及 `params.control_clipping` 记录原值与最终值；NaN/Inf、未知键、相互冲突的平铺值和对象值拒绝。
 - CLI `convert/preview` 新增四个高级参数，支持数值和显式 `%`；`--strength` 保持数值语法。`preview` 输出最多 20 秒的等响度 `effect.wav` / `original.wav` / `report.json`。目录输出避免覆盖输入。`presets --json` 返回每项 `default_controls`。
-- API 的 job/preview 接受 `controls`，队列持久化保留截断事件；控件参与幂等摘要。OpenAPI 和参数 schema 与模型同步。
+- API 的 job/preview 接受 `controls`，队列持久化保留截断事件；控件参与幂等摘要。OpenAPI 和参数 schema 与模型同步。非法非有限数值、布尔值、未知键、异常截断记录及超大数字稳定返回 422，不会因错误序列化变成 500。
 - GUI 高级面板含五个中文百分比滑块和恢复按钮；松手 300 ms 防抖。旧结果不覆盖新设置，更新期间可继续播放旧片段，完成后保留进度、播放/暂停状态和 A/B 选中侧。
-- 我的预设保存基础预设版本与五个最终值。SQLite migration 1 新建 `user_presets`，保留现有素材、任务及 Worker 数据；支持列表、命名保存、重命名、删除、版本化 JSON 导入/导出，重名导入整批回滚。完整导出和批处理沿用当前选择；CLI `convert/preview/batch --user-preset 名称或ID` 读取同一本机数据库。
+- 我的预设保存基础预设版本与五个最终值。SQLite migration 1 新建 `user_presets`，保留现有素材、任务及 Worker 数据；支持列表、命名保存、重命名、删除、版本化 JSON 导入/导出，重名导入整批回滚；101 条记录的导出和导入已覆盖。完整导出和批处理沿用当前选择；CLI `convert/preview/batch --user-preset 名称或ID` 读取同一本机数据库。
 - 本地启动的 GUI 即使连接远程渲染服务，也使用本机 SQLite 保存我的预设；发送给远程任务的是基础预设和控件数值。直接使用远程 API 的预设端点时，存储位置为该 API 的数据库。
 - route V 报告顶层 `controls` 与 `effective_params` 来自真实核心读回。route B 仅生效 strength、其余四项列入 `ignored_controls`；桩忽略全部五项，`effective_params=null`，报告中有中文说明。`params.controls` 表示归一化请求，顶层 `controls` 表示实际生效值。
 
@@ -18,7 +18,7 @@
 
 | 检查 | 结果 | 证据 |
 |---|---|---|
-| pytest 全量应用层 | 202 passed / 1 skipped | [输出](controls-04/pytest.txt)、[JUnit](controls-04/pytest.xml) |
+| pytest 全量应用层 | 217 passed / 1 skipped | [输出](controls-04/pytest.txt)、[JUnit](controls-04/pytest.xml) |
 | Ruff / mypy strict | 通过 | [Ruff](controls-04/ruff.txt)、[mypy](controls-04/mypy.txt) |
 | TypeScript / ESLint / Vite | 通过 | [类型检查](controls-04/typecheck.txt)、[ESLint](controls-04/eslint.txt)、[构建](controls-04/build.txt) |
 | Playwright 新控件/预设，真实 Rust 服务 | 3 passed | [日志](controls-04/controls-e2e.txt)、[结构化结果](e2e-results-04.json) |
@@ -26,7 +26,7 @@
 | 既有真实 Rust / 高解析 GUI 流程 | 2 passed | [日志](controls-04/rust-e2e.txt) |
 | 5 控件 × 0/0.5/1 真渲染 | 15/15，controls 核心读回完全相同、sample_diff=0 | [完整矩阵](controls-04/matrix.json)、[运行结果](controls-04/matrix-run.txt) |
 | 下载音频独立回读 | SHA-256 与下载报告一致；480000 帧 / 48 kHz / 双声道 float32 WAV | [回读证据](controls-04/download-readback.json) |
-| Git 目录边界与 diff 检查 | 通过 | `git diff --check`；禁止目录没有差异 |
+| Git 目录边界与 diff 检查 | 通过 | `git diff --check`；相对任务起点 `29f8fac`，禁止目录没有差异 |
 
 唯一跳过项是 P5 旧路线 B 绑定兼容检查；本机已安装新版路线 V 绑定，所以该兼容分支不适用。JUnit 输出另外记录了旧测试使用 `record_property` 与 xunit2 的提示；不影响断言。
 
@@ -47,7 +47,7 @@
 
 ## 0 / 0.5 / 1 的 render report 片段
 
-使用 `data/assets/real_music.wav` 前 1 秒、真实 Rust 路线 V、V3、SADIE II D1。每次只改变一个控件，其余值从 TOML 默认读取。下面保留完整 `controls` 和与该控件相关的 `effective_params` 字段，未列出的内部字段见 [15 份完整报告](controls-04/matrix/strength-0.json) 与 [矩阵索引](controls-04/matrix.json)。所有值直接取自报告，未自行重算映射。
+使用 `data/assets/real_music.wav` 前 1 秒、真实 Rust 路线 V、V3、SADIE II D1。每次只改变一个控件，其余值从 TOML 默认读取。下面保留完整 `controls` 和与该控件相关的 `effective_params` 字段，未列出的内部字段见 [完整报告示例](controls-04/matrix/strength-0.json) 与 [15 份报告索引](controls-04/matrix.json)。所有值直接取自报告，未自行重算映射。
 
 ### 空间强度 `strength`
 

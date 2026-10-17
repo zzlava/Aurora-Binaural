@@ -279,7 +279,10 @@ class SpatialSettings(SpatialControls):
         if not isinstance(nested, dict):
             return data  # Let Pydantic explain the invalid object.
         nested = dict(nested)
-        events = list(data.get("control_clipping", []))
+        previous_events = data.get("control_clipping", [])
+        if not isinstance(previous_events, list):
+            raise ValueError("control_clipping must be a list")
+        events = list(previous_events)
         for key in CONTROL_KEYS:
             direct, inner = data.get(key), nested.get(key)
             raw = inner if inner is not None else direct
@@ -289,7 +292,7 @@ class SpatialSettings(SpatialControls):
                 number = float(raw)
                 if direct is not None and inner is not None and float(direct) != number:
                     raise ValueError(f"Conflicting {key} and controls.{key}; supply only one value.")
-            except TypeError as exc:
+            except (TypeError, OverflowError) as exc:
                 raise ValueError(f"{key} must be a finite number") from exc
             if isinstance(raw, bool) or not math.isfinite(number):
                 raise ValueError(f"{key} must be a finite number")

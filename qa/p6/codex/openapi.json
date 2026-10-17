@@ -3035,7 +3035,6 @@
               "$ref": "#/components/schemas/UserPresetSpec"
             },
             "type": "array",
-            "maxItems": 100,
             "title": "Presets"
           }
         },

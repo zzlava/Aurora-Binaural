@@ -321,7 +321,9 @@ def create_app(
             error_code="INVALID_PARAMETERS",
             exit_code=ExitCode.PARAM_ERROR,
             retryable=False,
-            details={"errors": json.loads(json.dumps(exc.errors(), default=str))},
+            # JSONResponse rejects non-finite floats. An invalid JSON numeric
+            # literal can appear in validation input; preserve it as text.
+            details={"errors": json.loads(json.dumps(exc.errors(), default=str), parse_constant=str)},
         )
         return JSONResponse(status_code=err.http_status, content=err.to_dict())
 

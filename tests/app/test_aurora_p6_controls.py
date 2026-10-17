@@ -37,6 +37,33 @@ def test_unknown_and_conflicting_controls_fail() -> None:
         AuroraParams.model_validate({"width": 0.2, "controls": {"width": 0.3}})
 
 
+@pytest.mark.parametrize("body", [
+    '{"controls":{"width":NaN}}',
+    '{"controls":{"height":Infinity}}',
+    '{"controls":{"room":-Infinity}}',
+    '{"controls":{"voice_distance":true}}',
+    '{"controls":{"widht":0.5}}',
+    '{"control_clipping":null}',
+    '{"controls":{"width":' + '9' * 400 + '}}',
+])
+@pytest.mark.parametrize("endpoint", ["/v1/jobs", "/v1/previews"])
+def test_invalid_http_controls_return_422(tmp_path: Path, endpoint: str, body: str) -> None:
+    from fastapi.testclient import TestClient
+
+    from aurora_binaural.api import create_app
+    from aurora_binaural.config import ServiceConfig
+
+    config = ServiceConfig(api_key="invalid-controls", data_dir=tmp_path, db_path=tmp_path / "db")
+    # Preview needs asset_id to isolate the invalid control from missing fields.
+    if endpoint == "/v1/previews":
+        body = '{"asset_id":"asset_example",' + body[1:]
+    with TestClient(create_app(config), raise_server_exceptions=False) as client:
+        response = client.post(endpoint, content=body,
+                               headers={"Authorization": "Bearer invalid-controls", "Content-Type": "application/json"})
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "INVALID_PARAMETERS"
+
+
 def test_defaults_are_read_from_toml(tmp_path: Path) -> None:
     for key, entry in CATALOG.items():
         if entry.route == "V":

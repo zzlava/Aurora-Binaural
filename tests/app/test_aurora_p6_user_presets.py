@@ -71,6 +71,18 @@ def test_crud_and_atomic_json_exchange(tmp_path: Path) -> None:
     assert failure.value.http_status == 404
 
 
+def test_large_saved_collection_can_export_and_import(tmp_path: Path) -> None:
+    # Saving many individual presets must not make the collection unexportable.
+    source = UserPresetStore(TaskStore(tmp_path / "source.db"))
+    for index in range(101):
+        source.create(spec(f"空间 {index}"))
+    bundle = source.export_bundle()
+    assert len(bundle.presets) == 101
+    target = UserPresetStore(TaskStore(tmp_path / "target.db"))
+    target.import_bundle(UserPresetBundle.model_validate_json(bundle.model_dump_json()))
+    assert len(target.list_presets()) == 101
+
+
 @pytest.mark.parametrize("payload", [
     {"schema_version": 2, "presets": []},
     {"presets": [{"name": " ", "preset": {"id": "V3"}, "controls": {}}]},

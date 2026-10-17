@@ -67,7 +67,7 @@ class UserPreset(UserPresetSpec):
 class UserPresetBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal[1] = 1
-    presets: list[UserPresetSpec] = Field(max_length=100)
+    presets: list[UserPresetSpec]
 
     @model_validator(mode="after")
     def unique_names(self) -> UserPresetBundle:
