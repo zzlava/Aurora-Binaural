@@ -22,6 +22,7 @@ import sys
 import uuid
 from collections.abc import Generator
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -63,14 +64,71 @@ def log_stderr(message: str) -> None:
 
 def ensure_ffmpeg_available() -> tuple[str, str]:
     """Ensure both `ffmpeg` and `ffprobe` binaries exist on PATH."""
-    ffmpeg_bin = shutil.which("ffmpeg")
-    ffprobe_bin = shutil.which("ffprobe")
+    ffmpeg_bin = shutil.which(os.environ.get("AURORA_FFMPEG", "ffmpeg"))
+    ffprobe_bin = shutil.which(os.environ.get("AURORA_FFPROBE", "ffprobe"))
     if not ffmpeg_bin or not ffprobe_bin:
         raise ProcessingError(
             "Required system binaries 'ffmpeg' and/or 'ffprobe' were not found on PATH.",
             error_code="FFMPEG_NOT_FOUND",
         )
     return ffmpeg_bin, ffprobe_bin
+
+
+@lru_cache(maxsize=8)
+def require_soxr(ffmpeg_bin: str) -> None:
+    """Exercise the resampler: help can list soxr even when it was not compiled in."""
+    result = subprocess.run(
+        [ffmpeg_bin, "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "0.01",
+         "-af", "aresample=48000:resampler=soxr:precision=28", "-f", "null", "-"],
+        capture_output=True, check=False,
+    )
+    if result.returncode:
+        raise ProcessingError(
+            "This FFmpeg cannot run soxr VHQ. Install an FFmpeg build with --enable-libsoxr and set "
+            "AURORA_FFMPEG to its binary (Homebrew: /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg). "
+            "No lower-quality resampler was substituted.", error_code="SOXR_UNAVAILABLE",
+        )
+
+
+def _cover_stream(path: Path) -> int | None:
+    _, ffprobe = ensure_ffmpeg_available()
+    result = subprocess.run([ffprobe, "-v", "error", "-show_streams", "-of", "json", str(path)],
+                            capture_output=True, text=True, check=True)
+    for stream in json.loads(result.stdout).get("streams", []):
+        if stream.get("disposition", {}).get("attached_pic"):
+            return int(stream["index"])
+    return None
+
+
+def preserve_wav_cover(source: Path, target: Path) -> None:
+    """RIFF WAVE carries artwork in an ID3 APIC chunk (FFmpeg's WAV muxer cannot write it)."""
+    index = _cover_stream(source)
+    if index is None:
+        return
+    ffmpeg, _ = ensure_ffmpeg_available()
+    result = subprocess.run([ffmpeg, "-v", "error", "-i", str(source), "-map", f"0:{index}",
+                             "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "pipe:1"],
+                            capture_output=True, check=False)
+    if result.returncode:
+        raise ProcessingError("Could not preserve source artwork in WAV.", error_code="METADATA_FAILED")
+    payload = b"\x00image/png\x00\x03\x00" + result.stdout
+    frame = b"APIC" + len(payload).to_bytes(4, "big") + b"\x00\x00" + payload
+    size = len(frame)
+    synchsafe = bytes((size >> shift) & 0x7f for shift in (21, 14, 7, 0))
+    tag = b"ID3\x03\x00\x00" + synchsafe + frame
+    chunk = b"id3 " + len(tag).to_bytes(4, "little") + tag + (b"\x00" if len(tag) % 2 else b"")
+    with target.open("r+b") as output:
+        kind = output.read(4)
+        output.seek(0, 2)
+        output.write(chunk)
+        riff_size = output.tell() - 8
+        if kind == b"RF64":
+            # FFmpeg's RF64 header begins with a ds64 chunk at byte 12.
+            output.seek(20)
+            output.write(riff_size.to_bytes(8, "little"))
+        else:
+            output.seek(4)
+            output.write(riff_size.to_bytes(4, "little"))
 
 
 def parse_ffmpeg_version_line(version_line: str) -> FFmpegVersionInfo:
@@ -161,7 +219,7 @@ def probe_stream_metadata(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
             "bits_per_raw_sample,bits_per_sample,initial_padding,trailing_padding,duration_ts"
         ),
         "-show_entries",
-        "format=format_name",
+        "format=format_name,duration",
         "-of",
         "json",
         str(path),
@@ -260,6 +318,12 @@ def stream_decode_f32le(
         "pcm_f32le",
         "pipe:1",
     ]
+
+    if out_sr != in_sr:
+        require_soxr(ffmpeg_bin)
+        decode_cmd[decode_cmd.index("-ar"):decode_cmd.index("-ar")] = [
+            "-af", f"aresample={out_sr}:resampler=soxr:precision=28",
+        ]
 
     frame_bytes = 4 * in_ch
     chunk_bytes_target = max(1, block_frames) * frame_bytes
@@ -381,7 +445,7 @@ def probe_audio(path: Path, *, predecoded: tuple[bytes, int, int] | None = None)
     container = str(fmt_info.get("format_name", "unknown"))
 
     if codec.startswith("pcm_"):
-        fmt_label = "wav"
+        fmt_label = "aiff" if "aiff" in container else "wav"
     elif codec == "aac":
         fmt_label = "aac"
     elif codec == "mp3":
@@ -512,43 +576,56 @@ def _build_encode_cmd(
     output_spec: OutputSpec,
     target_path: Path,
     gain_db: float = 0.0,
+    output_sample_rate: int | None = None,
+    expected_samples: int | None = None,
+    metadata_source: Path | None = None,
 ) -> list[str]:
+    target_sr = output_sample_rate or output_spec.resolve_sample_rate(sample_rate)
     codec_args: list[str] = ["-c:a", output_spec.codec_name]
-    if output_spec.format == OutputFormat.WAV:
-        codec_args.extend(["-f", "wav"])
-    elif output_spec.format == OutputFormat.M4A:
-        bitrate = f"{output_spec.bitrate_kbps or 256}k"
-        codec_args.extend(["-b:a", bitrate, "-movflags", "+faststart", "-f", "ipod"])
-    elif output_spec.format == OutputFormat.MP3:
-        bitrate = f"{output_spec.bitrate_kbps or 256}k"
-        codec_args.extend(["-b:a", bitrate, "-write_xing", "1", "-f", "mp3"])
+    fmt = output_spec.format
+    if fmt == OutputFormat.WAV:
+        codec_args.extend(["-rf64", "auto", "-f", "wav"])
+    elif fmt in (OutputFormat.M4A, OutputFormat.ALAC):
+        codec_args.extend(["-movflags", "+faststart", "-f", "ipod"])
+        if fmt == OutputFormat.M4A:
+            codec_args.extend(["-b:a", f"{output_spec.bitrate_kbps or 256}k"])
+    elif fmt == OutputFormat.MP3:
+        codec_args.extend(["-b:a", f"{output_spec.bitrate_kbps or 256}k", "-write_xing", "1", "-f", "mp3"])
+    elif fmt == OutputFormat.FLAC:
+        codec_args.extend(["-f", "flac"])
+    elif fmt == OutputFormat.AIFF:
+        codec_args.extend(["-write_id3v2", "1", "-f", "aiff"])
+    if fmt in (OutputFormat.FLAC, OutputFormat.ALAC):
+        sample_fmt = "s16" if output_spec.bit_depth == 16 else "s32"
+        codec_args.extend(["-sample_fmt", sample_fmt + ("p" if fmt == OutputFormat.ALAC else "")])
+        if output_spec.bit_depth == 24:
+            codec_args.extend(["-bits_per_raw_sample", "24"])
 
-    filter_args: list[str] = []
+    filters: list[str] = []
     if abs(gain_db) > 1e-6:
-        filter_args.extend(["-af", f"volume={gain_db:.6f}dB"])
-
+        filters.append(f"volume={gain_db:.6f}dB")
+    if target_sr != sample_rate:
+        require_soxr(ffmpeg_bin)
+        filters.append(f"aresample={target_sr}:resampler=soxr:precision=28")
+    if expected_samples is not None:
+        filters.extend([f"apad=whole_len={expected_samples}", f"atrim=end_sample={expected_samples}"])
+    # Quantize last, including duration padding. Planar s16 avoids the packed-s16
+    # float conversion bias observed in FFmpeg 9; planar->packed is lossless.
+    if output_spec.is_lossless and output_spec.bit_depth == 16:
+        filters.append("aresample=osf=s16p:dither_method=triangular")
+    metadata_args: list[str] = []
+    if metadata_source is not None:
+        metadata_args = ["-i", str(metadata_source), "-map", "0:a:0", "-map_metadata", "1",
+                         "-map_metadata:s:a:0", "1:s:a:0"]
+        cover = _cover_stream(metadata_source)
+        if cover is not None and fmt != OutputFormat.WAV:
+            metadata_args.extend(["-map", f"1:{cover}", "-c:v", "copy", "-disposition:v:0", "attached_pic"])
     return [
-        ffmpeg_bin,
-        "-y",
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "f32le",
-        "-ar",
-        str(sample_rate),
-        "-ac",
-        str(channels),
-        "-i",
-        "pipe:0",
-        *filter_args,
-        "-ar",
-        str(output_spec.sample_rate),
-        "-ac",
-        str(channels),
-        *codec_args,
-        str(target_path),
+        ffmpeg_bin, "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+        "-f", "f32le", "-ar", str(sample_rate), "-ac", str(channels), "-i", "pipe:0",
+        *metadata_args,
+        *(["-af", ",".join(filters)] if filters else []),
+        "-ar", str(target_sr), "-ac", str(channels), *codec_args, str(target_path),
     ]
 
 
@@ -563,10 +640,14 @@ class StreamingF32LeEncoder:
         output_spec: OutputSpec,
         target_path: Path,
         gain_db: float = 0.0,
+        output_sample_rate: int | None = None,
+        expected_samples: int | None = None,
+        metadata_source: Path | None = None,
     ) -> None:
         ffmpeg_bin, _ = ensure_ffmpeg_available()
         self.output_spec = output_spec
         self.target_path = target_path
+        self.metadata_source = metadata_source
         self._cmd = _build_encode_cmd(
             ffmpeg_bin,
             sample_rate=sample_rate,
@@ -574,6 +655,9 @@ class StreamingF32LeEncoder:
             output_spec=output_spec,
             target_path=target_path,
             gain_db=gain_db,
+            output_sample_rate=output_sample_rate,
+            expected_samples=expected_samples,
+            metadata_source=metadata_source,
         )
         self._proc: subprocess.Popen[bytes] | None = None
 
@@ -626,6 +710,9 @@ class StreamingF32LeEncoder:
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
+
+        if self.output_spec.format == OutputFormat.WAV and self.metadata_source is not None:
+            preserve_wav_cover(self.metadata_source, self.target_path)
 
     def abort(self) -> None:
         """Immediately terminate the encoder subprocess on cancellation or error."""

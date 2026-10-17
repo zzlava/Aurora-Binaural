@@ -100,6 +100,10 @@ class TimelineVerification(BaseModel):
         ge=0, description="Extra reverb tail samples retained in output (0 when tail='trim')."
     )
     input_samples: int = Field(ge=0, description="Decoded input sample frames per channel.")
+    processing_input_samples: int | None = Field(default=None, ge=0, description="Actual decoded frames sent to the engine at engine.internal_sample_rate.")
+    processing_output_samples: int | None = Field(default=None, ge=0, description="Latency-compensated engine output frames before export resampling.")
+    resampler: str | None = Field(default=None, description="Resampler used at the rate boundaries, or null if no resampling occurred.")
+    duration_rounding_adjustment_samples: int = Field(default=0, description="Source-origin target length minus round(processing_output_samples * output_rate / processing_rate); final export explicitly pads/trims to the source-origin target in trim mode.")
     expected_output_samples: int = Field(
         ge=0, description="Expected output sample frames per channel at output sample rate."
     )
@@ -111,7 +115,7 @@ class TimelineVerification(BaseModel):
         description="Raw packet sample frames per channel when ignoring container edit-list / Xing tags.",
     )
     sample_diff: int = Field(
-        description="decoded_readback_samples - expected_output_samples (0 means exact timeline match)."
+        description="decoded_readback_samples - expected_output_samples (0 means exact sample-count match)."
     )
     raw_sample_diff: int = Field(
         description="raw_decoded_samples - expected_output_samples (includes raw priming + trailing padding)."
@@ -125,12 +129,12 @@ class TimelineVerification(BaseModel):
         description="Measured frame-completion trailing padding in raw stream before container compensation.",
     )
     residual_priming_shift_samples: int = Field(
-        description="Residual impulse/onset shift in samples after container gapless compensation."
+        description="Sample-count-based residual codec priming estimate; not a measured impulse/onset shift."
     )
     compensation_strategy: str = Field(description="Applied timeline and codec delay compensation strategy.")
     tolerance_samples: int = Field(ge=0, default=0, description="Allowed sample count deviation tolerance.")
     sync_within_tolerance: bool = Field(
-        description="True if abs(sample_diff) <= tolerance_samples and residual shift is within tolerance."
+        description="True if the decoded sample count is within tolerance. Waveform peak/onset positions require a separate measurement."
     )
     sync_warning: str | None = Field(
         default=None,

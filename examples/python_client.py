@@ -177,9 +177,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     deadline=time.monotonic() + args.timeout)
     source_sha = sha256_file(source)
     render = {"api_version": "v1", "mode": "enhance",
-              "preset": {"id": args.preset, "version": "1"}, "strength": args.strength, "seed": args.seed,
+              "strength": args.strength, "seed": args.seed,
               "output": {"format": "wav", "sample_rate": 48000, "bit_depth": 24},
               "timing": {"mode": "preserve", "tail": "trim"}}
+    if args.preset is not None:
+        render["preset"] = {"id": args.preset, "version": "1"}
     identity = {"server": client.server, "input_sha256": source_sha, "render": render}
     if state_path.exists():
         state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -248,7 +250,7 @@ def main() -> int:
     parser.add_argument("--report", type=Path)
     parser.add_argument("--state", type=Path, help="persistent resume state; default OUTPUT.state.json")
     parser.add_argument("--idempotency-key", help="optional logical operation key, persisted before upload")
-    parser.add_argument("--preset", default="V2")
+    parser.add_argument("--preset", help="omitted uses the server TOML default")
     parser.add_argument("--strength", type=float, help="0–1; omitted uses the preset default")
     parser.add_argument("--seed", type=int, default=20261016)
     parser.add_argument("--timeout", type=float, default=300, help="workflow deadline in seconds")

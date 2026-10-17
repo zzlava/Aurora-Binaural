@@ -59,7 +59,8 @@ function App() {
   const [start, setStart] = useState(0);
   const [duration, setDuration] = useState(10);
   const [format, setFormat] = useState("wav");
-  const [rate, setRate] = useState(48000);
+  const [rate, setRate] = useState<number | "source">("source");
+  const [bitDepth, setBitDepth] = useState<number | "32f">(24);
   const [tail, setTail] = useState("trim");
   const [busy, setBusy] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -358,7 +359,7 @@ function App() {
                 output: {
                   format,
                   sample_rate: rate,
-                  bit_depth: format === "wav" ? 24 : null,
+                  bit_depth: ["wav", "flac", "alac", "aiff"].includes(format) ? bitDepth : null,
                 },
                 timing: { mode: "preserve", tail },
               },
@@ -659,7 +660,7 @@ function App() {
                   ? "正在上传与分析…"
                   : "拖入音频，开始试听"}
               </strong>
-              <span>WAV、M4A、MP3、AAC · 支持多选</span>
+              <span>FLAC、WAV、ALAC、AIFF、AAC、MP3 · 支持多选</span>
               <button
                 disabled={!api || pending}
                 onClick={() => fileInput.current?.click()}
@@ -671,7 +672,7 @@ function App() {
                 class="visually-hidden"
                 type="file"
                 aria-label="导入音频"
-                accept=".wav,.m4a,.mp3,.aac,audio/*"
+                accept=".wav,.flac,.m4a,.alac,.aiff,.aif,.mp3,.aac,audio/*"
                 multiple
                 disabled={!api || pending}
                 onChange={(event) => {
@@ -937,10 +938,15 @@ function App() {
                     onChange={(event) => {
                       const next = event.currentTarget.value;
                       setFormat(next);
-                      if (next === "mp3" && rate === 96000) setRate(48000);
+                      if (next === "mp3" && (rate === 96000 || (rate === "source" && (active?.sample_rate ?? 0) > 48000))) setRate(48000);
+                      if (next === "m4a" && rate === "source" && (active?.sample_rate ?? 0) > 96000) setRate(96000);
+                      if (next !== "wav" && bitDepth === "32f") setBitDepth(24);
                     }}
                   >
-                    <option value="wav">WAV · 24 bit</option>
+                    <option value="wav">WAV · PCM</option>
+                    <option value="flac">FLAC · 无损</option>
+                    <option value="alac">ALAC · M4A 无损</option>
+                    <option value="aiff">AIFF · PCM</option>
                     <option value="m4a">M4A · AAC 256 kbps</option>
                     <option value="mp3">MP3 · 256 kbps</option>
                   </select>
@@ -951,14 +957,24 @@ function App() {
                     value={rate}
                     disabled={!active || pending}
                     onChange={(event) =>
-                      setRate(Number(event.currentTarget.value))
+                      setRate(event.currentTarget.value === "source" ? "source" : Number(event.currentTarget.value))
                     }
                   >
+                    <option value="source" disabled={(format === "mp3" && (active?.sample_rate ?? 0) > 48000) || (format === "m4a" && (active?.sample_rate ?? 0) > 96000)}>与源文件相同</option>
                     <option value="44100">44.1 kHz</option>
                     <option value="48000">48 kHz</option>
                     <option value="96000" disabled={format === "mp3"}>
                       96 kHz
                     </option>
+                  </select>
+                </label>
+                <label>
+                  位深
+                  <select value={bitDepth} disabled={!active || pending || !["wav", "flac", "alac", "aiff"].includes(format)}
+                    onChange={(event) => setBitDepth(event.currentTarget.value === "32f" ? "32f" : Number(event.currentTarget.value))}>
+                    <option value="16">16 bit · TPDF 抖动</option>
+                    <option value="24">24 bit</option>
+                    <option value="32f" disabled={format !== "wav"}>32 bit float</option>
                   </select>
                 </label>
                 <label>
@@ -1113,7 +1129,7 @@ function App() {
                               async () => {
                                 await api?.download(
                                   `/v1/jobs/${entry.job.job_id}/result`,
-                                  `${entry.filename.replace(/\.[^.]+$/, "")}.${entry.job.preview ? "preview.wav" : (entry.job.result_metadata?.format ?? "wav")}`,
+                                  `${entry.filename.replace(/\.[^.]+$/, "")}.${entry.job.preview ? "preview.wav" : (["alac", "aac"].includes(entry.job.result_metadata?.format ?? "") ? "m4a" : (entry.job.result_metadata?.format ?? "wav"))}`,
                                 );
                               },
                             )

@@ -148,7 +148,7 @@ class AuroraWorker:
                     retryable=False,
                 )
 
-            fmt_ext = job.params.output.format.value
+            fmt_ext = job.params.output.extension
             staged_out_path = attempt_dir / f"staged_out.{fmt_ext}"
             staged_report_path = attempt_dir / "staged_report.json"
 

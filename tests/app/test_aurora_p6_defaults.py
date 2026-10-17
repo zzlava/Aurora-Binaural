@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aurora_binaural.api import create_app
+from aurora_binaural.catalog import DEFAULT_PRESET_ID
 from aurora_binaural.cli import run_cli
 from aurora_binaural.config import ServiceConfig
 from aurora_binaural.worker import AuroraWorker
@@ -35,7 +36,7 @@ def assert_native_default(report: dict[str, Any]) -> None:
     assert engine["name"] == "aurora_core" and engine["is_stub"] is False
     assert engine["route"] == "V"
     assert engine["hrtf"]["name"] == "SADIE II D1"
-    assert params["preset"]["id"] == "V2"
+    assert params["preset"]["id"] == DEFAULT_PRESET_ID
     assert report["timeline"]["sample_diff"] == 0
 
 

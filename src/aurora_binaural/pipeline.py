@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 
 from aurora_binaural.engine import Renderer, RendererStreamProcessor, RustRenderer, create_renderer, renderer_metadata
-from aurora_binaural.exit_codes import InputAudioError
+from aurora_binaural.exit_codes import InputAudioError, ParameterValidationError
 from aurora_binaural.media import (
     StreamingF32LeEncoder,
     atomic_write_bytes,
@@ -67,9 +67,9 @@ def get_git_commit_sha() -> str:
 
 def describe_compensation_strategy(fmt: OutputFormat) -> tuple[str, int]:
     """Return the documented codec priming/padding compensation strategy and nominal raw priming."""
-    if fmt == OutputFormat.WAV:
+    if fmt in (OutputFormat.WAV, OutputFormat.FLAC, OutputFormat.ALAC, OutputFormat.AIFF):
         return (
-            "Uncompressed PCM in RIFF WAV container: zero encoder priming (0 samples) and "
+            "Lossless audio: zero encoder priming (0 samples) and "
             "zero frame padding (0 samples). Direct 1:1 sample frame preservation.",
             0,
         )
@@ -107,7 +107,7 @@ def _build_probe_info_from_metadata(
     container = str(fmt_info.get("format_name", "unknown"))
 
     if codec.startswith("pcm_"):
-        fmt_label = "wav"
+        fmt_label = "aiff" if "aiff" in container else "wav"
     elif codec == "aac":
         fmt_label = "aac"
     elif codec == "mp3":
@@ -191,10 +191,12 @@ def convert_audio(
     in_codec = str(in_stream_meta.get("codec_name", "")).lower()
 
     effective_params = params.model_copy(deep=True)
-    if keep_input_sample_rate and in_sr in (44100, 48000, 96000):
-        effective_params.output.sample_rate = in_sr  # type: ignore[assignment]
-
-    target_sr = effective_params.output.sample_rate
+    if keep_input_sample_rate:
+        effective_params.output.sample_rate = "source"
+    try:
+        target_sr = effective_params.output.resolve_sample_rate(in_sr)
+    except ValueError as exc:
+        raise ParameterValidationError(str(exc), error_code="INVALID_OUTPUT_PARAMETERS") from exc
     active_renderer: Renderer = renderer or create_renderer(
         latency_samples=simulated_latency_samples,
         tail_samples=simulated_tail_samples,
@@ -225,6 +227,8 @@ def convert_audio(
         cancel_check=cancel_check,
     )
 
+    native_input_samples, _, _ = count_decoded_samples_streaming(input_path)
+    base_output_samples = round(native_input_samples * target_sr / in_sr)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_out_path = output_path.parent / f".aurora_tmp_{uuid.uuid4().hex}_{output_path.name}"
 
@@ -242,6 +246,9 @@ def convert_audio(
             output_spec=effective_params.output,
             target_path=tmp_out_path,
             gain_db=post_gain_db,
+            output_sample_rate=target_sr,
+            expected_samples=base_output_samples if effective_params.timing.tail == "trim" else None,
+            metadata_source=input_path,
         ) as encoder:
             for in_block, _, _ in stream_decode_f32le(
                 input_path,
@@ -255,11 +262,6 @@ def convert_audio(
 
             for out_chunk in stream_proc.finish():
                 encoder.write_block(out_chunk)
-
-        if in_sr == render_sr:
-            native_input_samples = stream_proc.input_frames
-        else:
-            native_input_samples, _, _ = count_decoded_samples_streaming(input_path)
 
         input_probe = _build_probe_info_from_metadata(
             input_path,
@@ -278,7 +280,7 @@ def convert_audio(
         log_stderr("Performing streaming readback decode verification (gapless & raw stream)")
         out_stream_meta, out_fmt_meta = probe_stream_metadata(tmp_out_path)
         readback_samples, rb_sr, rb_ch = count_decoded_samples_streaming(tmp_out_path, ignore_gapless=False)
-        if effective_params.output.format == OutputFormat.WAV:
+        if effective_params.output.is_lossless:
             raw_samples = readback_samples
         else:
             raw_samples, _, _ = count_decoded_samples_streaming(tmp_out_path, ignore_gapless=True)
@@ -293,19 +295,19 @@ def convert_audio(
         )
         loudness_after = measure_loudness_file(tmp_out_path)
 
-        expected_output_samples = round(stream_proc.output_frames * target_sr / render_sr)
+        expected_output_samples = base_output_samples + round(stream_proc.extra_tail_kept * target_sr / render_sr)
         sample_diff = readback_samples - expected_output_samples
         raw_sample_diff = raw_samples - expected_output_samples
 
         strategy_desc, nominal_priming = describe_compensation_strategy(effective_params.output.format)
-        if effective_params.output.format == OutputFormat.WAV:
+        if effective_params.output.is_lossless:
             priming_samples = 0
             trailing_padding_samples = 0
         else:
             priming_samples = output_probe_tmp.initial_padding or nominal_priming
             trailing_padding_samples = max(0, raw_sample_diff - priming_samples)
 
-        tolerance_samples = 0 if in_sr == target_sr == render_sr else 2
+        tolerance_samples = 0 if in_sr == target_sr == render_sr else 1
         sync_ok = abs(sample_diff) <= tolerance_samples
         sync_warning: str | None = None
         if not sync_ok:
@@ -340,6 +342,10 @@ def convert_audio(
         engine_tail_samples=stream_proc.tail,
         extra_tail_samples_kept=round(stream_proc.extra_tail_kept * target_sr / render_sr),
         input_samples=input_probe.samples,
+        processing_input_samples=stream_proc.input_frames,
+        processing_output_samples=stream_proc.output_frames,
+        resampler="soxr VHQ (precision=28)" if in_sr != render_sr or render_sr != target_sr else None,
+        duration_rounding_adjustment_samples=expected_output_samples - round(stream_proc.output_frames * target_sr / render_sr),
         expected_output_samples=expected_output_samples,
         decoded_readback_samples=readback_samples,
         raw_decoded_samples=raw_samples,
@@ -395,7 +401,8 @@ def _encode_dry_reference_streaming(
         )
     dry_target_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = dry_target_path.parent / f".aurora_tmp_{uuid.uuid4().hex}_{dry_target_path.name}"
-    target_sr = params.output.sample_rate
+    source_meta, _ = probe_stream_metadata(input_path)
+    target_sr = params.output.resolve_sample_rate(int(source_meta["sample_rate"]))
     try:
         with StreamingF32LeEncoder(
             sample_rate=target_sr,
@@ -403,6 +410,7 @@ def _encode_dry_reference_streaming(
             output_spec=params.output,
             target_path=tmp_path,
             gain_db=gain_db,
+            metadata_source=input_path,
         ) as encoder:
             for block, _, in_ch in stream_decode_f32le(
                 input_path,
@@ -441,7 +449,7 @@ def compare_audio(
     if not input_path.is_file():
         raise InputAudioError(f"Input path is not a file: {input_path}", error_code="INPUT_NOT_A_FILE")
 
-    fmt_ext = params.output.format.value
+    fmt_ext = params.output.extension
     preset_id = params.preset.id.value
     dry_path = output_dir / f"{input_path.stem}_dry.{fmt_ext}"
     effect_path = output_dir / f"{input_path.stem}_{preset_id}.{fmt_ext}"

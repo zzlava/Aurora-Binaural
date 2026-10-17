@@ -79,7 +79,7 @@ AURORA_ENGINE=rust uv run aurora convert data/assets/synth_voice_mono.wav \
 
 `core-build` 是 uv 可选依赖组；构建脚本复制本地 `core/` 到临时目录，补充独立的 maturin 元数据，使用 `--release --locked` 构建并安装 `aurora_core` wheel。不会修改原始 `core/`。应用仍使用 hatchling 构建。`uv sync` 的精确同步可能移除未纳入应用依赖的本地扩展，之后重新执行构建脚本即可。
 
-`AURORA_ENGINE=rust|stub` 默认 `rust`；缺失扩展会明确失败并显示安装提示。路线 V 核心尚未合并时默认 V2 会报 `CORE_ROUTE_UNSUPPORTED`，可显式选择 `--preset room` 验证经典路线 B，绝不自动代换预设。
+`AURORA_ENGINE=rust|stub` 默认 `rust`；缺失扩展会明确失败并显示安装提示。核心过旧且不支持路线 V 时会报 `CORE_ROUTE_UNSUPPORTED`，可显式选择 `--preset room` 验证经典路线 B，绝不自动代换预设。
 
 Docker 增加独立 Rust wheel 构建阶段，最终镜像只安装 wheel、Python 运行依赖与 FFmpeg，不包含 Rust 工具链。
 
@@ -88,7 +88,9 @@ docker build -f deploy/Dockerfile -t aurora-binaural:p5 .
 docker run --rm aurora-binaural:p5 presets --json
 ```
 
-预设列表由 `presets/*.toml` 读取，默认 V2，界面列出 V1/V2/V3 与经典 room。`AURORA_PRESETS_DIR` 可指定外部目录，数据更新后重启服务。旧 surround/orbit 仅为既有任务保留显式调用兼容。当前 TOML 缺少 route/default 字段，应用依据共享 `[layout]` 判断路线 V，集中设置默认 V2，不维护第二份预设清单。
+预设列表由 `presets/*.toml` 读取，默认由 route_v.toml 根字段 default_preset 决定，界面列出 V1/V2/V3 与经典 room。`AURORA_PRESETS_DIR` 可指定外部目录，数据更新后重启服务。旧 surround/orbit 仅为既有任务保留显式调用兼容。旧 TOML 缺少 default_preset 时警告并回退到 route_v.toml 的第一个预设；旧 schema 仍依据共享 `[layout]` 判断路线 V。不维护第二份预设清单。
+
+FLAC/WAV/ALAC/AIFF 与 source 采样率导出需要 FFmpeg 的 libsoxr 重采样支持；可通过 AURORA_FFMPEG、AURORA_FFPROBE 显式选择二进制，缺少能力时报 SOXR_UNAVAILABLE。完整格式表见 [快速开始](../docs/user/quickstart.md#格式采样率与位深)。
 
 ## HRTF 打包边界
 

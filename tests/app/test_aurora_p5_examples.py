@@ -112,6 +112,7 @@ def test_example_retries_and_resumes_same_job(tmp_path: Path, example_server: tu
     assert state["uploads"] == 2
     assert len(state["creates"]) == 2
     assert state["creates"][0] == state["creates"][1]
+    assert "preset" not in state["creates"][0][1]  # Use the API/TOML default without copying it.
     saved = (tmp_path / "result.wav.state.json").read_text()
     assert "test-example-key" not in saved
     resumed = invoke(tmp_path, server, "--overwrite")

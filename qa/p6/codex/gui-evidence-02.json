@@ -1,0 +1,101 @@
+{
+  "errors": [],
+  "evidence": [
+    {
+      "settings": {
+        "format": "flac",
+        "sample_rate": "source",
+        "bit_depth": 24
+      },
+      "download": "impulse-96000.flac",
+      "readback": {
+        "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/downloads-02/gui-flac.flac",
+        "sha256": "52e21a0ca4a82215267a30cb4004d9b696a3ca9d7f6ad7213f1791fa125f3625",
+        "format": "flac",
+        "container": "flac",
+        "codec": "flac",
+        "sample_rate": 96000,
+        "channels": 2,
+        "channel_layout": "stereo",
+        "samples": 192017,
+        "duration_seconds": 2.000177083,
+        "bit_depth": 24,
+        "size_bytes": 112121,
+        "initial_padding": 0,
+        "trailing_padding": 0
+      }
+    },
+    {
+      "settings": {
+        "format": "alac",
+        "sample_rate": 44100,
+        "bit_depth": 24
+      },
+      "download": "impulse-96000.m4a",
+      "readback": {
+        "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/downloads-02/gui-alac.m4a",
+        "sha256": "2a190ef3579c10e54ccc9427eca1f81d34ae6ce4b4e7538a6e001d1b3c0da942",
+        "format": "alac",
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "alac",
+        "sample_rate": 44100,
+        "channels": 2,
+        "channel_layout": "stereo",
+        "samples": 88208,
+        "duration_seconds": 2.000181406,
+        "bit_depth": 24,
+        "size_bytes": 207559,
+        "initial_padding": 0,
+        "trailing_padding": 0
+      }
+    },
+    {
+      "settings": {
+        "format": "aiff",
+        "sample_rate": 48000,
+        "bit_depth": 16
+      },
+      "download": "impulse-96000.aiff",
+      "readback": {
+        "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/downloads-02/gui-aiff.aiff",
+        "sha256": "207c7f16f41ad7187e32c41cc1a58300252633044407c6e6cfab1889ccf8154e",
+        "format": "aiff",
+        "container": "aiff",
+        "codec": "pcm_s16be",
+        "sample_rate": 48000,
+        "channels": 2,
+        "channel_layout": null,
+        "samples": 96008,
+        "duration_seconds": 2.000166667,
+        "bit_depth": 16,
+        "size_bytes": 384138,
+        "initial_padding": 0,
+        "trailing_padding": 0
+      }
+    },
+    {
+      "settings": {
+        "format": "wav",
+        "sample_rate": 96000,
+        "bit_depth": "32f"
+      },
+      "download": "impulse-96000.wav",
+      "readback": {
+        "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/downloads-02/gui-wav.wav",
+        "sha256": "f065bc913cae26e98b73395469d95aa55ff873d2df14fa25b4fe374e9d17c53b",
+        "format": "wav",
+        "container": "wav",
+        "codec": "pcm_f32le",
+        "sample_rate": 96000,
+        "channels": 2,
+        "channel_layout": "stereo",
+        "samples": 192017,
+        "duration_seconds": 2.000177083,
+        "bit_depth": 32,
+        "size_bytes": 1536286,
+        "initial_padding": 0,
+        "trailing_padding": 0
+      }
+    }
+  ]
+}

@@ -18,7 +18,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml ps
 
 必须显式给出 `--env-file deploy/.env`，不能假设 Compose 自动加载该路径。镜像分三个阶段：Node 构建静态 GUI、Rust/maturin 编译 release 原生 wheel、Python/FFmpeg 运行镜像。最终镜像包含 `aurora_core`、SADIE II D1 SOFA/HRIR pack 和许可证，运行时无需下载 HRTF，也没有 Rust 工具链。
 
-Compose 固定 `AURORA_ENGINE=rust`，API/Worker 共享同一镜像，默认路线 V/V2 与 SADIE II D1。验证时从宿主机运行 [Python 客户端](../../examples/python_client.py)，检查 report.engine.is_stub=false、engine.route=V、params.preset.id=V2。`room` 为显式选择的经典路线 B。`up --wait` 的 healthcheck 只检查 API 存活，仍需检查 `/ready` 并实际提交任务。
+Compose 固定 `AURORA_ENGINE=rust`，API/Worker 共享同一镜像，默认路线 V 与 SADIE II D1，预设读取 route_v.toml 的 default_preset。验证时从宿主机运行 [Python 客户端](../../examples/python_client.py)，检查 report.engine.is_stub=false、engine.route=V、params.preset.id 与 GET /v1/presets.default_preset 一致。`room` 为显式选择的经典路线 B。`up --wait` 的 healthcheck 只检查 API 存活，仍需检查 `/ready` 并实际提交任务。
 
 ## 环境变量
 
