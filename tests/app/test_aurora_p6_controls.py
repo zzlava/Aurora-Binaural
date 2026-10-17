@@ -91,3 +91,35 @@ def test_report_contains_actual_controls(tmp_path: Path, engine: str, preset: st
         assert "width" in report.ignored_controls
         assert "忽略" in report.controls_note
         assert report.controls == ({"strength": params.effective_strength} if engine == "rust" else {})
+
+
+@pytest.mark.parametrize("preview", [False, True])
+def test_api_controls_survive_queue_and_native_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preview: bool) -> None:
+    from fastapi.testclient import TestClient
+
+    from aurora_binaural.api import create_app
+    from aurora_binaural.config import ServiceConfig
+    from aurora_binaural.worker import AuroraWorker
+    from test_aurora_p6_defaults import source_audio
+
+    monkeypatch.setenv("AURORA_ENGINE", "rust")
+    config = ServiceConfig(api_key="controls-test", data_dir=tmp_path / "data", db_path=tmp_path / "db")
+    app = create_app(config)
+    source = tmp_path / "source.wav"
+    source_audio(source)
+    headers = {"Authorization": "Bearer controls-test"}
+    with TestClient(app) as client:
+        asset = client.post("/v1/assets", headers=headers, files={"file": (source.name, source.read_bytes())}).json()
+        payload = {"asset_id": asset["asset_id"], "duration_seconds": 1} if preview else {"input": {"asset_id": asset["asset_id"]}}
+        payload["controls"] = dict(strength=0.5, width=0.25, height=0, room=2, voice_distance=0.75)
+        created = client.post("/v1/previews" if preview else "/v1/jobs", headers=headers, json=payload)
+        assert created.status_code == 202, created.text
+        job = AuroraWorker(config, store=app.state.store).run_once()
+        assert job and job.status == "succeeded", job
+        report = client.get(f"/v1/jobs/{job.job_id}/report", headers=headers).json()
+        assert report["controls"] == dict(strength=0.5, width=0.25, height=0, room=1, voice_distance=0.75)
+        assert report["effective_params"]["controls"] == report["controls"]
+        assert report["params"]["control_clipping"] == [dict(control="room", requested=2, applied=1)]
+        schema = client.get("/openapi.json").json()
+        for model in ("AuroraParams", "PreviewRequest"):
+            assert "controls" in schema["components"]["schemas"][model]["properties"]

@@ -627,7 +627,8 @@ def create_app(
     ) -> JobStatusResponseModel:
         params = AuroraParams(
             input=InputSpec(asset_id=request.asset_id), preset=request.preset,
-            strength=request.strength, seed=request.seed, output=OutputSpec(bit_depth=32),
+            strength=request.strength, controls=request.controls, control_clipping=request.control_clipping,
+            seed=request.seed, output=OutputSpec(bit_depth=32),
             timing=TimingSpec(fade_out_ms=0),
             preview=PreviewSpec(start_seconds=request.start_seconds, duration_seconds=request.duration_seconds),
         )

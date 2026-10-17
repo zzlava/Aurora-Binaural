@@ -1063,6 +1063,74 @@
       },
       "AuroraParams": {
         "properties": {
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength",
+            "description": "Perceptual effect strength in [0.0, 1.0]. Mapped to upmix width, ambient ratio, early reflections, and DRR offset. Dry/wet mixing is forbidden. When 0.0, spatial DSP is bypassed. Defaults to TOML controls.strength; finite outliers are clamped."
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "voice_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Distance"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          },
+          "control_clipping": {
+            "items": {
+              "$ref": "#/components/schemas/ControlClipping"
+            },
+            "type": "array",
+            "title": "Control Clipping"
+          },
           "preview": {
             "anyOf": [
               {
@@ -1100,20 +1168,6 @@
             "$ref": "#/components/schemas/PresetSpec",
             "description": "Spatial preset identifier and version."
           },
-          "strength": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strength",
-            "description": "Perceptual effect strength in [0.0, 1.0]. Mapped to upmix width, ambient ratio, early reflections, and DRR offset. Dry/wet mixing is forbidden. When 0.0, spatial DSP is bypassed. Defaults to the selected preset's default_strength."
-          },
           "seed": {
             "type": "integer",
             "maximum": 4294967295.0,
@@ -1135,6 +1189,39 @@
         "type": "object",
         "title": "AuroraParams",
         "description": "Unified parameter model shared by CLI, Web GUI, and HTTP API (docs/plan.md Sections 9 & 10).\n\nSupports both standalone render parameter validation and full `POST /v1/jobs` payloads:\n```json\n{\n  \"api_version\": \"v1\",\n  \"mode\": \"enhance\",\n  \"input\": {\"asset_id\": \"asset_example\"},\n  \"preset\": {\"id\": \"room\", \"version\": \"1\"},\n  \"strength\": 0.4,\n  \"seed\": 20261016,\n  \"output\": {\"format\": \"wav\", \"sample_rate\": 48000, \"bit_depth\": 24},\n  \"timing\": {\"mode\": \"preserve\", \"tail\": \"trim\"}\n}\n```"
+      },
+      "ControlClipping": {
+        "properties": {
+          "control": {
+            "type": "string",
+            "enum": [
+              "strength",
+              "width",
+              "height",
+              "room",
+              "voice_distance"
+            ],
+            "title": "Control"
+          },
+          "requested": {
+            "type": "number",
+            "title": "Requested"
+          },
+          "applied": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Applied"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "control",
+          "requested",
+          "applied"
+        ],
+        "title": "ControlClipping"
       },
       "ConversionReport": {
         "properties": {
@@ -1195,6 +1282,39 @@
           },
           "params": {
             "$ref": "#/components/schemas/AuroraParams"
+          },
+          "controls": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Controls",
+            "description": "Actually applied macro controls read back from the engine."
+          },
+          "effective_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Params",
+            "description": "Native expanded route V parameters; null when unsupported."
+          },
+          "ignored_controls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ignored Controls"
+          },
+          "controls_note": {
+            "type": "string",
+            "title": "Controls Note",
+            "default": ""
           },
           "timeline": {
             "$ref": "#/components/schemas/TimelineVerification"
@@ -1928,6 +2048,13 @@
             "minimum": 0.0,
             "title": "Default Strength"
           },
+          "default_controls": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Default Controls"
+          },
           "description": {
             "type": "string",
             "title": "Description"
@@ -1953,6 +2080,7 @@
           "name",
           "version",
           "default_strength",
+          "default_controls",
           "description",
           "algorithm_summary",
           "route"
@@ -2129,6 +2257,71 @@
       },
       "PreviewRequest": {
         "properties": {
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "voice_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Distance"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          },
+          "control_clipping": {
+            "items": {
+              "$ref": "#/components/schemas/ControlClipping"
+            },
+            "type": "array",
+            "title": "Control Clipping"
+          },
           "start_seconds": {
             "type": "number",
             "minimum": 0.0,
@@ -2150,19 +2343,6 @@
           },
           "preset": {
             "$ref": "#/components/schemas/PresetSpec"
-          },
-          "strength": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strength"
           },
           "seed": {
             "type": "integer",
@@ -2264,6 +2444,69 @@
         ],
         "title": "RenderMode",
         "description": "Job rendering mode (docs/plan.md Section 10)."
+      },
+      "SpatialControls": {
+        "properties": {
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "voice_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Distance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SpatialControls",
+        "description": "Partial overrides; omitted values come from the selected TOML preset."
       },
       "TailPolicy": {
         "type": "string",
