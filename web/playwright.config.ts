@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 const root = fileURLToPath(new URL("..", import.meta.url));
-const qa = path.join(root, "qa/p5/codex");
+const qa = path.join(root, "qa/p6/codex");
 const runtime = (name: string) => ({
   AURORA_ENGINE: "stub",
   AURORA_DATA_DIR: path.join(qa, ".runtime", `${name}-${process.pid}`),
@@ -19,6 +19,7 @@ const runtime = (name: string) => ({
 });
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: "rust-workflow.spec.ts",
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -26,7 +27,7 @@ export default defineConfig({
   outputDir: path.join(qa, ".test-output"),
   reporter: [
     ["list"],
-    ["json", { outputFile: path.join(qa, "e2e-results.json") }],
+    ["json", { outputFile: path.join(qa, "stub-e2e-results.json") }],
   ],
   use: {
     baseURL: "http://127.0.0.1:8767",

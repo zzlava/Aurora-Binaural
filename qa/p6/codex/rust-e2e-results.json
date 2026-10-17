@@ -1,0 +1,162 @@
+{
+  "config": {
+    "argv": [
+      "~/.nvm/versions/node/v24.12.0/bin/node",
+      "~/Desktop/leo/Aurora Binaural/.agents/codex/web/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "playwright.rust.config.ts"
+    ],
+    "configFile": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/playwright.rust.config.ts",
+    "rootDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.test-output/rust",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "rust-workflow.spec.ts"
+        ],
+        "timeout": 120000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.test-output/rust",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+        "snapshotDir": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/tests",
+        "testIgnore": [],
+        "testMatch": "rust-workflow.spec.ts",
+        "timeout": 120000,
+        "use": {
+          "baseURL": "http://127.0.0.1:8776",
+          "browserName": "chromium",
+          "colorScheme": "light",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "trace": "off"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/rust-e2e-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": {
+      "command": "uv run aurora gui --no-browser --port 8776",
+      "cwd": "~/Desktop/leo/Aurora Binaural/.agents/codex/",
+      "url": "http://127.0.0.1:8776/health",
+      "reuseExistingServer": false,
+      "env": {
+        "AURORA_DATA_DIR": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-81290",
+        "AURORA_DB_PATH": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p6/codex/.runtime/rust-81290/aurora.db",
+        "AURORA_WEB_DIR": "~/Desktop/leo/Aurora Binaural/.agents/codex/web/dist"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "rust-workflow.spec.ts",
+      "file": "rust-workflow.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "真实音乐 → Rust V2 试听与同步 A/B → WAV 导出下载；四种主题视口",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 15177,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T02:56:56.380Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "45e459107e65ff44dfcf-ab44ae1290881aa4fc08",
+          "file": "rust-workflow.spec.ts",
+          "line": 8,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-17T02:56:55.813Z",
+    "duration": 16032.276,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

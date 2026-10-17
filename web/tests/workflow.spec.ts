@@ -15,7 +15,7 @@ declare global {
 }
 
 const screenshotDir = fileURLToPath(
-  new URL("../../qa/p5/codex/screenshots/", import.meta.url),
+  new URL("../../qa/p6/codex/.runtime/stub-screenshots/", import.meta.url),
 );
 function wav(duration = 5): Buffer {
   const rate = 48000,
