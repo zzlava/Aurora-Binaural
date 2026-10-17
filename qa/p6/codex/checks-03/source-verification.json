@@ -1,0 +1,80 @@
+{
+  "application_commit": "14e3635b9f476f65db9905777e807f4c3fb272f1",
+  "branch": "agent/codex/P6-03",
+  "linux_tested_source_archive_sha256": "5ae2152bd4bc88d37c0c726469b0fef648b049cfcbc88c4052a8dafb994f231a",
+  "changed_files_match_linux_tested_snapshot": true,
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "5ebfed92909d1e635ebc5b8c44b544dd3d93f49b3ce24dde62145792dfdf16c5"
+    },
+    {
+      "path": "docs/user/quickstart.md",
+      "sha256": "3300dbae569e7019e502dc757ca3f058acaa3e1aecad024036fce2f8ee7d642b"
+    },
+    {
+      "path": "docs/user/troubleshooting.md",
+      "sha256": "f5cb86a3d17ac72e13cbbd6c5e4c9bf4e03a40c77b78e3f2a5fd754e657cbf54"
+    },
+    {
+      "path": "qa/p6/codex/openapi.json",
+      "sha256": "53d50424570dc695451be413a01a85a1f4b106bd344fa15993943343eddca807"
+    },
+    {
+      "path": "qa/p6/codex/verify_02.py",
+      "sha256": "e7b297f7d52d83269cd0e91a6917e087f68ec52ad63df14d54b868beca538efb"
+    },
+    {
+      "path": "scripts/setup.sh",
+      "sha256": "c3fe4fbf3bc83243518bec2fabf18fefb7e47bf72a9822541d46b99eaaa1116a"
+    },
+    {
+      "path": "src/aurora_binaural/engine.py",
+      "sha256": "a10f00a66f826319618fdae0a683af829ccfc5956bcb94c2de44bfc8adede0f9"
+    },
+    {
+      "path": "src/aurora_binaural/ffmpeg_discovery.py",
+      "sha256": "1ea7b1a0ec62268a55662f5f4e8abc4cb5be12737db202ef0704d8b96b62ced3"
+    },
+    {
+      "path": "src/aurora_binaural/media/__init__.py",
+      "sha256": "c979f9210ba4529c888284bcf5ed804d6ffffedf22efe21f55dd7b41ed30655f"
+    },
+    {
+      "path": "src/aurora_binaural/storage.py",
+      "sha256": "9b21816684572a801731f616cd7c9d671a8a216d1bc3a9147e0606e3d7425dda"
+    },
+    {
+      "path": "src/aurora_binaural/worker/__init__.py",
+      "sha256": "8929b90843a878f7baf110ba7651aa0fb907b4996117cfdcb49e091d3290c6bf"
+    },
+    {
+      "path": "tests/app/test_aurora_p3.py",
+      "sha256": "40bc87bd8e636b80211576f0632000fc825641dbf311b4c654b397771f2342e7"
+    },
+    {
+      "path": "tests/app/test_aurora_p5_engine.py",
+      "sha256": "77f3f715c3a3cfaa6ff0bbc603f571dc765229b9c9ab6fb36200e3bc2478b5ad"
+    },
+    {
+      "path": "tests/app/test_aurora_p5_rust_contract.py",
+      "sha256": "99c4cc0023a7bb153f10e6195c23ea7a0513080f1fb806dc9cffc64f039e50b0"
+    },
+    {
+      "path": "tests/app/test_aurora_p6_defaults.py",
+      "sha256": "ec7be9209f6c53f3611faa4f6b8833adb7289ff58b011288a937d0937064e020"
+    },
+    {
+      "path": "tests/app/test_aurora_p6_formats.py",
+      "sha256": "73340db9fcb4c2395a6c40c117b3f6746960e0bf0c867340e55083dc4ae09e9b"
+    },
+    {
+      "path": "tests/app/test_aurora_p6_setup.py",
+      "sha256": "beb1a4c621a68e1d958b03d2395e3bf31a2fb19d4ebe17ffd0576d677c416916"
+    },
+    {
+      "path": "tests/app/test_aurora_p6_timeline.py",
+      "sha256": "d8c89803df913575657ad298b3d1ee15532b8b0d45ede8280e81f88919238c82"
+    }
+  ]
+}

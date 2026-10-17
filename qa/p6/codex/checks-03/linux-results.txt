@@ -1,0 +1,7 @@
+setup_first=0
+setup_second=0
+pytest=0
+ruff=0
+mypy=0
+npm_lint=0
+npm_typecheck=0
