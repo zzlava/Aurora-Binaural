@@ -30,6 +30,9 @@ class OutputFormat(StrEnum):
     WAV = "wav"
     M4A = "m4a"
     MP3 = "mp3"
+    FLAC = "flac"
+    ALAC = "alac"
+    AIFF = "aiff"
 
 
 class OutputContainer(StrEnum):
@@ -38,6 +41,8 @@ class OutputContainer(StrEnum):
     WAV = "wav"
     M4A = "m4a"
     MP3 = "mp3"
+    FLAC = "flac"
+    AIFF = "aiff"
 
 
 class TimingMode(StrEnum):
@@ -117,75 +122,73 @@ class OutputSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    format: OutputFormat = Field(
-        default=OutputFormat.WAV,
-        description="Output format: 'wav' (PCM), 'm4a' (AAC-LC in M4A container), or 'mp3' (MPEG-1 Layer III).",
+    format: OutputFormat = Field(default=OutputFormat.WAV, description="wav, flac, alac (M4A), aiff, m4a (AAC), mp3")
+    container: OutputContainer | None = Field(default=None, description="Derived from format; ALAC uses m4a.")
+    sample_rate: Literal["source", 44100, 48000, 96000] = Field(
+        default="source", description="source (default), 44100, 48000 or 96000 Hz. DSP runs at 48000 Hz.",
     )
-    container: OutputContainer | None = Field(
-        default=None,
-        description="Output container ('wav', 'm4a', 'mp3'). Automatically derived from format if omitted.",
+    bit_depth: Literal[16, 24, 32, "32f"] | None = Field(
+        default=24, description="Lossless output: 16/24; WAV also accepts 32f (legacy 32). 16 bit uses TPDF dither.",
     )
-    sample_rate: Literal[44100, 48000, 96000] = Field(
-        default=48000,
-        description="Output sample rate in Hz (44100, 48000, or 96000). Internal engine runs at 48000 Hz.",
-    )
-    bit_depth: Literal[16, 24, 32] | None = Field(
-        default=24,
-        description="PCM bit depth for WAV output (16, 24, or 32). Ignored/null for lossy M4A/MP3 outputs.",
-    )
-    bitrate_kbps: Annotated[int, Field(ge=64, le=512)] | None = Field(
-        default=None,
-        description="Target bitrate in kbps for lossy codecs (M4A/MP3). Defaults to 256 kbps when encoding lossy formats.",
-    )
+    bitrate_kbps: Annotated[int, Field(ge=64, le=512)] | None = Field(default=None)
+
+    @property
+    def is_lossless(self) -> bool:
+        return self.format in (OutputFormat.WAV, OutputFormat.FLAC, OutputFormat.ALAC, OutputFormat.AIFF)
+
+    @property
+    def extension(self) -> str:
+        return "m4a" if self.format == OutputFormat.ALAC else self.format.value
+
+    @property
+    def media_type(self) -> str:
+        return {"wav": "audio/wav", "flac": "audio/flac", "alac": "audio/mp4", "aiff": "audio/aiff",
+                "m4a": "audio/mp4", "mp3": "audio/mpeg"}[self.format.value]
+
+    def resolve_sample_rate(self, source_rate: int) -> int:
+        rate = source_rate if self.sample_rate == "source" else self.sample_rate
+        if self.format == OutputFormat.MP3 and rate > 48000:
+            raise ValueError("MP3 supports at most 48 kHz; cannot preserve higher source rates; select 44100/48000 or a lossless format.")
+        if self.format == OutputFormat.M4A and rate > 96000:
+            raise ValueError("AAC cannot preserve source rates above 96 kHz; select a lower rate or a lossless format.")
+        return rate
 
     @model_validator(mode="after")
     def _validate_and_normalize_output(self) -> OutputSpec:
-        if self.format == OutputFormat.MP3 and self.sample_rate == 96000:
-            raise ValueError("MP3 supports 44100 or 48000 Hz output; 96000 Hz requires WAV or M4A.")
-        expected_container = OutputContainer(self.format.value)
+        expected = OutputContainer.M4A if self.format == OutputFormat.ALAC else OutputContainer(self.format.value)
         if self.container is None:
-            self.container = expected_container
-        elif self.container != expected_container:
-            raise ValueError(
-                f"Output container '{self.container}' is incompatible with format '{self.format}' "
-                f"(expected '{expected_container}')."
-            )
-
-        if self.format == OutputFormat.WAV:
+            self.container = expected
+        elif self.container != expected:
+            raise ValueError(f"Output container '{self.container}' is incompatible with format '{self.format}' (expected '{expected}').")
+        if self.sample_rate != "source":
+            self.resolve_sample_rate(self.sample_rate)
+        if self.is_lossless:
             if self.bit_depth is None:
                 self.bit_depth = 24
+            if self.bit_depth in (32, "32f") and self.format != OutputFormat.WAV:
+                raise ValueError("32f output is supported only in WAV; FLAC, ALAC and AIFF support 16/24 bit.")
             if self.bitrate_kbps is not None:
-                raise ValueError("bitrate_kbps cannot be specified for uncompressed WAV output.")
+                raise ValueError("bitrate_kbps cannot be specified for lossless output.")
         else:
-            # Lossy formats (m4a / mp3): bit_depth does not apply; default bitrate is 256 kbps.
+            self.bit_depth = None
             if self.bitrate_kbps is None:
                 self.bitrate_kbps = 256
-
         return self
 
     @property
     def codec_name(self) -> str:
-        """Return the canonical FFmpeg audio encoder name for this output specification."""
         if self.format == OutputFormat.WAV:
-            if self.bit_depth == 16:
-                return "pcm_s16le"
-            if self.bit_depth == 32:
-                return "pcm_f32le"
-            return "pcm_s24le"
-        if self.format == OutputFormat.M4A:
-            # Explicitly use FFmpeg native 'aac' encoder rather than macOS 'aac_at'
-            # so priming (1024) and MP4 edit-list trimming behave identically on macOS and Linux.
-            return "aac"
-        return "libmp3lame"
+            return {16: "pcm_s16le", 24: "pcm_s24le", 32: "pcm_f32le", "32f": "pcm_f32le"}[self.bit_depth or 24]
+        if self.format == OutputFormat.AIFF:
+            return "pcm_s16be" if self.bit_depth == 16 else "pcm_s24be"
+        return {OutputFormat.FLAC: "flac", OutputFormat.ALAC: "alac", OutputFormat.M4A: "aac",
+                OutputFormat.MP3: "libmp3lame"}[self.format]
 
     @property
     def audio_format_label(self) -> str:
-        """Human-readable codec/format label separated from container (Section 4.1)."""
-        if self.format == OutputFormat.WAV:
-            return f"PCM {self.bit_depth or 24}-bit"
-        if self.format == OutputFormat.M4A:
-            return "AAC-LC"
-        return "MP3"
+        if self.is_lossless:
+            return f"{self.format.value.upper()} {self.bit_depth}-bit"
+        return "AAC-LC" if self.format == OutputFormat.M4A else "MP3"
 
 
 class TimingSpec(BaseModel):

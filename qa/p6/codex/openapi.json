@@ -606,6 +606,18 @@
                   "type": "string",
                   "format": "binary"
                 }
+              },
+              "audio/flac": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/aiff": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
           },
@@ -1799,7 +1811,9 @@
         "enum": [
           "wav",
           "m4a",
-          "mp3"
+          "mp3",
+          "flac",
+          "aiff"
         ],
         "title": "OutputContainer",
         "description": "Supported output audio container formats (docs/plan.md Section 4.1)."
@@ -1809,7 +1823,10 @@
         "enum": [
           "wav",
           "m4a",
-          "mp3"
+          "mp3",
+          "flac",
+          "alac",
+          "aiff"
         ],
         "title": "OutputFormat",
         "description": "Supported output audio formats (docs/plan.md Section 4.1 & 10)."
@@ -1818,7 +1835,7 @@
         "properties": {
           "format": {
             "$ref": "#/components/schemas/OutputFormat",
-            "description": "Output format: 'wav' (PCM), 'm4a' (AAC-LC in M4A container), or 'mp3' (MPEG-1 Layer III).",
+            "description": "wav, flac, alac (M4A), aiff, m4a (AAC), mp3",
             "default": "wav"
           },
           "container": {
@@ -1830,27 +1847,27 @@
                 "type": "null"
               }
             ],
-            "description": "Output container ('wav', 'm4a', 'mp3'). Automatically derived from format if omitted."
+            "description": "Derived from format; ALAC uses m4a."
           },
           "sample_rate": {
-            "type": "integer",
             "enum": [
+              "source",
               44100,
               48000,
               96000
             ],
             "title": "Sample Rate",
-            "description": "Output sample rate in Hz (44100, 48000, or 96000). Internal engine runs at 48000 Hz.",
-            "default": 48000
+            "description": "source (default), 44100, 48000 or 96000 Hz. DSP runs at 48000 Hz.",
+            "default": "source"
           },
           "bit_depth": {
             "anyOf": [
               {
-                "type": "integer",
                 "enum": [
                   16,
                   24,
-                  32
+                  32,
+                  "32f"
                 ]
               },
               {
@@ -1858,7 +1875,7 @@
               }
             ],
             "title": "Bit Depth",
-            "description": "PCM bit depth for WAV output (16, 24, or 32). Ignored/null for lossy M4A/MP3 outputs.",
+            "description": "Lossless output: 16/24; WAV also accepts 32f (legacy 32). 16 bit uses TPDF dither.",
             "default": 24
           },
           "bitrate_kbps": {
@@ -1872,8 +1889,7 @@
                 "type": "null"
               }
             ],
-            "title": "Bitrate Kbps",
-            "description": "Target bitrate in kbps for lossy codecs (M4A/MP3). Defaults to 256 kbps when encoding lossy formats."
+            "title": "Bitrate Kbps"
           }
         },
         "additionalProperties": false,
@@ -1948,7 +1964,7 @@
         "properties": {
           "id": {
             "$ref": "#/components/schemas/PresetId",
-            "description": "Preset identifier from presets/*.toml; default V2. room is the classic route B.",
+            "description": "Preset identifier from presets/*.toml; default from route_v.toml. room is the classic route B.",
             "default": "V2"
           },
           "version": {

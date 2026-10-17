@@ -21,7 +21,7 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn
 
 from pydantic import ValidationError
 
@@ -112,7 +112,9 @@ def _infer_output_format(output_path: Path, explicit_format: str | None) -> Outp
         )
 
     inferred: OutputFormat | None = None
-    if suffix in ("wav", "m4a", "mp3"):
+    if suffix == "aif":
+        suffix = "aiff"
+    if suffix in ("wav", "m4a", "mp3", "flac", "aiff", "alac"):
         inferred = OutputFormat(suffix)
 
     if explicit_format is not None:
@@ -120,10 +122,10 @@ def _infer_output_format(output_path: Path, explicit_format: str | None) -> Outp
             fmt = OutputFormat(explicit_format.lower())
         except ValueError as exc:
             raise ParameterValidationError(
-                f"Unsupported output format '{explicit_format}'. Choose from: wav, m4a, mp3.",
+                f"Unsupported output format '{explicit_format}'. Choose from: wav, flac, alac, aiff, m4a, mp3.",
                 error_code="INVALID_OUTPUT_FORMAT",
             ) from exc
-        if inferred is not None and inferred != fmt:
+        if inferred is not None and inferred != fmt and not (inferred == OutputFormat.M4A and fmt == OutputFormat.ALAC):
             raise ParameterValidationError(
                 f"Conflicting --format '{fmt.value}' and output extension '.{suffix}'.",
                 error_code="FORMAT_EXTENSION_MISMATCH",
@@ -143,8 +145,8 @@ def _build_aurora_params_from_args(
     strength: float | None = None,
     seed: int = 20261016,
     fmt: OutputFormat = OutputFormat.WAV,
-    sample_rate: int = 48000,
-    bit_depth: int | None = 24,
+    sample_rate: Literal["source", 44100, 48000, 96000] = "source",
+    bit_depth: Literal[16, 24, 32, "32f"] | None = 24,
     bitrate: int | None = None,
     timing_mode: str = "preserve",
     tail: str = "trim",
@@ -156,14 +158,8 @@ def _build_aurora_params_from_args(
             id=PresetId(preset),
             version=preset_version,
         )
-        eff_bit_depth = bit_depth if fmt == OutputFormat.WAV else None
-        eff_bitrate = bitrate if fmt != OutputFormat.WAV else None
-        if fmt == OutputFormat.WAV and bitrate is not None:
-            raise ParameterValidationError(
-                "--bitrate cannot be used with uncompressed WAV output.",
-                error_code="INVALID_OUTPUT_PARAMETERS",
-            )
-
+        eff_bit_depth = bit_depth if fmt in (OutputFormat.WAV, OutputFormat.FLAC, OutputFormat.ALAC, OutputFormat.AIFF) else None
+        eff_bitrate = bitrate
         output_spec = OutputSpec(
             format=fmt,
             sample_rate=sample_rate,
@@ -205,8 +201,10 @@ def _cmd_presets(_args: argparse.Namespace) -> int:
         "parameter_ranges": {
             "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},
             "seed": {"min": 0, "max": 4294967295, "default": 20261016},
-            "sample_rate": [44100, 48000, 96000],
-            "wav_bit_depth": [16, 24, 32],
+            "sample_rate": ["source", 44100, 48000, 96000],
+            "wav_bit_depth": [16, 24, "32f"],
+            "lossless_bit_depth": [16, 24],
+            "output_format": [fmt.value for fmt in OutputFormat],
             "lossy_bitrate_kbps": {"min": 64, "max": 512, "default": 256},
         },
     }
@@ -315,7 +313,7 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         fmt = OutputFormat(args.format.lower())
     except ValueError as exc:
         raise ParameterValidationError(
-            f"Unsupported output format '{args.format}'. Choose from: wav, m4a, mp3.",
+            f"Unsupported output format '{args.format}'. Choose from: wav, flac, alac, aiff, m4a, mp3.",
             error_code="INVALID_OUTPUT_FORMAT",
         ) from exc
 
@@ -362,7 +360,7 @@ def _cmd_batch(args: argparse.Namespace) -> int:
         fmt = OutputFormat(args.format.lower())
     except ValueError as exc:
         raise ParameterValidationError(
-            f"Unsupported batch output format '{args.format}'. Choose from: wav, m4a, mp3.",
+            f"Unsupported batch output format '{args.format}'. Choose from: wav, flac, alac, aiff, m4a, mp3.",
             error_code="INVALID_OUTPUT_FORMAT",
         ) from exc
 
@@ -372,15 +370,15 @@ def _cmd_batch(args: argparse.Namespace) -> int:
         seed=args.seed,
         fmt=fmt,
         sample_rate=args.sample_rate,
-        bit_depth=24 if fmt == OutputFormat.WAV else None,
+        bit_depth=args.bit_depth,
     )
 
     files = sorted(
-        p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() in (".wav", ".m4a", ".mp3", ".aac")
+        p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() in (".wav", ".flac", ".m4a", ".alac", ".aiff", ".aif", ".mp3", ".aac")
     )
     if not files:
         raise InputAudioError(
-            f"No supported audio files (.wav, .m4a, .mp3, .aac) found in {in_dir}",
+            f"No supported audio files (.wav, .flac, .m4a, .aiff, .mp3, .aac) found in {in_dir}",
             error_code="EMPTY_BATCH_INPUT",
         )
 
@@ -389,7 +387,7 @@ def _cmd_batch(args: argparse.Namespace) -> int:
     failed_count = 0
     try:
         for src in files:
-            dst = out_dir / f"{src.stem}.{fmt.value}"
+            dst = out_dir / f"{src.stem}.{params_template.output.extension}"
             try:
                 rep = convert_audio(
                     src,
@@ -531,8 +529,8 @@ def build_parser() -> argparse.ArgumentParser:
         "convert",
         help="Convert a mono/stereo audio file through the binaural pipeline and verify timeline sync",
     )
-    p_convert.add_argument("input", help="Input audio file path (.wav, .m4a, .mp3, .aac)")
-    p_convert.add_argument("--output", "-o", required=True, help="Output audio file path (.wav, .m4a, .mp3)")
+    p_convert.add_argument("input", help="Input audio file path (.wav, .flac, .m4a, .aiff, .mp3, .aac)")
+    p_convert.add_argument("--output", "-o", required=True, help="Output audio file path (.wav, .flac, .m4a, .aiff, .mp3)")
     p_convert.add_argument(
         "--preset",
         default=DEFAULT_PRESET_ID,
@@ -554,24 +552,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_convert.add_argument(
         "--format",
         default=None,
-        help="Explicit output format: wav, m4a, or mp3 (inferred from --output if omitted)",
+        help="Explicit output format: wav, flac, alac, aiff, m4a, or mp3 (inferred from --output if omitted)",
     )
     p_convert.add_argument(
         "--sample-rate",
-        type=int,
-        default=48000,
-        help="Output sample rate in Hz: 44100, 48000, or 96000 (default: 48000)",
+        type=lambda value: "source" if value == "source" else int(value),
+        default="source",
+        help="Output sample rate: source (default), 44100, 48000 or 96000 Hz",
     )
     p_convert.add_argument(
         "--keep-sample-rate",
         action="store_true",
-        help="Preserve the input file's sample rate in output (if 44100, 48000, or 96000 Hz)",
+        help="Alias for --sample-rate source",
     )
     p_convert.add_argument(
         "--bit-depth",
-        type=int,
+        type=lambda value: "32f" if value == "32f" else int(value),
         default=24,
-        help="WAV PCM bit depth: 16, 24, or 32 (default: 24)",
+        help="Lossless bit depth: 16/24; WAV also accepts 32f (legacy 32); default 24",
     )
     p_convert.add_argument(
         "--bitrate",
@@ -640,15 +638,15 @@ def build_parser() -> argparse.ArgumentParser:
         "compare",
         help="Generate BS.1770 equal-loudness matched dry reference and spatial effect files",
     )
-    p_compare.add_argument("input", help="Input audio file path (.wav, .m4a, .mp3, .aac)")
+    p_compare.add_argument("input", help="Input audio file path (.wav, .flac, .m4a, .aiff, .mp3, .aac)")
     p_compare.add_argument("--output-dir", required=True, help="Directory for loudness-matched dry and effect files")
     p_compare.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset identifier from TOML (default: route_v.toml; room is classic route B)")
     p_compare.add_argument("--preset-version", default="1", help="Preset version string (default: 1)")
     p_compare.add_argument("--strength", type=float, default=None, help="Effect strength in [0.0, 1.0]")
     p_compare.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
-    p_compare.add_argument("--format", default="wav", help="Output format: wav, m4a, or mp3 (default: wav)")
-    p_compare.add_argument("--sample-rate", type=int, default=48000, help="Output sample rate in Hz (default: 48000)")
-    p_compare.add_argument("--bit-depth", type=int, default=24, help="WAV bit depth: 16, 24, or 32 (default: 24)")
+    p_compare.add_argument("--format", default="wav", help="Output format: wav, flac, alac, aiff, m4a, or mp3 (default: wav)")
+    p_compare.add_argument("--sample-rate", type=lambda v: "source" if v == "source" else int(v), default="source", help="source (default), 44100, 48000, 96000")
+    p_compare.add_argument("--bit-depth", type=lambda v: "32f" if v == "32f" else int(v), default=24, help="16/24, WAV also 32f; default 24")
     p_compare.add_argument("--bitrate", type=int, default=None, help="Lossy bitrate in kbps (default: 256)")
     p_compare.add_argument("--block-size", type=int, default=1024, help="Engine block size in frames (default: 1024)")
     p_compare.add_argument("--overwrite", action="store_true", help="Allow overwriting existing output files")
@@ -729,8 +727,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_batch.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset ID from TOML (default from route_v.toml)")
     p_batch.add_argument("--strength", type=float, default=None, help="Effect strength in [0.0, 1.0]")
     p_batch.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
-    p_batch.add_argument("--format", default="wav", help="Output format: wav, m4a, or mp3")
-    p_batch.add_argument("--sample-rate", type=int, default=48000, help="Output sample rate in Hz")
+    p_batch.add_argument("--format", default="wav", help="Output format: wav, flac, alac, aiff, m4a, or mp3")
+    p_batch.add_argument("--sample-rate", type=lambda v: "source" if v == "source" else int(v), default="source", help="source (default), 44100, 48000, 96000")
+    p_batch.add_argument("--bit-depth", type=lambda v: "32f" if v == "32f" else int(v), default=24, help="16/24, WAV also 32f; default 24")
     p_batch.add_argument("--block-size", type=int, default=1024, help="Engine block size in frames (default: 1024)")
     p_batch.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
     p_batch.add_argument(
