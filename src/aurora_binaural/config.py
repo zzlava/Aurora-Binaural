@@ -28,6 +28,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from aurora_binaural.resources import asset_directory
+
 
 def _env_str(env: Mapping[str, str], key: str, default: str) -> str:
     val = env.get(key)
@@ -79,7 +81,7 @@ class ServiceConfig:
     port: int = 8000
     data_dir: Path = Path("./var/aurora")
     db_path: Path = Path("./var/aurora/aurora.db")
-    hrtf_dir: Path = Path("./data/hrtf")
+    hrtf_dir: Path = field(default_factory=lambda: asset_directory("hrtf"))
     max_upload_bytes: int = 524_288_000
     max_duration_sec: float = 7200.0
     job_timeout_sec: float = 1800.0
@@ -127,7 +129,7 @@ class ServiceConfig:
         data_dir = Path(_env_str(env, "AURORA_DATA_DIR", "./var/aurora")).resolve()
         raw_db = env.get("AURORA_DB_PATH")
         db_path = Path(raw_db.strip()).resolve() if raw_db and raw_db.strip() else (data_dir / "aurora.db")
-        hrtf_dir = Path(_env_str(env, "AURORA_HRTF_DIR", "./data/hrtf")).resolve()
+        hrtf_dir = Path(_env_str(env, "AURORA_HRTF_DIR", str(asset_directory("hrtf")))).resolve()
 
         engine = _env_str(env, "AURORA_ENGINE", "rust").lower()
         if engine not in ("rust", "stub"):

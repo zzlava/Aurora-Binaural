@@ -20,4 +20,10 @@
 
 wheel 内包含同一份 TOML；`AURORA_PRESETS_DIR` 可覆盖目录，修改数据后重启进程刷新。测试保留旧预设显式桩测试；新增自定义 V7 TOML 探测与 API/CLI 目录一致性。pytest 65 项通过，Ruff/mypy 通过；前端 build/lint 通过。
 
+## 4. 默认 HRTF 分发
+
+应用 wheel／sdist／Docker 默认仅打包 SADIE II D1 的 SOFA、`sadie_d1_frontal.ahrp`、Apache-2.0 全文与署名。资源查找支持安装包内数据，Worker 也不再依赖当前工作目录。无 KU100 UI 选项；只读 TOML 中的 TH Köln KU100 校准表在第三方声明与部署文档中标为“仅本地研究”。
+
+`uv build` 成功；检查实际 wheel 和 sdist 清单，SADIE SOFA／pack／许可证／预设均存在，KU100 文件数为 0，结果见 `distribution-check.json`。构建二进制留在被忽略的 `.dist/`，不提交大产物。
+
 其余子项进行中。

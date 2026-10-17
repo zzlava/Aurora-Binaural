@@ -87,3 +87,7 @@ docker run --rm aurora-binaural:p5 presets --json
 ```
 
 预设列表由 `presets/*.toml` 读取，默认 V2，界面列出 V1/V2/V3 与经典 room。`AURORA_PRESETS_DIR` 可指定外部目录，数据更新后重启服务。旧 surround/orbit 仅为既有任务保留显式调用兼容。当前 TOML 缺少 route/default 字段，应用依据共享 `[layout]` 判断路线 V，集中设置默认 V2，不维护第二份预设清单。
+
+## HRTF 打包边界
+
+默认 wheel、sdist 和 Docker 仅携带 SADIE II D1 SOFA 与 `sadie_d1_frontal.ahrp`，附 Apache-2.0 全文及署名；Rust 核心验证 pack 内源 SOFA 哈希。应用无 KU100 选择控件。只读 TOML 中的 `thk_ku100` 均衡数据为“仅本地研究”，TH Köln KU100 的 SOFA／pack 不进入默认产物。wheel 内携带预设和 HRTF，离开仓库运行无需依赖当前工作目录；可以用 `AURORA_HRTF_DIR` 明确指定 SADIE 资源目录。
