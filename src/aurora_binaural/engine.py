@@ -30,7 +30,7 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
-from aurora_binaural.catalog import CATALOG
+from aurora_binaural.catalog import CATALOG, CONTROL_KEYS
 from aurora_binaural.exit_codes import OperationCanceledError, ProcessingError
 from aurora_binaural.params import AuroraParams, TailPolicy
 from aurora_binaural.resources import asset_directory
@@ -192,6 +192,7 @@ class RustRenderer:
                 raise ProcessingError("prepare again before changing renderer route or preset file.")
             try:
                 self._native.set_params(params)
+                self._apply_controls(params)
             except Exception as exc:
                 raise ProcessingError(f"Rust set_params failed: {exc}", error_code="CORE_ERROR") from exc
             return
@@ -212,10 +213,17 @@ class RustRenderer:
             self._native = self._module.Renderer(str(self.hrtf_pack), str(self.hrtf_source), str(preset_path), **kwargs)
             self._native.prepare(self._sample_rate, self._max_block, self._config)
             self._native.set_params(params)
+            self._apply_controls(params)
             self._selection = selection
         except Exception as exc:
             self._native = None
             raise ProcessingError(f"Rust prepare failed: {exc}", error_code="CORE_ERROR") from exc
+
+    def _apply_controls(self, params: AuroraParams) -> None:
+        if CATALOG[str(params.preset.id)].route == "V":
+            if not hasattr(self._native, "set_controls") or not hasattr(self._native, "effective_params"):
+                raise ProcessingError("Rust 核心不支持空间宏控件，请构建 P1b 或更新版本。", error_code="CORE_CONTROLS_UNSUPPORTED")
+            self._native.set_controls(params.resolved_controls)
 
     def _require_native(self) -> Any:
         if self._native is None:
@@ -268,6 +276,21 @@ class RustRenderer:
     def reset(self) -> None:
         self._require_native().reset()
         self._flushed = False
+
+
+def renderer_controls(renderer: Renderer, params: AuroraParams) -> dict[str, Any]:
+    """Report values read back from the active core, never claim ignored macros applied."""
+    if isinstance(renderer, RustRenderer):
+        if CATALOG[str(params.preset.id)].route == "V":
+            expanded = dict(renderer._require_native().effective_params())
+            return {"controls": dict(expanded["controls"]), "effective_params": expanded,
+                    "ignored_controls": [], "controls_note": "空间宏控件已应用（路线 V）。"}
+        ignored = [key for key in CONTROL_KEYS if key != "strength"]
+        return {"controls": {"strength": params.effective_strength}, "effective_params": None,
+                "ignored_controls": ignored, "controls_note": "路线 B 仅应用空间强度；忽略宽度、头顶感、房间感、人声距离。"}
+    return {"controls": {}, "effective_params": None, "ignored_controls": list(CONTROL_KEYS),
+            "controls_note": "桩或自定义引擎未提供空间宏控件能力，五个控件均忽略。"}
+
 
 
 def create_renderer(

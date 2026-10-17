@@ -262,6 +262,8 @@ def compute_canonical_job_hash(params: AuroraParams) -> str:
             "version": params.preset.version,
         },
         "strength": round(params.effective_strength, 6),
+        "controls": params.resolved_controls,
+        "control_clipping": [event.model_dump() for event in params.control_clipping],
         "seed": params.seed,
         "output": {
             "format": params.output.format.value,

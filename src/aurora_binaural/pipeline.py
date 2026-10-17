@@ -25,7 +25,14 @@ from pathlib import Path
 
 import numpy as np
 
-from aurora_binaural.engine import Renderer, RendererStreamProcessor, RustRenderer, create_renderer, renderer_metadata
+from aurora_binaural.engine import (
+    Renderer,
+    RendererStreamProcessor,
+    RustRenderer,
+    create_renderer,
+    renderer_controls,
+    renderer_metadata,
+)
 from aurora_binaural.exit_codes import InputAudioError, ParameterValidationError
 from aurora_binaural.media import (
     StreamingF32LeEncoder,
@@ -367,6 +374,7 @@ def convert_audio(
             active_renderer, git_commit=get_git_commit_sha(), block_size=block_size, sample_rate=render_sr,
         ),
         params=effective_params,
+        **renderer_controls(active_renderer, effective_params),
         timeline=timeline,
         loudness_before=loudness_before,
         loudness_after=loudness_after,

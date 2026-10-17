@@ -11,13 +11,15 @@ Implements docs/plan.md Sections 6.8, 6.10, 8, 9, and 10:
 from __future__ import annotations
 
 import json
+import logging
+import math
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from aurora_binaural.catalog import CATALOG, DEFAULT_PRESET_ID
+from aurora_binaural.catalog import CATALOG, CONTROL_KEYS, DEFAULT_PRESET_ID
 
 # Compatibility constants and JSON Schema enum are generated from the same TOML
 # catalog, including legacy explicit selections absent from the default cards.
@@ -77,6 +79,7 @@ class PresetMetadata(BaseModel):
     name: str
     version: str
     default_strength: float = Field(ge=0.0, le=1.0)
+    default_controls: dict[str, float]
     description: str
     algorithm_summary: str
     route: str
@@ -86,7 +89,7 @@ class PresetMetadata(BaseModel):
 PRESET_CATALOG: dict[PresetId, PresetMetadata] = {
     PresetId(entry.id): PresetMetadata(
         id=PresetId(entry.id), name=entry.name, version=entry.version,
-        default_strength=entry.default_strength, description=entry.description,
+        default_strength=entry.default_strength, default_controls=entry.default_controls, description=entry.description,
         algorithm_summary=f"Route {entry.route} / TOML", route=entry.route,
         is_default=entry.id == DEFAULT_PRESET_ID,
     )
@@ -242,16 +245,72 @@ class PreviewSpec(BaseModel):
     duration_seconds: float = Field(default=10.0, gt=0.0, le=20.0, allow_inf_nan=False)
 
 
-class PreviewRequest(PreviewSpec):
+class SpatialControls(BaseModel):
+    """Partial overrides; omitted values come from the selected TOML preset."""
+
+    model_config = ConfigDict(extra="forbid")
+    strength: float | None = Field(default=None, allow_inf_nan=False)
+    width: float | None = Field(default=None, allow_inf_nan=False)
+    height: float | None = Field(default=None, allow_inf_nan=False)
+    room: float | None = Field(default=None, allow_inf_nan=False)
+    voice_distance: float | None = Field(default=None, allow_inf_nan=False)
+
+
+class ControlClipping(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    control: Literal["strength", "width", "height", "room", "voice_distance"]
+    requested: float = Field(allow_inf_nan=False)
+    applied: float = Field(ge=0, le=1)
+
+
+class SpatialSettings(SpatialControls):
+    controls: SpatialControls = Field(default_factory=SpatialControls)
+    control_clipping: list[ControlClipping] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _clamp_controls(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        nested = data.get("controls", {})
+        if isinstance(nested, SpatialControls):
+            nested = nested.model_dump(exclude_none=True)
+        if not isinstance(nested, dict):
+            return data  # Let Pydantic explain the invalid object.
+        nested = dict(nested)
+        events = list(data.get("control_clipping", []))
+        for key in CONTROL_KEYS:
+            direct, inner = data.get(key), nested.get(key)
+            raw = inner if inner is not None else direct
+            if raw is None:
+                continue
+            try:
+                number = float(raw)
+                if direct is not None and inner is not None and float(direct) != number:
+                    raise ValueError(f"Conflicting {key} and controls.{key}; supply only one value.")
+            except TypeError as exc:
+                raise ValueError(f"{key} must be a finite number") from exc
+            if isinstance(raw, bool) or not math.isfinite(number):
+                raise ValueError(f"{key} must be a finite number")
+            clamped = min(1.0, max(0.0, number))
+            if number != clamped:
+                events.append({"control": key, "requested": number, "applied": clamped})
+                logging.getLogger(__name__).warning("Control %s clamped from %s to %s", key, number, clamped)
+            data[key] = nested[key] = clamped
+        data["controls"], data["control_clipping"] = nested, events
+        return data
+
+
+class PreviewRequest(PreviewSpec, SpatialSettings):
     """POST /v1/previews request. Always emits a matched stereo float32 WAV pair."""
 
     asset_id: str = Field(min_length=1, max_length=128)
     preset: PresetSpec = Field(default_factory=PresetSpec)
-    strength: float | None = Field(default=None, ge=0.0, le=1.0)
     seed: int = Field(default=20261016, ge=0, le=4294967295)
 
 
-class AuroraParams(BaseModel):
+class AuroraParams(SpatialSettings):
     """Unified parameter model shared by CLI, Web GUI, and HTTP API (docs/plan.md Sections 9 & 10).
 
     Supports both standalone render parameter validation and full `POST /v1/jobs` payloads:
@@ -294,7 +353,7 @@ class AuroraParams(BaseModel):
         description=(
             "Perceptual effect strength in [0.0, 1.0]. Mapped to upmix width, ambient ratio, "
             "early reflections, and DRR offset. Dry/wet mixing is forbidden. "
-            "When 0.0, spatial DSP is bypassed. Defaults to the selected preset's default_strength."
+            "When 0.0, spatial DSP is bypassed. Defaults to TOML controls.strength; finite outliers are clamped."
         ),
     )
     seed: Annotated[int, Field(ge=0, le=4294967295)] = Field(
@@ -321,9 +380,22 @@ class AuroraParams(BaseModel):
 
     @model_validator(mode="after")
     def _apply_preset_default_strength(self) -> AuroraParams:
-        if self.strength is None:
-            self.strength = CATALOG[self.preset.id].default_strength
+        entry = CATALOG[self.preset.id]
+        resolved = dict(entry.default_controls)
+        resolved.update(self.controls.model_dump(exclude_none=True))
+        for key in CONTROL_KEYS:
+            explicit = getattr(self, key)
+            if explicit is not None:
+                resolved[key] = explicit
+        resolved.setdefault("strength", entry.default_strength)
+        self.controls = SpatialControls.model_validate(resolved)
+        for key, number in resolved.items():
+            setattr(self, key, number)
         return self
+
+    @property
+    def resolved_controls(self) -> dict[str, float]:
+        return {key: float(value) for key, value in self.controls.model_dump(exclude_none=True).items()}
 
     @property
     def effective_strength(self) -> float:
