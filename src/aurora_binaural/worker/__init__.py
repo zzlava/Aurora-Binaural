@@ -113,6 +113,17 @@ class AuroraWorker:
         )
         hb_thread.start()
 
+        def _cleanup_attempt() -> None:
+            hb_stop.set()
+            hb_thread.join(timeout=1.0)
+            shutil.rmtree(attempt_dir, ignore_errors=True)
+
+        def _finish_canceled() -> JobRecord | None:
+            # A visible canceled state promises that this attempt's files are gone.
+            # Publishing it before the finally block allowed API observers to race cleanup.
+            _cleanup_attempt()
+            return self.store.finalize_job_canceled(job.job_id, lease_id)
+
         t_start = time.monotonic()
 
         def _cancel_check() -> bool:
@@ -140,6 +151,7 @@ class AuroraWorker:
         try:
             asset = self.store.get_asset(job.asset_id)
             if asset is None or not asset.file_path.exists():
+                _cleanup_attempt()
                 return self.store.finalize_job_failed(
                     job.job_id,
                     lease_id,
@@ -263,7 +275,7 @@ class AuroraWorker:
             )
             if not committed:
                 if cancel_seen_flag.is_set() or (updated_job is not None and updated_job.cancel_requested):
-                    return self.store.finalize_job_canceled(job.job_id, lease_id)
+                    return _finish_canceled()
                 return updated_job
             return updated_job
 
@@ -271,8 +283,10 @@ class AuroraWorker:
             if lease_lost_flag.is_set() and not cancel_seen_flag.is_set():
                 # Lease was reclaimed by another worker; do not overwrite the new worker's job status
                 return self.store.get_job(job.job_id)
-            return self.store.finalize_job_canceled(job.job_id, lease_id)
+            return _finish_canceled()
         except AuroraError as exc:
+            # finalize_job_failed may itself transition a cancel-requested job to canceled.
+            _cleanup_attempt()
             return self.store.finalize_job_failed(
                 job.job_id,
                 lease_id,
@@ -282,6 +296,7 @@ class AuroraWorker:
                 details=exc.details,
             )
         except OSError as exc:
+            _cleanup_attempt()
             return self.store.finalize_job_failed(
                 job.job_id,
                 lease_id,
@@ -290,6 +305,7 @@ class AuroraWorker:
                 retryable=False,
             )
         except Exception as exc:
+            _cleanup_attempt()
             return self.store.finalize_job_failed(
                 job.job_id,
                 lease_id,
@@ -298,9 +314,7 @@ class AuroraWorker:
                 retryable=False,
             )
         finally:
-            hb_stop.set()
-            hb_thread.join(timeout=1.0)
-            shutil.rmtree(attempt_dir, ignore_errors=True)
+            _cleanup_attempt()
 
     def run_once(self) -> JobRecord | None:
         """Perform one cycle of recovery, cleanup, heartbeat, and claiming/running at most one job."""

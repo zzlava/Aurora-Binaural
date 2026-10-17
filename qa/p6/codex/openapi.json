@@ -1965,7 +1965,7 @@
           "id": {
             "$ref": "#/components/schemas/PresetId",
             "description": "Preset identifier from presets/*.toml; default from route_v.toml. room is the classic route B.",
-            "default": "V2"
+            "default": "V3"
           },
           "version": {
             "type": "string",

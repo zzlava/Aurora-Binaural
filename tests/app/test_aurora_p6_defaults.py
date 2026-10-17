@@ -1,4 +1,4 @@
-"""P6 defaults must render through native V2 in both CLI and queued API jobs."""
+"""P6 defaults must render the TOML default through Rust in CLI and queued API jobs."""
 
 import json
 import wave
@@ -40,7 +40,7 @@ def assert_native_default(report: dict[str, Any]) -> None:
     assert report["timeline"]["sample_diff"] == 0
 
 
-def test_cli_omitted_engine_and_preset_render_v2(
+def test_cli_omitted_engine_and_preset_render_toml_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.delenv("AURORA_ENGINE")
@@ -51,7 +51,7 @@ def test_cli_omitted_engine_and_preset_render_v2(
 
 
 @pytest.mark.parametrize("preview", [False, True])
-def test_default_api_and_worker_render_v2(
+def test_default_api_and_worker_render_toml_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preview: bool,
 ) -> None:
     monkeypatch.delenv("AURORA_ENGINE")

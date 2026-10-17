@@ -19,6 +19,7 @@ from aurora_binaural.engine import (
     run_offline_block_pipeline,
 )
 from aurora_binaural.exit_codes import ProcessingError
+from aurora_binaural.media import get_ffmpeg_version
 from aurora_binaural.params import AuroraParams
 from aurora_binaural.pipeline import convert_audio
 from aurora_binaural.worker import AuroraWorker
@@ -173,8 +174,19 @@ def test_native_end_to_end_rate_and_codec_timeline(tmp_path: Path, sample_rate: 
     assert report.engine.hrtf.license == "Apache-2.0"
     assert report.engine.hrtf.sha256 == "e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31"
     assert report.output.sample_rate == sample_rate
-    assert report.timeline.sync_within_tolerance
-    assert abs(report.output.samples - round(12937 * sample_rate / 48000)) <= (0 if sample_rate == 48000 else 2)
+    expected = round(12937 * sample_rate / 48000)
+    if fmt == "m4a" and get_ffmpeg_version().major < 8:
+        # Older MOV decoders remove leading priming, but retain the final AAC
+        # packet's 1024-sample padding. Assert the exact padded count and warning,
+        # rather than treating that playback length as sample-accurate output.
+        padding = (-expected) % 1024
+        assert report.output.samples == expected + padding
+        assert report.timeline.sample_diff == padding
+        assert report.timeline.sync_warning is not None
+        assert report.timeline.sync_within_tolerance == (padding <= report.timeline.tolerance_samples)
+    else:
+        assert report.timeline.sync_within_tolerance
+        assert abs(report.output.samples - expected) <= (0 if sample_rate == 48000 else 2)
 
 
 @pytest.mark.parametrize("preview", [False, True])
