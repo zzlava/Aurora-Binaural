@@ -65,6 +65,24 @@ fn butter2(fc: f64, fs: f64, highpass: bool) -> [f64; 6] {
     }
 }
 
+pub(crate) fn butterworth2_low(fc: f64, fs: f64) -> [f64; 6] {
+    butter2(fc, fs, false)
+}
+
+/// One biquad, direct form II transposed, rest state. Matches `scipy.signal.sosfilt`.
+pub(crate) fn apply_sos(sos: &[f64; 6], input: &[f64], output: &mut [f64]) {
+    let mut s0 = 0.0;
+    let mut s1 = 0.0;
+    let n = input.len().min(output.len());
+    for i in 0..n {
+        let x = input[i];
+        let yn = sos[0] * x + s0;
+        s0 = sos[1] * x - sos[4] * yn + s1;
+        s1 = sos[2] * x - sos[5] * yn;
+        output[i] = yn;
+    }
+}
+
 fn df2t(sos: &[[f64; 6]; SECTIONS], state: &mut [[f64; 2]; SECTIONS], x: f64) -> f64 {
     let mut y = x;
     for (section, st) in sos.iter().zip(state.iter_mut()) {

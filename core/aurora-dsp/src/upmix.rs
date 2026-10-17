@@ -24,6 +24,20 @@ pub struct StreamingUpmix {
     pub width_deg: f64,
     pub ambient_mix: f64,
     pub sector_az: [f64; N_SECTORS],
+    sample_rate: f64,
+    coherence_floor: f64,
+    coherence_power: f64,
+    pan_gamma: f64,
+    direct_bleed: f64,
+    hf_pan_floor: f64,
+    hf_pan_start_hz: f64,
+    hf_pan_end_hz: f64,
+    hf_direct_start_hz: f64,
+    hf_direct_end_hz: f64,
+    /// When positive, overlap-add divides by `max(w, cola_floor)`, matching the
+    /// prototype's steady-state COLA floor. Zero keeps the route B path, which
+    /// divides by the raw window sum.
+    cola_floor: f64,
     gll: Vec<f64>,
     grr: Vec<f64>,
     glr_re: Vec<f64>,
@@ -92,6 +106,17 @@ impl StreamingUpmix {
             width_deg: 0.0,
             ambient_mix: 0.0,
             sector_az: [0.0; N_SECTORS],
+            sample_rate,
+            coherence_floor: 0.22,
+            coherence_power: 2.0,
+            pan_gamma: 1.0,
+            direct_bleed: 0.0,
+            hf_pan_floor: 1.0,
+            hf_pan_start_hz: 3000.0,
+            hf_pan_end_hz: 8000.0,
+            hf_direct_start_hz: 0.0,
+            hf_direct_end_hz: 0.0,
+            cola_floor: 0.0,
             gll: vec![0.0; bins],
             grr: vec![0.0; bins],
             glr_re: vec![0.0; bins],
@@ -134,6 +159,46 @@ impl StreamingUpmix {
         };
         up.set_width_ambient(width_deg, ambient_mix);
         up
+    }
+
+    /// Mask and pan controls. Defaults in [`Self::new`] match the route B core.
+    /// Route V passes the preset (and the prototype's hardcoded HF defaults).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_mask_controls(
+        &mut self,
+        coherence_floor: f64,
+        coherence_power: f64,
+        pan_gamma: f64,
+        direct_bleed: f64,
+        hf_pan_floor: f64,
+        hf_pan_start_hz: f64,
+        hf_pan_end_hz: f64,
+        hf_direct_start_hz: f64,
+        hf_direct_end_hz: f64,
+    ) {
+        self.coherence_floor = coherence_floor.clamp(0.0, 0.95);
+        self.coherence_power = coherence_power.max(0.25);
+        self.pan_gamma = pan_gamma.max(0.05);
+        self.direct_bleed = direct_bleed.clamp(0.0, 0.9);
+        self.hf_pan_floor = hf_pan_floor.clamp(0.0, 1.0);
+        self.hf_pan_start_hz = hf_pan_start_hz;
+        self.hf_pan_end_hz = hf_pan_end_hz;
+        self.hf_direct_start_hz = hf_direct_start_hz;
+        self.hf_direct_end_hz = hf_direct_end_hz;
+    }
+
+    /// Divide overlap-add by the steady Hann sum, so a partial window at the
+    /// file edge is not amplified. Matches `StreamingUpmixer._w_steady`.
+    pub fn enable_steady_cola(&mut self) {
+        let n = self.n_fft + self.hop * 8;
+        let mut probe = vec![0.0; n];
+        for i in 0..8 {
+            let start = i * self.hop;
+            for k in 0..self.n_fft {
+                probe[start + k] += self.hann[k];
+            }
+        }
+        self.cola_floor = probe.into_iter().fold(0.0_f64, f64::max);
     }
 
     pub fn latency(&self) -> usize {
@@ -296,9 +361,16 @@ impl StreamingUpmix {
 
     fn masks(&mut self) {
         let n = self.m_dir.len();
+        let floor = self.coherence_floor;
+        let span = (1.0 - floor).max(1e-3);
+        let power = self.coherence_power;
         for i in 0..n {
-            let raw = ((self.phi[i] - 0.22) / 0.78).clamp(0.0, 1.0);
-            self.m_dir[i] = raw * raw;
+            let raw = ((self.phi[i] - floor) / span).clamp(0.0, 1.0);
+            self.m_dir[i] = if (power - 2.0).abs() < 1e-12 {
+                raw * raw
+            } else {
+                raw.powf(power)
+            };
         }
         if !self.has_prev {
             self.prev_mdir.copy_from_slice(&self.m_dir);
@@ -311,10 +383,24 @@ impl StreamingUpmix {
             }
         }
         let amb = self.ambient_mix;
+        let bleed = self.direct_bleed;
         for i in 0..n {
             let incoh = 1.0 - self.m_dir[i];
-            self.m_amb[i] = incoh * amb;
+            self.m_amb[i] = incoh * amb + self.m_dir[i] * bleed;
             self.m_wide[i] = incoh * (1.0 - amb);
+            self.m_dir[i] *= 1.0 - bleed;
+        }
+        let start = self.hf_direct_start_hz;
+        let end = self.hf_direct_end_hz;
+        if end > start + 1.0 {
+            let n_fft = self.n_fft as f64;
+            for i in 0..n {
+                let freq = i as f64 * self.sample_rate / n_fft;
+                let t = ((freq - start) / (end - start)).clamp(0.0, 1.0);
+                self.m_dir[i] = (1.0 - t) * self.m_dir[i] + t;
+                self.m_wide[i] *= 1.0 - t;
+                self.m_amb[i] *= 1.0 - t;
+            }
         }
     }
 
@@ -379,8 +465,23 @@ impl StreamingUpmix {
         }
         let span = self.sector_az[n_sec - 1] - self.sector_az[0];
         let step = span / (n_sec - 1) as f64;
+        let gamma = self.pan_gamma;
+        let apply_gamma = (gamma - 1.0).abs() > 1e-12;
+        let hf_floor = self.hf_pan_floor;
+        let apply_hf = hf_floor < 0.999;
+        let hf_span = (self.hf_pan_end_hz - self.hf_pan_start_hz).max(1.0);
         for i in 0..bins {
-            let az = self.pan[i] * self.width_deg;
+            let mut g = self.pan[i];
+            if apply_hf {
+                let freq = i as f64 * self.sample_rate / self.n_fft as f64;
+                let t = ((freq - self.hf_pan_start_hz) / hf_span).clamp(0.0, 1.0);
+                g *= 1.0 - (1.0 - hf_floor) * t;
+            }
+            if apply_gamma {
+                let mag = g.abs().powf(gamma);
+                g = if g < 0.0 { -mag } else { mag };
+            }
+            let az = g * self.width_deg;
             let pos = (az - self.sector_az[0]) / step;
             let i0 = pos.floor().clamp(0.0, (n_sec - 2) as f64) as usize;
             let frac = (pos - i0 as f64).clamp(0.0, 1.0);
@@ -431,8 +532,14 @@ impl StreamingUpmix {
             }
             let w = self.w[local as usize];
             if w > 1e-12 {
+                let denom = if self.cola_floor > 0.0 {
+                    w.max(self.cola_floor)
+                } else {
+                    w
+                };
                 for s in 0..N_STEMS {
-                    out[s * stride + offset + i] = self.acc[s * self.acc_cap + local as usize] / w;
+                    out[s * stride + offset + i] =
+                        self.acc[s * self.acc_cap + local as usize] / denom;
                 }
             }
         }

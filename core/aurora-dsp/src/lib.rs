@@ -19,13 +19,16 @@ pub mod hrir;
 pub mod interpolate;
 pub mod limiter;
 pub mod params;
+pub mod preset_v;
 pub mod processor;
 pub mod rng;
+pub mod route_v;
 pub mod upmix;
 mod ziggurat_tables;
 
 pub use chain::RouteB;
 pub use processor::{Params, Processor, RenderConfig};
+pub use route_v::RouteV;
 
 #[cfg(test)]
 pub mod test_alloc {

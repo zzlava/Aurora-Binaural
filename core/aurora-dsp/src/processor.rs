@@ -19,6 +19,10 @@ pub struct RenderConfig {
     pub seed: u64,
     pub timbre_guard: bool,
     pub limiter: bool,
+    /// `"B"` or `"V"`. The Python `Renderer` picks the processor from this.
+    pub route: String,
+    /// HRTF id used to select the fixed EQ curve (`sadie`, `ku100`, …).
+    pub hrtf_name: String,
 }
 
 impl RenderConfig {
@@ -38,6 +42,29 @@ impl RenderConfig {
             seed: 20_261_016,
             timbre_guard: false,
             limiter: true,
+            route: "B".to_string(),
+            hrtf_name: String::new(),
+        }
+    }
+
+    pub fn route_v(
+        hrtf_pack: impl Into<PathBuf>,
+        hrtf_source: impl Into<PathBuf>,
+        preset_path: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            input_channels: 2,
+            output_channels: 2,
+            hrtf_pack: hrtf_pack.into(),
+            hrtf_source: hrtf_source.into(),
+            preset_path: preset_path.into(),
+            preset: "V2".to_string(),
+            strength: 1.0,
+            seed: 20_261_016,
+            timbre_guard: false,
+            limiter: true,
+            route: "V".to_string(),
+            hrtf_name: "sadie".to_string(),
         }
     }
 }

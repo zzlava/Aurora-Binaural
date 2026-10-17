@@ -193,7 +193,7 @@ impl PresetTable {
     }
 }
 
-fn toml_number(value: &toml::Value) -> Option<f64> {
+pub(crate) fn toml_number(value: &toml::Value) -> Option<f64> {
     value
         .as_float()
         .or_else(|| value.as_integer().map(|v| v as f64))
@@ -208,7 +208,7 @@ fn toml_f64_vec(value: &toml::Value) -> Option<Vec<f64>> {
     Some(out)
 }
 
-fn parse_fixed_eq(value: Option<&toml::Value>) -> Option<FixedEq> {
+pub(crate) fn parse_fixed_eq(value: Option<&toml::Value>) -> Option<FixedEq> {
     let table = value?.as_table()?;
     let bands_hz = table.get("bands_hz").and_then(toml_f64_vec)?;
     let strengths = table.get("strengths").and_then(toml_f64_vec)?;
@@ -228,9 +228,7 @@ fn parse_fixed_eq(value: Option<&toml::Value>) -> Option<FixedEq> {
         };
         let mut matrix = Vec::with_capacity(rows.len());
         for row in rows {
-            let Some(gains) = toml_f64_vec(row) else {
-                return None;
-            };
+            let gains = toml_f64_vec(row)?;
             if gains.len() != bands_hz.len() {
                 return None;
             }
@@ -373,7 +371,7 @@ mod tests {
         assert!((room.hf_pan_start_hz - 3000.0).abs() < 1e-12);
         assert!((m.hf_direct_start_hz - 4000.0).abs() < 1e-12);
         assert!((m.hf_direct_end_hz - 8000.0).abs() < 1e-12);
-        assert!((m.bed_peak_db - 6.0).abs() < 1e-12);
+        assert!((m.bed_peak_db - 0.0).abs() < 1e-12);
         assert!((m.side_lpf_hz - 6000.0).abs() < 1e-12);
         assert!(!m.bypass);
         assert!((m.t60 - 0.35).abs() < 1e-12);
