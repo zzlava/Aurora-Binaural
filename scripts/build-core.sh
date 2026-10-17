@@ -19,18 +19,18 @@ import importlib.metadata
 import aurora_core
 import numpy as np
 
-from aurora_binaural.catalog import CATALOG
+from aurora_binaural.catalog import CATALOG, DEFAULT_PRESET_ID
 from aurora_binaural.engine import RenderConfig, RustRenderer
 from aurora_binaural.params import AuroraParams
 
 assert "route" in inspect.signature(aurora_core.Renderer).parameters, "Core must support route V"
 params = AuroraParams()
-assert params.preset.id == "V2" and CATALOG[params.preset.id].route == "V"
+assert params.preset.id == DEFAULT_PRESET_ID and CATALOG[params.preset.id].route == "V"
 renderer = RustRenderer()
 renderer.prepare(48000, 1024, RenderConfig())
 renderer.set_params(params)
 block = np.zeros((1024, 2), dtype=np.float32)
 assert renderer.process(block).shape == block.shape
 assert np.isfinite(renderer.flush()).all()
-print(f"Default core smoke passed: Rust {importlib.metadata.version('aurora_core')} / V / V2 / SADIE II D1")
+print(f"Default core smoke passed: Rust {importlib.metadata.version('aurora_core')} / V / {DEFAULT_PRESET_ID} / SADIE II D1")
 PY

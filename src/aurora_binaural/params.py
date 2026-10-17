@@ -1,7 +1,7 @@
 """Unified Pydantic v2 parameter models for Aurora Binaural CLI, GUI, and HTTP API.
 
 Implements docs/plan.md Sections 6.8, 6.10, 8, 9, and 10:
-- preset: PresetSpec (TOML catalog, versioned; default V2)
+- preset: PresetSpec (TOML catalog, versioned; TOML default)
 - strength: perceptual spatial intensity in [0.0, 1.0] (dry/wet mixing forbidden)
 - seed: explicit PRNG seed for deterministic FDN reverb and decorrelation
 - output: OutputSpec (wav / m4a / mp3, separated format & container, sample_rate, bit_depth, bitrate)
@@ -96,7 +96,7 @@ class PresetSpec(BaseModel):
 
     id: PresetId = Field(
         default=PresetId(DEFAULT_PRESET_ID),
-        description="Preset identifier from presets/*.toml; default V2. room is the classic route B.",
+        description="Preset identifier from presets/*.toml; default from route_v.toml. room is the classic route B.",
     )
     version: str = Field(
         default="1",

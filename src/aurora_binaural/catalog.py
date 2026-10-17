@@ -1,19 +1,16 @@
 """Read route and preset metadata from the immutable presets/*.toml directory.
 
-The current V TOML schema has shared [layout] and named preset tables; the
-legacy B schema has named rows containing width endpoints. Neither contains
-explicit route/default metadata yet, so schema detection and the product's
-default V2 policy are centralized here. No duplicate preset list is maintained.
+The route V root ``default_preset`` field selects the product default.
+Older catalogs fall back to their first named V preset with an explicit warning.
 """
 
 import hashlib
 import tomllib
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 from aurora_binaural.resources import asset_directory
-
-DEFAULT_PRESET_ID = "V2"
 
 
 @dataclass(frozen=True)
@@ -54,4 +51,24 @@ def load_catalog(directory: Path | None = None) -> dict[str, CatalogEntry]:
     return entries
 
 
+def load_default_preset(directory: Path | None = None) -> str:
+    """Read Cursor's root default_preset field; never hard-code a product preset."""
+    directory = directory or asset_directory("presets")
+    document = tomllib.loads((directory / "route_v.toml").read_text(encoding="utf-8"))
+    preset_ids = [key for key, row in document.items() if isinstance(row, dict) and isinstance(row.get("name"), str)]
+    if not preset_ids:
+        raise ValueError(f"No route V presets found in {directory / 'route_v.toml'}")
+    selected = document.get("default_preset")
+    if selected is None:
+        warnings.warn(
+            f"route_v.toml has no default_preset; falling back to its first preset {preset_ids[0]!r}.",
+            RuntimeWarning, stacklevel=2,
+        )
+        return preset_ids[0]
+    if selected not in preset_ids:
+        raise ValueError(f"route_v.toml default_preset {selected!r} does not name a preset table.")
+    return str(selected)
+
+
 CATALOG = load_catalog()
+DEFAULT_PRESET_ID = load_default_preset()

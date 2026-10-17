@@ -536,7 +536,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_convert.add_argument(
         "--preset",
         default=DEFAULT_PRESET_ID,
-        help="Preset identifier from TOML (default: V2; room is classic route B)",
+        help="Preset identifier from TOML (default: route_v.toml; room is classic route B)",
     )
     p_convert.add_argument("--preset-version", default="1", help="Preset version string (default: 1)")
     p_convert.add_argument(
@@ -642,7 +642,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_compare.add_argument("input", help="Input audio file path (.wav, .m4a, .mp3, .aac)")
     p_compare.add_argument("--output-dir", required=True, help="Directory for loudness-matched dry and effect files")
-    p_compare.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset identifier from TOML (default: V2; room is classic route B)")
+    p_compare.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset identifier from TOML (default: route_v.toml; room is classic route B)")
     p_compare.add_argument("--preset-version", default="1", help="Preset version string (default: 1)")
     p_compare.add_argument("--strength", type=float, default=None, help="Effect strength in [0.0, 1.0]")
     p_compare.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
@@ -726,7 +726,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_batch.add_argument("input_dir", help="Input directory containing audio files")
     p_batch.add_argument("--output-dir", required=True, help="Output directory for exported files")
-    p_batch.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset ID from TOML (default V2)")
+    p_batch.add_argument("--preset", default=DEFAULT_PRESET_ID, help="Preset ID from TOML (default from route_v.toml)")
     p_batch.add_argument("--strength", type=float, default=None, help="Effect strength in [0.0, 1.0]")
     p_batch.add_argument("--seed", type=int, default=20261016, help="Deterministic PRNG seed")
     p_batch.add_argument("--format", default="wav", help="Output format: wav, m4a, or mp3")

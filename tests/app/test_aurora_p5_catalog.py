@@ -14,8 +14,8 @@ from aurora_binaural.params import PRESET_CATALOG, AuroraParams, PresetId, get_p
 
 
 def test_api_cli_models_share_toml_catalog(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert DEFAULT_PRESET_ID == "V2"
-    assert AuroraParams().preset.id == "V2"
+    assert DEFAULT_PRESET_ID in CATALOG
+    assert AuroraParams().preset.id == DEFAULT_PRESET_ID
     assert set(PRESET_CATALOG) == {"V1", "V2", "V3", "room"}
     assert PRESET_CATALOG[PresetId("room")].name.startswith("经典")
     assert run_cli(["presets"]) == 0
@@ -24,7 +24,7 @@ def test_api_cli_models_share_toml_catalog(tmp_path: Path, capsys: pytest.Captur
     with TestClient(create_app(config)) as client:
         api = client.get("/v1/presets", headers={"Authorization": "Bearer fixture"}).json()
     assert api["presets"] == cli["presets"]
-    assert api["default_preset"] == cli["default_preset"] == "V2"
+    assert api["default_preset"] == cli["default_preset"] == DEFAULT_PRESET_ID
     for row in api["presets"]:
         assert row["route"] == CATALOG[row["id"]].route
         assert row["version"] == CATALOG[row["id"]].version
@@ -52,3 +52,17 @@ def test_empty_and_duplicate_catalogs_fail_explicitly(tmp_path: Path) -> None:
         (tmp_path / f"{name}.toml").write_text('[room]\nname="重复"\n', encoding="utf-8")
     with pytest.raises(ValueError, match="Duplicate preset"):
         load_catalog(tmp_path)
+
+
+def test_default_uses_root_field_and_first_table_fallback(tmp_path: Path) -> None:
+    from aurora_binaural.catalog import load_default_preset
+
+    path = tmp_path / "route_v.toml"
+    path.write_text('default_preset = "V3"\n[V2]\nname="two"\n[V3]\nname="three"\n')
+    assert load_default_preset(tmp_path) == "V3"
+    path.write_text('[V7]\nname="first"\n[V3]\nname="second"\n')
+    with pytest.warns(RuntimeWarning, match="first preset 'V7'"):
+        assert load_default_preset(tmp_path) == "V7"
+    path.write_text('default_preset = "missing"\n[V7]\nname="first"\n')
+    with pytest.raises(ValueError, match="does not name a preset"):
+        load_default_preset(tmp_path)
