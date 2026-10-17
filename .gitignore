@@ -52,3 +52,6 @@ Claude outputs/
 
 # P1c 低频试听样本（本地生成，见 qa/p1/cursor/REPORT-P1c.md）
 qa/p1/cursor/lf/*.wav
+
+# 用户试听素材（版权音频，不入库）
+qa/listen/
