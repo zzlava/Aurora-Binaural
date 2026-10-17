@@ -19,13 +19,14 @@ import contextlib
 import json
 import os
 import sys
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 
 from pydantic import ValidationError
 
-from aurora_binaural.catalog import DEFAULT_PRESET_ID
+from aurora_binaural.catalog import CONTROL_KEYS, DEFAULT_PRESET_ID
 from aurora_binaural.cli.remote import RemoteAuroraClient
 from aurora_binaural.exit_codes import (
     AuroraError,
@@ -49,6 +50,8 @@ from aurora_binaural.params import (
     OutputSpec,
     PresetId,
     PresetSpec,
+    PreviewSpec,
+    SpatialControls,
     TailPolicy,
     TimingMode,
     TimingSpec,
@@ -151,6 +154,7 @@ def _build_aurora_params_from_args(
     timing_mode: str = "preserve",
     tail: str = "trim",
     fade_out_ms: float = 10.0,
+    controls: dict[str, float] | None = None,
 ) -> AuroraParams:
     """Construct and validate `AuroraParams` from CLI arguments, raising `ParameterValidationError` on failure."""
     try:
@@ -174,6 +178,7 @@ def _build_aurora_params_from_args(
         return AuroraParams(
             preset=preset_spec,
             strength=strength,
+            controls=SpatialControls.model_validate(controls or {}),
             seed=seed,
             output=output_spec,
             timing=timing_spec,
@@ -267,6 +272,7 @@ def _cmd_convert(args: argparse.Namespace) -> int:
         preset=args.preset,
         preset_version=args.preset_version,
         strength=args.strength,
+        controls=_cli_controls(args),
         seed=args.seed,
         fmt=fmt,
         sample_rate=args.sample_rate,
@@ -302,6 +308,43 @@ def _cmd_convert(args: argparse.Namespace) -> int:
         keep_input_sample_rate=args.keep_sample_rate,
         strict_ffmpeg=args.strict_ffmpeg,
     )
+    _emit_json_stdout(report.model_dump(mode="json"))
+    return int(ExitCode.OK)
+
+
+def _control_number(raw: str) -> float:
+    """Four advanced CLI knobs accept either normalized numbers or explicit %."""
+    return float(raw[:-1]) / 100 if raw.endswith("%") else float(raw)
+
+
+def _cli_controls(args: argparse.Namespace) -> dict[str, float]:
+    return {key: value for key in CONTROL_KEYS if key != "strength" and (value := getattr(args, key, None)) is not None}
+
+
+def _cmd_preview(args: argparse.Namespace) -> int:
+    from aurora_binaural.media import atomic_write_bytes
+    from aurora_binaural.previews import render_preview
+
+    params = _build_aurora_params_from_args(
+        preset=args.preset, preset_version=args.preset_version,
+        strength=args.strength, controls=_cli_controls(args), seed=args.seed, bit_depth=32,
+    )
+    params.preview = PreviewSpec(start_seconds=args.start, duration_seconds=args.duration)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = [output_dir / name for name in ("effect.wav", "original.wav", "report.json")]
+    if not args.overwrite and any(path.exists() for path in paths):
+        raise ParameterValidationError("Preview output already exists; use --overwrite.")
+    with tempfile.TemporaryDirectory(prefix=".aurora_preview_", dir=output_dir) as temporary:
+        temp = Path(temporary)
+        report = render_preview(Path(args.input), temp / "effect.wav", temp / "original.wav", params)
+        report.output.path = str(paths[0])
+        report.input.path = str(paths[1])
+        if report.preview:
+            report.preview.original.path = str(paths[1])
+        for path in paths[:2]:
+            os.replace(temp / path.name, path)
+        atomic_write_bytes(paths[2], (report.model_dump_json(indent=2) + "\n").encode(), overwrite=args.overwrite)
     _emit_json_stdout(report.model_dump(mode="json"))
     return int(ExitCode.OK)
 
@@ -632,6 +675,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reject M4A/AAC processing with exit code 4 if FFmpeg version is older than 7.0",
     )
     p_convert.set_defaults(func=_cmd_convert)
+
+    p_preview = subparsers.add_parser("preview", help="Render a matched A/B WAV excerpt (up to 20 seconds)")
+    p_preview.add_argument("input")
+    p_preview.add_argument("--output-dir", required=True)
+    p_preview.add_argument("--preset", default=DEFAULT_PRESET_ID)
+    p_preview.add_argument("--preset-version", default="1")
+    p_preview.add_argument("--strength", type=float, default=None)
+    p_preview.add_argument("--seed", type=int, default=20261016)
+    p_preview.add_argument("--start", type=float, default=0)
+    p_preview.add_argument("--duration", type=float, default=10)
+    p_preview.add_argument("--overwrite", action="store_true")
+    p_preview.set_defaults(func=_cmd_preview)
+    for spatial_parser in (p_convert, p_preview):
+        for control in CONTROL_KEYS[1:]:
+            spatial_parser.add_argument(
+                f"--{control.replace('_', '-')}", type=_control_number, default=None,
+                help="Spatial control: 0–1 or 0–100%%; finite outliers are clamped and reported",
+            )
 
     # aurora compare
     p_compare = subparsers.add_parser(

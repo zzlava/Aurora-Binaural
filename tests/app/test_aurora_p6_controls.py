@@ -55,6 +55,20 @@ def test_controls_participate_in_idempotency_hash() -> None:
     assert compute_canonical_job_hash(AuroraParams(width=0.2)) != compute_canonical_job_hash(AuroraParams(width=0.8))
 
 
+@pytest.mark.parametrize("command", ["convert", "preview"])
+def test_cli_controls_and_percentages(tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str) -> None:
+    from aurora_binaural.cli import run_cli
+    from test_aurora_p6_defaults import source_audio
+
+    source = tmp_path / "source.wav"
+    source_audio(source)
+    output = ["--output", str(tmp_path / "out.wav")] if command == "convert" else ["--output-dir", str(tmp_path / "excerpt"), "--duration", "0.5"]
+    assert run_cli([command, str(source), *output, "--width", "25%", "--height", "0.75", "--room", "150%", "--voice-distance", "0"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["params"]["controls"] == dict(strength=1, width=0.25, height=0.75, room=1, voice_distance=0)
+    assert report["params"]["control_clipping"] == [dict(control="room", requested=1.5, applied=1)]
+
+
 @pytest.mark.parametrize("engine,preset", [("rust", "V3"), ("rust", "room"), ("stub", "V3")])
 def test_report_contains_actual_controls(tmp_path: Path, engine: str, preset: str) -> None:
     from test_aurora_p6_defaults import source_audio
