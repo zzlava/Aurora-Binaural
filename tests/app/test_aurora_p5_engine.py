@@ -65,4 +65,3 @@ def test_route_aware_binding_receives_toml_route_before_prepare() -> None:
     assert calls == {"route": "V", "preset_path": str(CATALOG["V2"].preset_path),
                      "strength": 0.7, "seed": 123, "preset": "V2"}
     assert renderer.latency_samples() == 0
-

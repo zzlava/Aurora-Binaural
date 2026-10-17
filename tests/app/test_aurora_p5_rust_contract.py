@@ -5,8 +5,11 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from aurora_binaural.api import create_app
+from aurora_binaural.config import ServiceConfig
 from aurora_binaural.engine import (
     FloatBlock,
     RenderConfig,
@@ -18,6 +21,7 @@ from aurora_binaural.engine import (
 from aurora_binaural.exit_codes import ProcessingError
 from aurora_binaural.params import AuroraParams
 from aurora_binaural.pipeline import convert_audio
+from aurora_binaural.worker import AuroraWorker
 
 pytest.importorskip("aurora_core", reason="Build the Rust extension with bash scripts/build-core.sh")
 
@@ -171,3 +175,44 @@ def test_native_end_to_end_rate_and_codec_timeline(tmp_path: Path, sample_rate: 
     assert report.output.sample_rate == sample_rate
     assert report.timeline.sync_within_tolerance
     assert abs(report.output.samples - round(12937 * sample_rate / 48000)) <= (0 if sample_rate == 48000 else 2)
+
+
+@pytest.mark.parametrize("preview", [False, True])
+def test_api_worker_uses_configured_native_engine_for_export_and_preview(tmp_path: Path, preview: bool) -> None:
+    source = tmp_path / "input.wav"
+    t = np.arange(144000, dtype=np.float64) / 48000
+    with wave.open(str(source), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(48000)
+        wav.writeframes((3000 * np.sin(2 * np.pi * 440 * t)).astype("<i2").tobytes())
+    config = ServiceConfig(engine="rust", api_key="native-fixture", data_dir=tmp_path / "runtime",
+                           db_path=tmp_path / "runtime/db")
+    headers = {"Authorization": "Bearer native-fixture"}
+    app = create_app(config)
+    with TestClient(app) as client:
+        uploaded = client.post("/v1/assets", headers=headers, files={"file": ("input.wav", source.read_bytes())})
+        assert uploaded.status_code == 201
+        asset_id = uploaded.json()["asset_id"]
+        if preview:
+            created = client.post("/v1/previews", headers=headers, json={
+                "asset_id": asset_id, "preset": {"id": "room"}, "start_seconds": 1, "duration_seconds": 1,
+            })
+        else:
+            created = client.post("/v1/jobs", headers=headers, json={
+                "input": {"asset_id": asset_id}, "preset": {"id": "room"},
+            })
+        assert created.status_code == 202
+        completed = AuroraWorker(config, store=app.state.store).run_once()
+        assert completed is not None and completed.status == "succeeded"
+        job_id = created.json()["job_id"]
+        report = client.get(f"/v1/jobs/{job_id}/report", headers=headers).json()
+        assert report["engine"]["is_stub"] is False
+        assert report["engine"]["name"] == "aurora_core"
+        assert report["timeline"]["sample_diff"] == 0
+        assert report["output"]["samples"] == (48000 if preview else 144000)
+        if preview:
+            assert report["preview"]["start_sample"] == 48000
+            assert report["preview"]["loudness_diff_lu"] <= 0.2
+            assert client.get(f"/v1/jobs/{job_id}/original", headers=headers).status_code == 200
+        assert client.get(f"/v1/jobs/{job_id}/result", headers=headers).status_code == 200

@@ -739,7 +739,9 @@ function App() {
                       setStrength(item.default_strength);
                     }}
                   />
-                  <strong>{item.name}</strong>
+                  <strong>
+                    {item.id} · {item.name}
+                  </strong>
                   <span>{item.description}</span>
                 </label>
               ))}

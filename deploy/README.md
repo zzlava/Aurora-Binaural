@@ -91,3 +91,18 @@ docker run --rm aurora-binaural:p5 presets --json
 ## HRTF 打包边界
 
 默认 wheel、sdist 和 Docker 仅携带 SADIE II D1 SOFA 与 `sadie_d1_frontal.ahrp`，附 Apache-2.0 全文及署名；Rust 核心验证 pack 内源 SOFA 哈希。应用无 KU100 选择控件。只读 TOML 中的 `thk_ku100` 均衡数据为“仅本地研究”，TH Köln KU100 的 SOFA／pack 不进入默认产物。wheel 内携带预设和 HRTF，离开仓库运行无需依赖当前工作目录；可以用 `AURORA_HRTF_DIR` 明确指定 SADIE 资源目录。
+
+### P5 验证命令
+
+```bash
+uv run pytest                         # 桩回归 + 有原生扩展时的 Rust 契约
+uv run ruff check src tests/app
+uv run mypy
+npm --prefix web ci
+npm --prefix web run build
+npm --prefix web run lint
+npm --prefix web run test:e2e         # 显式 AURORA_ENGINE=stub 的流程回归
+uv build                             # wheel + sdist；仅 SADIE II 数据
+```
+
+真实核心测试在 `tests/app/test_aurora_p5_rust_contract.py`；没有安装 `aurora_core` 时明确 skip。测试 fixture 将旧回归流程显式设为桩，原生测试直接创建适配器或配置 `engine="rust"`，以验证真实执行。当前主线 B 核心电子乐实测真峰值为 −0.6 dBTP；该结果只用于接入验证，不代表路线 V 的 −1 dBTP 限制器验收已完成。
