@@ -1,0 +1,85 @@
+{
+  "source": "../cursor Git commit 52fa04e0daea5822d1d8f4e61938e853e3b89211:presets/route_v.toml (read-only snapshot in qa/p6/codex/.runtime/v3-presets; project presets unchanged)",
+  "source_commit": "52fa04e0daea5822d1d8f4e61938e853e3b89211",
+  "toml_sha256": "3c05214d18cccd3b0bb5e1059811c9f768210801634fdc2e363ec3ff946cc07b",
+  "default_preset": "V3",
+  "params": {
+    "preview": null,
+    "api_version": "v1",
+    "mode": "enhance",
+    "input": null,
+    "preset": {
+      "id": "V3",
+      "version": "1"
+    },
+    "strength": 1.0,
+    "seed": 20261016,
+    "output": {
+      "format": "flac",
+      "container": "flac",
+      "sample_rate": "source",
+      "bit_depth": 24,
+      "bitrate_kbps": null
+    },
+    "timing": {
+      "mode": "preserve",
+      "tail": "trim",
+      "fade_out_ms": 10.0
+    }
+  },
+  "engine": {
+    "name": "aurora_core",
+    "version": "0.1.0",
+    "git_commit": "cdab183fa2c9",
+    "is_stub": false,
+    "route": "V",
+    "block_size_frames": 1024,
+    "internal_sample_rate": 48000,
+    "hrtf": {
+      "name": "SADIE II D1",
+      "version": "D1-48K-256tap",
+      "sha256": "e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31",
+      "license": "Apache-2.0"
+    }
+  },
+  "output": {
+    "path": "qa/p6/codex/.runtime/p6-02/cursor-default.flac",
+    "sha256": "aae2be4f3906ac6ae9c60033f7aa8d7e55c8e07b4c0b66df15ffcc9d9282347f",
+    "format": "flac",
+    "container": "flac",
+    "codec": "flac",
+    "sample_rate": 48000,
+    "channels": 2,
+    "channel_layout": "stereo",
+    "samples": 960000,
+    "duration_seconds": 20.0,
+    "bit_depth": 24,
+    "size_bytes": 1925054,
+    "initial_padding": 0,
+    "trailing_padding": 0
+  },
+  "timeline": {
+    "mode": "preserve",
+    "tail_policy": "trim",
+    "engine_latency_samples": 1229,
+    "engine_tail_samples": 50400,
+    "extra_tail_samples_kept": 0,
+    "input_samples": 960000,
+    "processing_input_samples": 960000,
+    "processing_output_samples": 960000,
+    "resampler": null,
+    "duration_rounding_adjustment_samples": 0,
+    "expected_output_samples": 960000,
+    "decoded_readback_samples": 960000,
+    "raw_decoded_samples": 960000,
+    "sample_diff": 0,
+    "raw_sample_diff": 0,
+    "codec_priming_samples": 0,
+    "codec_trailing_padding_samples": 0,
+    "residual_priming_shift_samples": 0,
+    "compensation_strategy": "Lossless audio: zero encoder priming (0 samples) and zero frame padding (0 samples). Direct 1:1 sample frame preservation.",
+    "tolerance_samples": 0,
+    "sync_within_tolerance": true,
+    "sync_warning": null
+  }
+}
