@@ -193,6 +193,8 @@ class RustRenderer:
             try:
                 self._native.set_params(params)
                 self._apply_controls(params)
+            except ProcessingError:
+                raise
             except Exception as exc:
                 raise ProcessingError(f"Rust set_params failed: {exc}", error_code="CORE_ERROR") from exc
             return
@@ -215,6 +217,9 @@ class RustRenderer:
             self._native.set_params(params)
             self._apply_controls(params)
             self._selection = selection
+        except ProcessingError:
+            self._native = None
+            raise
         except Exception as exc:
             self._native = None
             raise ProcessingError(f"Rust prepare failed: {exc}", error_code="CORE_ERROR") from exc
@@ -290,9 +295,6 @@ def renderer_controls(renderer: Renderer, params: AuroraParams) -> dict[str, Any
                 "ignored_controls": ignored, "controls_note": "路线 B 仅应用空间强度；忽略宽度、头顶感、房间感、人声距离。"}
     return {"controls": {}, "effective_params": None, "ignored_controls": list(CONTROL_KEYS),
             "controls_note": "桩或自定义引擎未提供空间宏控件能力，五个控件均忽略。"}
-
-
-
 def create_renderer(
     *, engine: str | None = None, hrtf_dir: Path | None = None,
     latency_samples: int = 0, tail_samples: int = 0,

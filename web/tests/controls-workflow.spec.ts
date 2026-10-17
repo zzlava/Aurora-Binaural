@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -8,6 +8,15 @@ const qa = `${root}/qa/p6/codex`;
 test("滑块松手防抖 → Rust 自动试听保留 A/B 进度 → 下载报告", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    const starts: { when: number; offset: number }[] = [];
+    Object.assign(window, { __controlStarts: starts });
+    const original = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (when = 0, offset = 0, duration?: number) {
+      starts.push({ when, offset });
+      original.call(this, when, offset, duration);
+    };
+  });
   const requests: number[] = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/v1/previews")) requests.push(Date.now());
@@ -58,6 +67,24 @@ test("滑块松手防抖 → Rust 自动试听保留 A/B 进度 → 下载报告
   expect(report.effective_params.controls).toEqual(report.controls);
   expect(report.timeline.sample_diff).toBe(0);
   expect((await readFile(`${qa}/.runtime/controls-preview.wav`)).length).toBeGreaterThan(1000);
+  // Replace a running pair too; both sources must restart at the current shared clock.
+  await page.getByRole("button", { name: "播放试听", exact: true }).click();
+  const runningJob = await page.locator(".player").getAttribute("data-loaded-job");
+  await page.locator("#control-height").press("End");
+  await expect(page.locator(".player")).not.toHaveAttribute("data-loaded-job", runningJob!);
+  await expect(page.getByRole("button", { name: "暂停试听", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "B 效果" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "暂停试听", exact: true }).click();
+  const starts = await page.evaluate(() => (window as unknown as {
+    __controlStarts: { when: number; offset: number }[];
+  }).__controlStarts);
+  expect(starts).toHaveLength(4);
+  expect(starts[0]).toEqual(starts[1]);
+  expect(starts[2]).toEqual(starts[3]);
+  expect(starts[2].offset).toBeGreaterThan(starts[0].offset);
+  await writeFile(`${qa}/controls-04/ab-evidence.json`, JSON.stringify({
+    starts, releaseDelayMs: requests[1] - releasedAt, pausedPosition: "00:02.5", requests: requests.length,
+  }, null, 2) + "\n");
   expect(errors).toEqual([]);
 });
 
@@ -138,4 +165,24 @@ test("我的预设 SQLite 保存、改名、重启读回、JSON 往返与批量�
     }
   }
   expect(errors).toEqual([]);
+});
+
+test("本地 GUI 使用远程渲染时，我的预设仍写入本机 SQLite", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.getByText("本地已连接", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "远程模式", exact: true }).click();
+  await page.getByLabel("服务器地址", { exact: true }).fill("http://127.0.0.1:8779");
+  await page.getByLabel("API Key", { exact: true }).fill("controls-remote-fixture");
+  await page.getByRole("button", { name: "连接服务器", exact: true }).click();
+  await expect(page.getByText("远程已连接", { exact: true })).toBeVisible();
+  await page.getByLabel("预设名称", { exact: true }).fill("本机保留的预设");
+  await page.getByRole("button", { name: "保存为新预设", exact: true }).click();
+  await expect(page.getByLabel("选用我的预设")).toContainText("本机保留的预设");
+  const remote = await request.get("http://127.0.0.1:8779/v1/user-presets", {
+    headers: { Authorization: "Bearer controls-remote-fixture" },
+  });
+  expect(await remote.json()).toEqual([]);
+  const session = await (await request.get("/gui/session", { headers: { "X-Aurora-GUI": "1" } })).json();
+  const local = await request.get("/v1/user-presets", { headers: { Authorization: `Bearer ${session.api_key}` } });
+  expect((await local.json()).some((row: { name: string }) => row.name === "本机保留的预设")).toBe(true);
 });

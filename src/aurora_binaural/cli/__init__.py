@@ -216,6 +216,7 @@ def _cmd_presets(_args: argparse.Namespace) -> int:
         "presets": presets_list,
         "parameter_ranges": {
             "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},
+            "controls": {key: {"min": 0.0, "max": 1.0, "finite_outliers": "clamp"} for key in CONTROL_KEYS},
             "seed": {"min": 0, "max": 4294967295, "default": 20261016},
             "sample_rate": ["source", 44100, 48000, 96000],
             "wav_bit_depth": [16, 24, "32f"],
@@ -341,10 +342,15 @@ def _cmd_preview(args: argparse.Namespace) -> int:
         preset=args.preset, preset_version=args.preset_version,
         strength=args.strength, controls=_cli_controls(args), user_preset=args.user_preset, seed=args.seed, bit_depth=32,
     )
-    params.preview = PreviewSpec(start_seconds=args.start, duration_seconds=args.duration)
+    try:
+        params.preview = PreviewSpec(start_seconds=args.start, duration_seconds=args.duration)
+    except ValidationError as exc:
+        raise ParameterValidationError(str(exc), error_code="INVALID_PARAMETERS") from exc
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = [output_dir / name for name in ("effect.wav", "original.wav", "report.json")]
+    if any(path.resolve() == Path(args.input).resolve() for path in paths):
+        raise ParameterValidationError("Preview output must not replace the input audio.")
     if not args.overwrite and any(path.exists() for path in paths):
         raise ParameterValidationError("Preview output already exists; use --overwrite.")
     with tempfile.TemporaryDirectory(prefix=".aurora_preview_", dir=output_dir) as temporary:
@@ -848,7 +854,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _startup_ffmpeg_probe(command: str | None) -> None:
     """Detect FFmpeg version on startup for local media commands (F-AG-1)."""
-    if command in ("convert", "inspect", "compare", "batch", "timeline-verify"):
+    if command in ("convert", "preview", "inspect", "compare", "batch", "timeline-verify"):
         try:
             ver = get_ffmpeg_version()
             if not ver.meets_m4a_requirement:

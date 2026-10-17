@@ -19,7 +19,7 @@ const runtime = (name: string) => ({
 });
 export default defineConfig({
   testDir: "./tests",
-  testIgnore: ["rust-workflow.spec.ts", "hires-workflow.spec.ts"],
+  testIgnore: ["rust-workflow.spec.ts", "hires-workflow.spec.ts", "controls-workflow.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

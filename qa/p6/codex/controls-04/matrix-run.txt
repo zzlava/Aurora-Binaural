@@ -1,0 +1,1 @@
+Verified 15 real Rust renders; all controls read back exactly and sample_diff=0

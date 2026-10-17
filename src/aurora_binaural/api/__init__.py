@@ -34,7 +34,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from aurora_binaural.catalog import CATALOG, DEFAULT_PRESET_ID
+from aurora_binaural.catalog import CATALOG, CONTROL_KEYS, DEFAULT_PRESET_ID
 from aurora_binaural.config import ServiceConfig
 from aurora_binaural.engine import engine_status
 from aurora_binaural.exit_codes import AuroraError, ExitCode
@@ -395,6 +395,7 @@ def create_app(
             presets=list(PRESET_CATALOG.values()),
             parameter_ranges={
                 "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},
+                "controls": {key: {"min": 0.0, "max": 1.0, "finite_outliers": "clamp"} for key in CONTROL_KEYS},
                 "seed": {"min": 0, "max": 4294967295, "default": 20261016},
                 "sample_rate": ["source", 44100, 48000, 96000],
                 "wav_bit_depth": [16, 24, "32f"],
