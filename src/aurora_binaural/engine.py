@@ -47,10 +47,12 @@ def selected_engine() -> str:
 
 def core_version(module: Any) -> str:
     """Use the installed native distribution version, never the application version."""
-    try:
-        return importlib.metadata.version("aurora_core")
-    except importlib.metadata.PackageNotFoundError:
-        return str(getattr(module, "__version__", "unknown"))
+    for distribution in ("aurora-py", "aurora_core"):
+        try:
+            return importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return str(getattr(module, "__version__", "unknown"))
 
 
 def engine_status(engine: str | None = None) -> dict[str, Any]:
@@ -548,9 +550,12 @@ class RendererStreamProcessor:
         self.extra_tail_kept: int = 0
 
         self._is_trim = params.timing.tail == TailPolicy.TRIM
+        # A genuine bypass must preserve every sample, including the final 10 ms.
+        # DelayTestRenderer still exercises the audible-tail trimming policy.
+        passthrough = params.effective_strength == 0.0 or type(renderer) is StubRenderer
         self._fade_frames: int = (
             max(1, int(round(params.timing.fade_out_ms * sample_rate / 1000.0)))
-            if (self._is_trim and params.timing.fade_out_ms > 0.0)
+            if (self._is_trim and params.timing.fade_out_ms > 0.0 and not passthrough)
             else 0
         )
         self._in_Staging: FloatBlock = np.zeros((0, input_channels), dtype=np.float32)

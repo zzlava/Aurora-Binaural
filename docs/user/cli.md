@@ -7,7 +7,7 @@
 | 命令 | 用途与参数 |
 |---|---|
 | `convert INPUT --output FILE` | 本地转换；指定 `--server URL` 则上传、创建任务、轮询、下载 |
-| `batch INPUT_DIR --output-dir DIR` | 扫描本层 WAV/M4A/MP3/AAC 文件，逐个本地转换，独立记录失败；不递归、不支持 `--server` |
+| `batch INPUT_DIR --output-dir DIR` | 扫描本层 FLAC/WAV/ALAC/AIFF/M4A/MP3/AAC 文件，逐个本地转换，独立记录失败；不递归、不支持 `--server` |
 | `compare INPUT --output-dir DIR` | 生成等响度 dry/effect 文件与比较报告；本地处理 |
 | `inspect INPUT [--json] [--strict-ffmpeg]` | 探测编码与精确解码样本数，测量 BS.1770 响度和真峰值 |
 | `presets [--json]` | 从 TOML 列出公开预设、版本、默认强度和参数范围 |
@@ -20,24 +20,24 @@
 | `openapi [--output FILE]` | 输出 OpenAPI 3.1，可同时写文件 |
 | `timeline-verify [--output FILE]` | 执行 WAV/M4A/MP3 的 44.1/48 kHz 时间线诊断，输出验证矩阵 |
 
-`--json` 为兼容标志，省略仍输出 JSON。当前公开目录含 V1/V2/V3 和 `room`，默认真实 Rust 路线 V 的 V2 与 SADIE II D1；`--preset room` 选择经典路线 B。旧 surround/orbit 仅保留显式兼容入口。
+`--json` 为兼容标志，省略仍输出 JSON。当前公开目录含 V1/V2/V3 和 `room`，默认真实 Rust 路线 V 与 SADIE II D1，默认预设读取 route_v.toml 的 default_preset（字段缺失时警告并选择该文件第一个预设）；`--preset room` 选择经典路线 B。旧 surround/orbit 仅保留显式兼容入口。
 
 ### convert 参数
 
 | 参数 | 默认／范围 |
 |---|---|
-| `--output`, `-o` | 必填，扩展名 `.wav` / `.m4a` / `.mp3` |
-| `--preset`, `--preset-version` | V2、`1`；`room` 为经典路线 B |
+| `--output`, `-o` | 必填，扩展名 `.wav` / `.flac` / `.m4a` / `.aiff` / `.mp3` |
+| `--preset`, `--preset-version` | TOML 的 default_preset、`1`；`room` 为经典路线 B |
 | `--strength` | 预设默认值；0–1，0 旁路空间 DSP |
 | `--seed` | 20261016；0–4294967295 |
-| `--format` | 从输出扩展名推断；显式值须匹配扩展名；不支持裸 `.aac` 输出 |
-| `--sample-rate` | 48000；44100/48000/96000，MP3 不支持 96000 |
-| `--keep-sample-rate` | 关闭；本地用输入采样率覆盖输出采样率，输入也须在支持范围 |
-| `--bit-depth` | 24；WAV 16/24/32（32 为 float PCM） |
-| `--bitrate` | 有损默认 256 kbps，64–512；WAV 不接受此值；实际编码器仍可能拒绝部分组合 |
+| `--format` | `wav/flac/alac/aiff/m4a/mp3`；从扩展名推断；ALAC 须显式 --format alac，扩展名 .m4a；不支持裸 .aac 输出 |
+| `--sample-rate` | `source`（与源文件相同）；`source/44100/48000/96000`，MP3 最高 48 kHz，AAC 最高 96 kHz |
+| `--keep-sample-rate` | `--sample-rate source` 的兼容别名（本地选项） |
+| `--bit-depth` | 24；无损格式 16/24，WAV 另支持 `32f`（兼容旧 `32`）；16 bit 加 TPDF 抖动 |
+| `--bitrate` | 有损默认 256 kbps，64–512；无损格式不接受此值；实际编码器仍可能拒绝部分组合 |
 | `--timing-mode` | 仅 `preserve` |
 | `--tail` | `trim`；也可 `preserve` 追加混响尾巴 |
-| `--fade-out-ms` | 10；0–500，trim 末尾短淡出 |
+| `--fade-out-ms` | 10；0–500，空间渲染 trim 末尾短淡出；桩与强度 0 旁路不淡出 |
 | `--block-size` | 1024 帧，本地引擎块大小 |
 | `--simulated-latency`, `--simulated-tail` | 0，仅桩诊断用 |
 | `--overwrite` | 关闭；允许覆盖输出及报告 |
@@ -47,7 +47,7 @@
 
 远程模式传送预设、强度、seed、output、timing；`--block-size`、模拟参数、`--keep-sample-rate` 和 `--strict-ffmpeg` 是本地选项，不传给服务器。服务端控制其引擎、FFmpeg 策略和资源限制。
 
-`compare` 接受 `--preset`、`--preset-version`、`--strength`、`--seed`、`--format`（默认 wav）、`--sample-rate`、`--bit-depth`、`--bitrate`、`--block-size`、`--overwrite`、`--strict-ffmpeg`。`batch` 接受 `--preset`、`--strength`、`--seed`、`--format`（默认 wav）、`--sample-rate`、`--block-size`、`--overwrite`、`--strict-ffmpeg`；没有 bit-depth、bitrate、tail 或 report 参数。同名 stem 会映射到同一目标名，应避免此类输入冲突。
+`compare` 接受 `--preset`、`--preset-version`、`--strength`、`--seed`、`--format`（默认 wav）、`--sample-rate`、`--bit-depth`、`--bitrate`、`--block-size`、`--overwrite`、`--strict-ffmpeg`。`batch` 接受 `--preset`、`--strength`、`--seed`、`--format`（默认 wav）、`--sample-rate`、`--bit-depth`、`--block-size`、`--overwrite`、`--strict-ffmpeg`；没有 bitrate、tail 或 report 参数。同名 stem 会映射到同一目标名，应避免此类输入冲突。
 
 远程 Key 从 `AURORA_API_KEY` 读取；未设置时读取 `AURORA_CONFIG_PATH` 指定 JSON 的 `api_key`。命令行没有 Key 参数。
 
@@ -58,6 +58,8 @@ uv run aurora schema --output outputs/params.schema.json
 uv run aurora timeline-verify --output outputs/timeline.json
 ```
 
+内部按 48 kHz 处理，超过 24 kHz 的内容不做空间处理。高采样率经过 soxr VHQ 的降采样／升采样，详见 [格式和采样率说明](quickstart.md#格式采样率与位深)。用 `AURORA_FFMPEG`／`AURORA_FFPROBE` 可选择二进制；缺少 soxr 时重采样返回 `SOXR_UNAVAILABLE`，不降级。
+
 ## JSON 字段
 
 `convert` 输出 ConversionReport（远程 `/report` 同一结构）：
@@ -67,10 +69,12 @@ uv run aurora timeline-verify --output outputs/timeline.json
 | `ok`, `status`, `job_id`, `asset_id`, `preview` | 成功标志、succeeded；本地 ID 为 null；普通转换 preview 为 null |
 | `input`, `output` | `path`, `sha256`, `format`, `container`, `codec`, `sample_rate`, `channels`, `channel_layout`, `samples`, `duration_seconds`, `bit_depth`, `size_bytes`, `initial_padding`, `trailing_padding`；samples 是每声道帧数 |
 | `engine` | `name`, `version`, `git_commit`, `is_stub`, `route`, `block_size_frames`, `internal_sample_rate`, `hrtf`（name/version/sha256/license）；原生核心版本来自已安装 aurora_core，git_commit 是运行时应用仓库提交号，无 Git 元数据的安装可记录 unknown |
-| `params` | 实际归一化的 api_version/mode/input/preset/strength/seed/output/timing/preview |
-| `timeline` | mode/tail_policy、engine_latency_samples/engine_tail_samples、extra_tail_samples_kept、input_samples/expected_output_samples/decoded_readback_samples/raw_decoded_samples、sample_diff/raw_sample_diff、codec_priming_samples/codec_trailing_padding_samples、residual_priming_shift_samples、compensation_strategy/tolerance_samples/sync_within_tolerance/sync_warning |
+| `params` | 实际归一化的参数；params.output.sample_rate 可保留 source，实际数值读 output.sample_rate。包含 api_version/mode/input/preset/strength/seed/output/timing/preview |
+| `timeline` | mode/tail_policy、engine_latency_samples/engine_tail_samples、extra_tail_samples_kept、input_samples/processing_input_samples/processing_output_samples/resampler/duration_rounding_adjustment_samples/expected_output_samples/decoded_readback_samples/raw_decoded_samples、sample_diff/raw_sample_diff、codec_priming_samples/codec_trailing_padding_samples、residual_priming_shift_samples、compensation_strategy/tolerance_samples/sync_within_tolerance/sync_warning |
 | `loudness_before`, `loudness_after` | integrated_lufs/loudness_range_lu/true_peak_dbtp/is_silent/method；静音测量可能为 null |
 | `elapsed_ms`, `attempts`, `created_at`, `expires_at` | 耗时、尝试次数、UTC ISO 时间；本地 expires_at 为 null |
+
+源时长按 round(源样本数 × 输出率 / 源率) 锚定；重采样后的取整误差通过末端补零／裁切对齐，处理帧数及 duration_rounding_adjustment_samples 写入报告。`timeline.sync_within_tolerance` 仅核对回读样本数；冲激峰值的位置需另行测量，当前路线 V 的已知偏移见 [故障排查](troubleshooting.md)。
 
 `inspect` 返回 `ok/audio/loudness` 和可选 `sync_warning`；audio/loudness 同上。`presets` 返回 `ok/api_version/default_preset/presets/parameter_ranges`；每个 preset 为 id/name/version/default_strength/description/algorithm_summary/route/is_default。HTTP 的预设响应另有 engine。
 

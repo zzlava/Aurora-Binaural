@@ -888,7 +888,7 @@ class TaskStore:
             job = self._row_to_job(row)
             if job.status in TERMINAL_JOB_STATUSES:
                 return job
-            if job.status == "running" and (job.lease_id == lease_id or job.cancel_requested):
+            if job.status == "running" and job.lease_id == lease_id:
                 conn.execute(
                     """
                     UPDATE jobs

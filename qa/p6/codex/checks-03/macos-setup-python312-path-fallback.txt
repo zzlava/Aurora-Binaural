@@ -1,0 +1,105 @@
+cargo 1.99.1 (5f94df478 2026-08-27)
+rustup 1.29.1 (2026-08-13)
+info: This is the version for the rustup toolchain manager, not the rustc compiler.
+info: the currently active `rustc` version is `rustc 1.99.1 (58cf8f9c3 2026-10-13)`
+uv 0.12.13 (Homebrew 2026-09-10 aarch64-apple-darwin)
+v26.10.0
+11.19.1
+Resolved 33 packages in 3ms
+Uninstalled 2 packages in 3ms
+ - aurora-core==0.1.0 (from file:///var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.Yv0z25/wheels/aurora_core-0.1.0-cp312-cp312-macosx_11_0_arm64.whl)
+ - maturin==1.15.0
+FFmpeg soxr resampling passed: /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
+FFprobe: /opt/homebrew/bin/ffprobe
+Saved .aurora-local.env
+If FFmpeg needs installing: On macOS run: brew install ffmpeg-full. On Linux install FFmpeg with --enable-libsoxr.
+Resolved 33 packages in 3ms
+Installed 1 package in 3ms
+ + maturin==1.15.0
+🐍 Found CPython 3.12 at ~/Desktop/leo/Aurora Binaural/.agents/codex/.venv/bin/python
+🔗 Found pyo3 bindings
+💻 Using `MACOSX_DEPLOYMENT_TARGET=11.0` for aarch64-apple-darwin by default
+   Compiling target-lexicon v0.13.5
+   Compiling autocfg v1.5.1
+   Compiling once_cell v1.21.4
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling version_check v0.9.5
+   Compiling serde_core v1.0.229
+   Compiling libc v0.2.190
+   Compiling serde v1.0.229
+   Compiling typenum v1.20.1
+   Compiling strength_reduce v0.2.4
+   Compiling generic-array v0.14.7
+   Compiling num-traits v0.2.19
+   Compiling hashbrown v0.17.1
+   Compiling equivalent v1.0.3
+   Compiling memoffset v0.9.1
+   Compiling heck v0.5.0
+   Compiling indexmap v2.14.2
+   Compiling winnow v0.7.15
+   Compiling toml_write v0.1.2
+   Compiling thiserror v2.0.21
+   Compiling num-integer v0.1.47
+   Compiling num-complex v0.4.6
+   Compiling pyo3-build-config v0.25.1
+   Compiling transpose v0.2.3
+   Compiling primal-check v0.3.4
+   Compiling rustfft v6.4.1
+   Compiling cpufeatures v0.2.17
+   Compiling cfg-if v1.0.5
+   Compiling unindent v0.2.4
+   Compiling indoc v2.0.8
+   Compiling realfft v3.5.0
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling syn v2.0.119
+   Compiling syn v3.0.9
+   Compiling thiserror-impl v2.0.21
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling toml_edit v0.22.27
+   Compiling pyo3-macros-backend v0.25.1
+   Compiling pyo3-ffi v0.25.1
+   Compiling pyo3 v0.25.1
+   Compiling toml v0.8.23
+   Compiling aurora-dsp v0.1.0 (/private/var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.5R0uEU/core/aurora-dsp)
+   Compiling pyo3-macros v0.25.1
+   Compiling aurora-py v0.1.0 (/private/var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.5R0uEU/core/aurora-py)
+    Finished `release` profile [optimized] target(s) in 11.33s
+📦 Built wheel for CPython 3.12 to /var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T//aurora-core.5R0uEU/wheels/aurora_core-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
+Resolved 2 packages in 12ms
+Prepared 1 package in 16ms
+Installed 1 package in 0.83ms
+ + aurora-core==0.1.0 (from file:///var/folders/5n/47glvkt929vfkjr379s8gky80000gn/T/aurora-core.5R0uEU/wheels/aurora_core-0.1.0-cp312-cp312-macosx_11_0_arm64.whl)
+aurora_core loaded: ~/Desktop/leo/Aurora Binaural/.agents/codex/.venv/lib/python3.12/site-packages/aurora_core/__init__.py
+Default core smoke passed: Rust 0.1.0 / V / V3 / SADIE II D1
+
+added 116 packages, and audited 117 packages in 1s
+
+38 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+npm warn install-scripts   fsevents@2.3.3 (install: (install scripts present))
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+
+> aurora-binaural-web@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 10 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                  0.52 kB │ gzip:  0.35 kB
+dist/assets/index-BLr_LepT.css  14.20 kB │ gzip:  3.73 kB
+dist/assets/index-RhY7jvak.js   39.76 kB │ gzip: 15.43 kB
+
+✓ built in 222ms
+下一步运行 `uv run aurora gui`

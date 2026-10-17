@@ -19,7 +19,7 @@ const runtime = (name: string) => ({
 });
 export default defineConfig({
   testDir: "./tests",
-  testIgnore: "rust-workflow.spec.ts",
+  testIgnore: ["rust-workflow.spec.ts", "hires-workflow.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -27,7 +27,7 @@ export default defineConfig({
   outputDir: path.join(qa, ".test-output"),
   reporter: [
     ["list"],
-    ["json", { outputFile: path.join(qa, "stub-e2e-results.json") }],
+    ["json", { outputFile: path.join(qa, "stub-e2e-results-02.json") }],
   ],
   use: {
     baseURL: "http://127.0.0.1:8767",

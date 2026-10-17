@@ -6,12 +6,12 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const qa = path.join(root, "qa/p6/codex");
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "rust-workflow.spec.ts",
+  testMatch: ["rust-workflow.spec.ts", "hires-workflow.spec.ts"],
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 30_000 },
   outputDir: path.join(qa, ".test-output/rust"),
-  reporter: [["list"], ["json", { outputFile: path.join(qa, "rust-e2e-results.json") }]],
+  reporter: [["list"], ["json", { outputFile: path.join(qa, "rust-e2e-results-02.json") }]],
   use: {
     baseURL: "http://127.0.0.1:8776",
     browserName: "chromium",

@@ -1,4 +1,4 @@
-"""P6 defaults must render through native V2 in both CLI and queued API jobs."""
+"""P6 defaults must render the TOML default through Rust in CLI and queued API jobs."""
 
 import json
 import wave
@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aurora_binaural.api import create_app
+from aurora_binaural.catalog import DEFAULT_PRESET_ID
 from aurora_binaural.cli import run_cli
 from aurora_binaural.config import ServiceConfig
 from aurora_binaural.worker import AuroraWorker
@@ -35,11 +36,11 @@ def assert_native_default(report: dict[str, Any]) -> None:
     assert engine["name"] == "aurora_core" and engine["is_stub"] is False
     assert engine["route"] == "V"
     assert engine["hrtf"]["name"] == "SADIE II D1"
-    assert params["preset"]["id"] == "V2"
+    assert params["preset"]["id"] == DEFAULT_PRESET_ID
     assert report["timeline"]["sample_diff"] == 0
 
 
-def test_cli_omitted_engine_and_preset_render_v2(
+def test_cli_omitted_engine_and_preset_render_toml_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.delenv("AURORA_ENGINE")
@@ -50,7 +51,7 @@ def test_cli_omitted_engine_and_preset_render_v2(
 
 
 @pytest.mark.parametrize("preview", [False, True])
-def test_default_api_and_worker_render_v2(
+def test_default_api_and_worker_render_toml_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preview: bool,
 ) -> None:
     monkeypatch.delenv("AURORA_ENGINE")

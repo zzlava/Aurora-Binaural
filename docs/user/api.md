@@ -71,9 +71,9 @@ PY
 
 ## 上传与任务参数
 
-上传支持 multipart 的 `file` 字段，也支持 `Content-Type: application/octet-stream` 加 `--data-binary @FILE`；原始上传用 `X-Asset-Filename: voice.wav` 指定文件名，可附 `X-Asset-Sha256` 校验内容。文件名会清理，服务器不接收本地路径或 URL 抓取。上传响应字段为 ok/asset_id/filename/sha256/size_bytes/format/container/codec/sample_rate/channels/samples/duration_seconds/created_at/expires_at。
+输入支持 FLAC、WAV、ALAC（M4A）、AIFF、AAC、MP3。上传支持 multipart 的 `file` 字段，也支持 `Content-Type: application/octet-stream` 加 `--data-binary @FILE`；原始上传用 `X-Asset-Filename: voice.wav` 指定文件名，可附 `X-Asset-Sha256` 校验内容。文件名会清理，服务器不接收本地路径或 URL 抓取。上传响应字段为 ok/asset_id/filename/sha256/size_bytes/format/container/codec/sample_rate/channels/samples/duration_seconds/created_at/expires_at。
 
-任务请求字段：api_version 固定 v1，mode 固定 enhance，input 必须含 asset_id 且禁止 path；preset 为 id/version，strength 0–1，seed 为 uint32。output 为 format/container/sample_rate/bit_depth/bitrate_kbps；timing 为 mode=preserve、tail=trim|preserve、fade_out_ms（默认 10）。字段默认与约束见 [CLI](cli.md) 或 schema；未知字段会拒绝。默认使用真实 Rust 路线 V、V2 与 SADIE II D1；省略 preset 即选 V2。`room` 是经典路线 B，需要时显式选择。旧核心报 `CORE_ROUTE_UNSUPPORTED` 时重新构建核心并重启服务。
+任务请求字段：api_version 固定 v1，mode 固定 enhance，input 必须含 asset_id 且禁止 path；preset 为 id/version，strength 0–1，seed 为 uint32。output 为 format/container/sample_rate/bit_depth/bitrate_kbps；timing 为 mode=preserve、tail=trim|preserve、fade_out_ms（默认 10）。字段默认与约束见 [CLI](cli.md) 或 schema；未知字段会拒绝。默认使用真实 Rust 路线 V 与 SADIE II D1；省略 preset 时读取 route_v.toml 的 default_preset，缺失时警告并退回该文件第一个预设。`room` 是经典路线 B，需要时显式选择。旧核心报 `CORE_ROUTE_UNSUPPORTED` 时重新构建核心并重启服务。
 
 试听示例（复用已上传的 asset_id）：
 
@@ -83,6 +83,10 @@ curl --fail-with-body -sS -H "Authorization: Bearer $AURORA_API_KEY" \
   -d "{\"asset_id\":\"$asset_id\",\"preset\":{\"id\":\"V2\",\"version\":\"1\"},\"strength\":0.4,\"seed\":20261016,\"start_seconds\":0,\"duration_seconds\":5}" \
   "$AURORA_SERVER/v1/previews"
 ```
+
+导出 `output.format` 支持 `wav/flac/alac/aiff/m4a/mp3`，ALAC 的 `container` 为 `m4a`。`sample_rate` 为 `"source"`（默认）或数值 `44100/48000/96000`，`bit_depth` 为 `16/24`，WAV 另可用 `"32f"`（兼容旧数值 `32`）；有损输出归一化为 null。无损默认 24 bit，16 bit 加 TPDF 抖动。例：`"output":{"format":"flac","sample_rate":"source","bit_depth":24}`。返回的 output.sample_rate 是实际数值采样率，params.output.sample_rate 保留请求策略。ALAC 下载扩展名为 .m4a、MIME audio/mp4；FLAC 为 audio/flac，AIFF 为 audio/aiff。保留标题、艺术家、专辑和嵌入封面，WAV 使用 RIFF ID3/APIC。
+
+内部按 48 kHz 处理，超过 24 kHz 的内容不做空间处理。服务端须使用支持 libsoxr 的 FFmpeg（可设置 AURORA_FFMPEG）；否则需要重采样的任务明确失败为 SOXR_UNAVAILABLE，不降级。MP3 最高 48 kHz、AAC 最高 96 kHz，source 超出编码器范围时任务以 INVALID_OUTPUT_PARAMETERS 失败，需改选数值采样率或无损格式。完整支持矩阵见 [快速开始](quickstart.md#格式采样率与位深)。
 
 试听 start_seconds ≥0，duration_seconds >0 且 ≤20，起点必须小于素材时长，结尾截在素材末尾。固定输出 48 kHz float32 stereo WAV，轮询成功后 result 是效果、original 是原音；report.preview 包含原音摘要、增益、响度差、match_status 和原始时间位置。
 

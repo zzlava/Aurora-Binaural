@@ -228,17 +228,13 @@ def _sanitize_filename(raw_name: str | None) -> tuple[str, str]:
     if not base or base in (".", ".."):
         return "upload.wav", ".wav"
     ext = Path(base).suffix.lower()
-    if ext not in (".wav", ".m4a", ".mp3", ".aac"):
+    if ext not in (".wav", ".flac", ".m4a", ".alac", ".aiff", ".aif", ".mp3", ".aac"):
         ext = ".wav"
     return base, ext
 
 
 def _media_type_for_format(fmt: OutputFormat) -> str:
-    if fmt == OutputFormat.WAV:
-        return "audio/wav"
-    if fmt == OutputFormat.M4A:
-        return "audio/mp4"
-    return "audio/mpeg"
+    return OutputSpec(format=fmt).media_type
 
 
 def create_app(
@@ -398,8 +394,10 @@ def create_app(
             parameter_ranges={
                 "strength": {"min": 0.0, "max": 1.0, "dry_wet_mixing_allowed": False},
                 "seed": {"min": 0, "max": 4294967295, "default": 20261016},
-                "sample_rate": [44100, 48000, 96000],
-                "wav_bit_depth": [16, 24, 32],
+                "sample_rate": ["source", 44100, 48000, 96000],
+                "wav_bit_depth": [16, 24, "32f"],
+                "lossless_bit_depth": [16, 24],
+                "output_format": [fmt.value for fmt in OutputFormat],
                 "lossy_bitrate_kbps": {"min": 64, "max": 512, "default": 256},
             },
         )
@@ -682,6 +680,8 @@ def create_app(
                     "audio/wav": {"schema": {"type": "string", "format": "binary"}},
                     "audio/mp4": {"schema": {"type": "string", "format": "binary"}},
                     "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+                    "audio/flac": {"schema": {"type": "string", "format": "binary"}},
+                    "audio/aiff": {"schema": {"type": "string", "format": "binary"}},
                 },
                 "description": "Rendered binaural audio stream.",
             },
@@ -707,7 +707,7 @@ def create_app(
             file_size = result_file.stat().st_size
             fmt = job.params.output.format
             media_type = _media_type_for_format(fmt)
-            filename = f"{job.job_id}.{fmt.value}"
+            filename = f"{job.job_id}.{job.params.output.extension}"
 
             def _file_iterator() -> Iterator[bytes]:
                 try:

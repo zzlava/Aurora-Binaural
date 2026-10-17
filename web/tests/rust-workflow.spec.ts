@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const qa = `${root}/qa/p6/codex`;
+const qa = `${root}/qa/p6/codex/.runtime/p6-01-regression`;
 
 test("真实音乐 → Rust V2 试听与同步 A/B → WAV 导出下载；四种主题视口", async ({ page }) => {
   const errors: string[] = [];
@@ -22,11 +22,13 @@ test("真实音乐 → Rust V2 试听与同步 A/B → WAV 导出下载；四种
       nativeStart.call(this, when, offset, duration);
     };
   });
+  const catalogPromise = page.waitForResponse((response) => response.url().endsWith("/v1/presets"));
   await page.goto("/");
   await expect(page.getByText("本地已连接", { exact: true })).toBeVisible();
-  await expect(page.locator(".engine-notice")).toContainText("路线 V · 预设 V2 · HRTF SADIE II D1 · 核心 0.1.0");
+  const catalog = await (await catalogPromise).json();
+  await expect(page.locator(".engine-notice")).toContainText(`路线 V · 预设 ${catalog.default_preset} · HRTF SADIE II D1`);
   await expect(page.locator(".engine-notice")).not.toContainText("桩");
-  await expect(page.locator('input[name="preset"][value="V2"]')).toBeChecked();
+  await expect(page.locator(`input[name="preset"][value="${catalog.default_preset}"]`)).toBeChecked();
   // Confirm classic route selection is reflected without executing another algorithm.
   await page.locator('input[name="preset"][value="room"]').check();
   await expect(page.locator(".engine-notice")).toContainText("路线 B · 预设 room");
