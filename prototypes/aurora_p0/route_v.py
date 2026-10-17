@@ -345,7 +345,12 @@ class RouteVProcessor:
         self.sr = int(config.sample_rate)
         self.block = int(config.block_size)
         self.seed = int(config.seed)
-        self.params = map_route_v(config.strength, config.preset, config.hrtf_name)
+        self.params = map_route_v(
+            config.strength,
+            config.preset,
+            config.hrtf_name,
+            controls=getattr(config, "controls", None),
+        )
         self._hrir.clear()
         self._eq = None
         if self.params.delays_ms:

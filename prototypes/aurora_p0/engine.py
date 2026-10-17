@@ -75,6 +75,8 @@ class RenderConfig:
     sample_rate: int = SAMPLE_RATE
     crossover_hz: float = CROSSOVER_HZ
     orbit_deg_per_sec: float = 0.0
+    # Route V macro controls. None keeps each control on the preset default.
+    controls: dict | None = None
 
 
 class Processor:
