@@ -24,9 +24,10 @@ export class ABPlayer {
           : 0),
     );
   }
-  async load(original: Blob, effect: Blob): Promise<void> {
-    this.pause();
-    this.offset = 0;
+  async load(original: Blob, effect: Blob, options: {
+    preserveProgress?: boolean;
+    isCurrent?: () => boolean;
+  } = {}): Promise<boolean> {
     this.context ??= new AudioContext();
     const context = this.context;
     const [a, b] = await Promise.all([
@@ -40,7 +41,14 @@ export class ABPlayer {
     ) {
       throw new Error("A/B 音频长度或采样率不一致，请重新生成试听。");
     }
+    if (options.isCurrent && !options.isCurrent()) return false;
+    const position = options.preserveProgress ? this.position : 0;
+    const resume = options.preserveProgress && this.playing;
+    this.pause();
     this.buffers = [a, b];
+    this.offset = Math.min(position, this.duration);
+    if (resume && this.offset < this.duration) await this.play();
+    return true;
   }
   async play(): Promise<void> {
     if (!this.context || !this.buffers || this.playing || this.starting) return;

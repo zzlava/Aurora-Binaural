@@ -1,8 +1,12 @@
+export type ControlKey = "strength" | "width" | "height" | "room" | "voice_distance";
+export type Controls = Partial<Record<ControlKey, number>>;
+
 export interface Preset {
   id: string;
   name: string;
   version: string;
   default_strength: number;
+  default_controls: Controls;
   description: string;
   route: string;
 }
@@ -47,6 +51,10 @@ export interface Loudness {
   true_peak_dbtp: number | null;
 }
 export interface Report {
+  controls: Controls;
+  effective_params: Record<string, unknown> | null;
+  ignored_controls: string[];
+  controls_note: string;
   engine: {
     is_stub: boolean;
     name: string;
@@ -60,6 +68,7 @@ export interface Report {
   params: {
     preset: { id: string; version: string };
     strength: number;
+    controls: Controls;
     seed: number;
   };
   preview: null | {
