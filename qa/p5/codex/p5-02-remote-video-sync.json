@@ -1,0 +1,68 @@
+{
+  "ok": true,
+  "fixture": "synthetic flash/click",
+  "engine": {
+    "name": "aurora_core",
+    "version": "0.1.0",
+    "git_commit": "unknown",
+    "is_stub": false,
+    "block_size_frames": 1024,
+    "internal_sample_rate": 48000,
+    "hrtf": {
+      "name": "SADIE II D1",
+      "version": "D1-48K-256tap",
+      "sha256": "e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31",
+      "license": "Apache-2.0"
+    }
+  },
+  "sample_rate": 48000,
+  "input_samples": 288000,
+  "spatial_samples": 288000,
+  "final_decoded_samples": 288000,
+  "sample_diff": 0,
+  "video_frames_before": 150,
+  "video_frames_after": 150,
+  "video_fps": "25",
+  "audio_start_seconds": "0",
+  "video_start_seconds": "0",
+  "input_onset_sample": 48001,
+  "spatial_onset_sample": 47899,
+  "final_onset_sample": 47899,
+  "onset_shift_samples": -102,
+  "onset_shift_video_frames": -0.053125,
+  "demo_event_shifts_samples": [
+    -102,
+    -102,
+    -102
+  ],
+  "mux_max_abs_pcm_error": 0.0,
+  "demo_flash_frames": [
+    25,
+    75,
+    125
+  ],
+  "demo_audio_minus_flash_samples": [
+    -101,
+    -101,
+    -101
+  ],
+  "event_tolerance_samples": 1920,
+  "event_tolerance_basis": "one video frame; DSP onset may shift even when sample counts match",
+  "loudness_after": {
+    "integrated_lufs": -33.2,
+    "loudness_range_lu": 3.0,
+    "true_peak_dbtp": -16.4,
+    "is_silent": false,
+    "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+  },
+  "checks": {
+    "sample_count_exact": true,
+    "mux_pcm_exact": true,
+    "video_frames_exact": true,
+    "start_timestamps_zero": true,
+    "demo_flash_frames_exact": true,
+    "demo_events_within_one_video_frame": true
+  },
+  "final": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-remote-av/final.mov",
+  "report": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-remote-av/aurora-report.json"
+}

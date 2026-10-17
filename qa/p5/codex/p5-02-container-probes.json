@@ -1,0 +1,100 @@
+{
+  "ready": {
+    "ok": true,
+    "status": "ready",
+    "checks": {
+      "database": true,
+      "worker": true,
+      "hrtf_data": true
+    }
+  },
+  "health": {
+    "ok": true,
+    "status": "ok",
+    "service": "aurora-binaural-api",
+    "api_version": "v1"
+  },
+  "presets": {
+    "ok": true,
+    "api_version": "v1",
+    "engine": {
+      "name": "rust",
+      "is_stub": false,
+      "available": true,
+      "supported_routes": [
+        "B"
+      ],
+      "message": "效果引擎：Rust（当前核心仅支持经典 room）"
+    },
+    "default_preset": "V2",
+    "presets": [
+      {
+        "id": "V1",
+        "name": "V2，人声更远",
+        "version": "1",
+        "default_strength": 0.5,
+        "description": "路线 V · V2，人声更远",
+        "algorithm_summary": "Route V / TOML",
+        "route": "V",
+        "is_default": false
+      },
+      {
+        "id": "V2",
+        "name": "G，人声更近",
+        "version": "1",
+        "default_strength": 0.5,
+        "description": "路线 V · G，人声更近",
+        "algorithm_summary": "Route V / TOML",
+        "route": "V",
+        "is_default": true
+      },
+      {
+        "id": "V3",
+        "name": "V2，高度更强",
+        "version": "1",
+        "default_strength": 0.5,
+        "description": "路线 V · V2，高度更强",
+        "algorithm_summary": "Route V / TOML",
+        "route": "V",
+        "is_default": false
+      },
+      {
+        "id": "room",
+        "name": "经典 · 自然空间",
+        "version": "1",
+        "default_strength": 0.4,
+        "description": "路线 B · 经典 · 自然空间",
+        "algorithm_summary": "Route B / TOML",
+        "route": "B",
+        "is_default": false
+      }
+    ],
+    "parameter_ranges": {
+      "strength": {
+        "min": 0.0,
+        "max": 1.0,
+        "dry_wet_mixing_allowed": false
+      },
+      "seed": {
+        "min": 0,
+        "max": 4294967295,
+        "default": 20261016
+      },
+      "sample_rate": [
+        44100,
+        48000,
+        96000
+      ],
+      "wav_bit_depth": [
+        16,
+        24,
+        32
+      ],
+      "lossy_bitrate_kbps": {
+        "min": 64,
+        "max": 512,
+        "default": 256
+      }
+    }
+  }
+}

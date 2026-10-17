@@ -1,0 +1,10 @@
+{
+  "host_ffmpeg": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "codec": "pcm_s24le",
+  "sample_rate": 48000,
+  "channels": 2,
+  "duration_ts": 1200000,
+  "time_base": "1/48000",
+  "decoded_samples": 1200000,
+  "sha256": "3313299d5619775e869c65aa71859b349e3a8f404b7a67bb309e6b6f1a1222cb"
+}

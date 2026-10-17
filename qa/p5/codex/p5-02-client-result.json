@@ -1,0 +1,52 @@
+{
+  "ok": true,
+  "job_id": "job_0a51167b7a3e4e5d",
+  "asset_id": "asset_71ab9471dce54930",
+  "output": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-container.wav",
+  "report": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/p5-02-container-report.json",
+  "state": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-client-state.json",
+  "sha256": "3313299d5619775e869c65aa71859b349e3a8f404b7a67bb309e6b6f1a1222cb",
+  "size_bytes": 7200102,
+  "samples": 1200000,
+  "engine": {
+    "name": "aurora_core",
+    "version": "0.1.0",
+    "git_commit": "unknown",
+    "is_stub": false,
+    "block_size_frames": 1024,
+    "internal_sample_rate": 48000,
+    "hrtf": {
+      "name": "SADIE II D1",
+      "version": "D1-48K-256tap",
+      "sha256": "e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31",
+      "license": "Apache-2.0"
+    }
+  },
+  "timeline": {
+    "mode": "preserve",
+    "tail_policy": "trim",
+    "engine_latency_samples": 1229,
+    "engine_tail_samples": 21600,
+    "extra_tail_samples_kept": 0,
+    "input_samples": 1200000,
+    "expected_output_samples": 1200000,
+    "decoded_readback_samples": 1200000,
+    "raw_decoded_samples": 1200000,
+    "sample_diff": 0,
+    "raw_sample_diff": 0,
+    "codec_priming_samples": 0,
+    "codec_trailing_padding_samples": 0,
+    "residual_priming_shift_samples": 0,
+    "compensation_strategy": "Uncompressed PCM in RIFF WAV container: zero encoder priming (0 samples) and zero frame padding (0 samples). Direct 1:1 sample frame preservation.",
+    "tolerance_samples": 0,
+    "sync_within_tolerance": true,
+    "sync_warning": null
+  },
+  "loudness_after": {
+    "integrated_lufs": -11.4,
+    "loudness_range_lu": 2.7,
+    "true_peak_dbtp": -0.6,
+    "is_silent": false,
+    "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+  }
+}

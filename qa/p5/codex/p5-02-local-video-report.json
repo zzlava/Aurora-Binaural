@@ -1,0 +1,115 @@
+{
+  "ok": true,
+  "status": "succeeded",
+  "job_id": null,
+  "asset_id": null,
+  "preview": null,
+  "input": {
+    "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-local-av/input-48k.wav",
+    "sha256": "1be7aaeb4383e683fcd811164425e1705c247876484a6f49dbb142614437be04",
+    "format": "wav",
+    "container": "wav",
+    "codec": "pcm_s24le",
+    "sample_rate": 48000,
+    "channels": 1,
+    "channel_layout": "mono",
+    "samples": 288000,
+    "duration_seconds": 6.0,
+    "bit_depth": 24,
+    "size_bytes": 864102,
+    "initial_padding": 0,
+    "trailing_padding": 0
+  },
+  "output": {
+    "path": "~/Desktop/leo/Aurora Binaural/.agents/codex/qa/p5/codex/.runtime/p5-02-local-av/spatial.wav",
+    "sha256": "f7535bd4af05a197807456a4afd346e9da48b04f481516242c1dd3d5e0cf848d",
+    "format": "wav",
+    "container": "wav",
+    "codec": "pcm_s24le",
+    "sample_rate": 48000,
+    "channels": 2,
+    "channel_layout": "stereo",
+    "samples": 288000,
+    "duration_seconds": 6.0,
+    "bit_depth": 24,
+    "size_bytes": 1728102,
+    "initial_padding": 0,
+    "trailing_padding": 0
+  },
+  "engine": {
+    "name": "aurora_core",
+    "version": "0.1.0",
+    "git_commit": "02ae5474430b",
+    "is_stub": false,
+    "block_size_frames": 1024,
+    "internal_sample_rate": 48000,
+    "hrtf": {
+      "name": "SADIE II D1",
+      "version": "D1-48K-256tap",
+      "sha256": "e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31",
+      "license": "Apache-2.0"
+    }
+  },
+  "params": {
+    "preview": null,
+    "api_version": "v1",
+    "mode": "enhance",
+    "input": null,
+    "preset": {
+      "id": "room",
+      "version": "1"
+    },
+    "strength": 0.4,
+    "seed": 20261016,
+    "output": {
+      "format": "wav",
+      "container": "wav",
+      "sample_rate": 48000,
+      "bit_depth": 24,
+      "bitrate_kbps": null
+    },
+    "timing": {
+      "mode": "preserve",
+      "tail": "trim",
+      "fade_out_ms": 10.0
+    }
+  },
+  "timeline": {
+    "mode": "preserve",
+    "tail_policy": "trim",
+    "engine_latency_samples": 1229,
+    "engine_tail_samples": 21600,
+    "extra_tail_samples_kept": 0,
+    "input_samples": 288000,
+    "expected_output_samples": 288000,
+    "decoded_readback_samples": 288000,
+    "raw_decoded_samples": 288000,
+    "sample_diff": 0,
+    "raw_sample_diff": 0,
+    "codec_priming_samples": 0,
+    "codec_trailing_padding_samples": 0,
+    "residual_priming_shift_samples": 0,
+    "compensation_strategy": "Uncompressed PCM in RIFF WAV container: zero encoder priming (0 samples) and zero frame padding (0 samples). Direct 1:1 sample frame preservation.",
+    "tolerance_samples": 0,
+    "sync_within_tolerance": true,
+    "sync_warning": null
+  },
+  "loudness_before": {
+    "integrated_lufs": -33.0,
+    "loudness_range_lu": 3.0,
+    "true_peak_dbtp": -14.0,
+    "is_silent": false,
+    "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+  },
+  "loudness_after": {
+    "integrated_lufs": -33.2,
+    "loudness_range_lu": 3.0,
+    "true_peak_dbtp": -16.4,
+    "is_silent": false,
+    "method": "ITU-R BS.1770-4 (ffmpeg ebur128)"
+  },
+  "elapsed_ms": 510.76,
+  "attempts": 1,
+  "created_at": "2026-10-17T02:07:45.952300+00:00",
+  "expires_at": null
+}
