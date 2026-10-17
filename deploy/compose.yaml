@@ -6,13 +6,14 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: aurora-binaural:p3-trixie
+    image: aurora-binaural:p4-trixie
     command: ["api", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${AURORA_HOST:-127.0.0.1}:${AURORA_PORT:-8000}:8000"
     environment:
       AURORA_API_KEY: "${AURORA_API_KEY:-aurora_dev_placeholder_key_change_me}"
       AURORA_HOST: "0.0.0.0"
+      AURORA_CORS_ORIGINS: "${AURORA_CORS_ORIGINS:-}"
       AURORA_PORT: "8000"
       AURORA_DATA_DIR: "/data/runtime"
       AURORA_DB_PATH: "/data/runtime/aurora.db"
@@ -45,7 +46,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: aurora-binaural:p3-trixie
+    image: aurora-binaural:p4-trixie
     command: ["worker"]
     environment:
       AURORA_DATA_DIR: "/data/runtime"

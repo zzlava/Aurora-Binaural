@@ -51,3 +51,15 @@
      --strength 0.4 \
      --output /tmp/remote_out.wav
    ```
+
+
+## P4 Web GUI
+
+- 在仓库根目录运行 `npm --prefix web ci`、`npm --prefix web run build`，再运行 `uv run aurora gui`。
+- 本地启动器自动启动 Worker，随机选择空闲端口，固定绑定 `127.0.0.1`，打开浏览器；`Ctrl-C` 一并停止。`--no-browser`、`--port 8765` 可用于自动化。
+- `AURORA_WEB_DIR` 可指定已构建资源；源码默认读 `web/dist`。GUI 默认运行数据在 `~/Library/Caches/AuroraBinaural`，可用 `AURORA_DATA_DIR` 覆盖。
+- 本地启动生成一次性会话凭据，仅通过同源、回环、Host 校验后的 `/gui/session` 取回；不把凭据放进打开的 URL。
+- Docker 先用 Node 构建，再把静态资源复制进 Python 镜像。`docker compose -f deploy/compose.yaml up --build` 后打开映射端口，切换远程模式，填服务地址和部署 Key（Key 仅在浏览器 sessionStorage 中保留）。
+- 从另一个本地 GUI 连接远程 API 时，给远程 API 配置 `AURORA_CORS_ORIGINS` 为该 GUI 的准确 origin（例如 `http://127.0.0.1:8765`）；固定本地端口可避免每次变更。默认不开放跨域。远程经 HTTPS 反向代理访问；所有静态资源本地打包，不使用 CDN。
+- 浏览器刷新或切换连接会清空页面中的素材 / 任务列表；服务器队列仍持久保存，可用 `aurora job status` 查询原 job ID。
+- 桩引擎尚未应用 SADIE II HRTF，界面与报告显著标注，试听当前用于流程验证。

@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "image": "aurora-binaural:codex-p4",
+  "checks": [
+    "static-js",
+    "ready",
+    "auth",
+    "preview-pair",
+    "matched-loudness",
+    "full-export",
+    "key-not-in-logs",
+    "sadie-only-and-licenses"
+  ],
+  "hrtf": {
+    "sofa_files": [
+      "sadie2_d1/D1_48K_24bit_256tap_FIR_SOFA.sofa"
+    ]
+  }
+}
