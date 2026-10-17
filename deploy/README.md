@@ -1,4 +1,4 @@
-# Aurora Binaural — 部署与环境变量配置说明（P3）
+# Aurora Binaural — 构建与部署
 
 本文档说明 Aurora Binaural HTTP API 与持久化 Worker 的环境变量配置及容器部署方式（对应 `docs/plan.md` 第 10、11 节）。
 
@@ -62,4 +62,26 @@
 - Docker 先用 Node 构建，再把静态资源复制进 Python 镜像。`docker compose -f deploy/compose.yaml up --build` 后打开映射端口，切换远程模式，填服务地址和部署 Key（Key 仅在浏览器 sessionStorage 中保留）。
 - 从另一个本地 GUI 连接远程 API 时，给远程 API 配置 `AURORA_CORS_ORIGINS` 为该 GUI 的准确 origin（例如 `http://127.0.0.1:8765`）；固定本地端口可避免每次变更。默认不开放跨域。远程经 HTTPS 反向代理访问；所有静态资源本地打包，不使用 CDN。
 - 浏览器刷新或切换连接会清空页面中的素材 / 任务列表；服务器队列仍持久保存，可用 `aurora job status` 查询原 job ID。
-- 桩引擎尚未应用 SADIE II HRTF，界面与报告显著标注，试听当前用于流程验证。
+- 默认使用 Rust 核心。只有显式设置 `AURORA_ENGINE=stub` 才使用直通桩，界面和报告标注“桩”，未应用 HRTF。
+
+## P5 本机 Rust 核心构建
+
+需要 uv、Rust/Cargo、Python 3.12+ 和 FFmpeg。仓库根目录运行：
+
+```bash
+bash scripts/build-core.sh
+uv run python -c 'import aurora_core; print(aurora_core.__file__)'
+AURORA_ENGINE=rust uv run aurora convert data/assets/synth_voice_mono.wav \
+  --preset room --output /tmp/aurora-route-b.wav --report /tmp/aurora-route-b.json
+```
+
+`core-build` 是 uv 可选依赖组；构建脚本复制本地 `core/` 到临时目录，补充独立的 maturin 元数据，使用 `--release --locked` 构建并安装 `aurora_core` wheel。不会修改原始 `core/`。应用仍使用 hatchling 构建。`uv sync` 的精确同步可能移除未纳入应用依赖的本地扩展，之后重新执行构建脚本即可。
+
+`AURORA_ENGINE=rust|stub` 默认 `rust`；缺失扩展会明确失败并显示安装提示。路线 V 核心尚未合并时默认 V2 会报 `CORE_ROUTE_UNSUPPORTED`，可显式选择 `--preset room` 验证经典路线 B，绝不自动代换预设。
+
+Docker 增加独立 Rust wheel 构建阶段，最终镜像只安装 wheel、Python 运行依赖与 FFmpeg，不包含 Rust 工具链。
+
+```bash
+docker build -f deploy/Dockerfile -t aurora-binaural:p5 .
+docker run --rm aurora-binaural:p5 presets --json
+```

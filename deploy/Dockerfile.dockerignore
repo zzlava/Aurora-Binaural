@@ -6,6 +6,8 @@
 !deploy/THIRD_PARTY_NOTICES.md
 !pyproject.toml
 !uv.lock
+!scripts/
+!scripts/stage-core.py
 !README.md
 !src/
 !src/**
@@ -13,6 +15,17 @@
 !data/hrtf/
 !data/hrtf/sadie2_d1/
 !data/hrtf/sadie2_d1/**
+!data/hrtf/sadie_d1_frontal.ahrp
+!presets/
+!presets/*.toml
+!core/
+!core/Cargo.toml
+!core/Cargo.lock
+!core/aurora-dsp/
+!core/aurora-dsp/**
+!core/aurora-py/
+!core/aurora-py/**
+core/**/target/
 !web/
 !web/package.json
 !web/package-lock.json

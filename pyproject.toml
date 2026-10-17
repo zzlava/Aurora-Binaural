@@ -20,6 +20,9 @@ dependencies = [
 aurora = "aurora_binaural.cli:main"
 
 [dependency-groups]
+core-build = [
+    "maturin>=1.9.0,<2.0.0",
+]
 dev = [
     "httpx>=0.27.0",
     "mypy>=1.11.0",
