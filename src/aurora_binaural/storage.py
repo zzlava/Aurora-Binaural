@@ -28,6 +28,7 @@ from typing import Any, Literal
 from aurora_binaural.exit_codes import AuroraError, ExitCode
 from aurora_binaural.params import AuroraParams
 from aurora_binaural.report import AudioProbeInfo
+from aurora_binaural.user_presets import migrate_user_presets
 
 JobStatus = Literal["queued", "running", "succeeded", "failed", "canceled"]
 TERMINAL_JOB_STATUSES: tuple[str, ...] = ("succeeded", "failed", "canceled")
@@ -320,6 +321,7 @@ class TaskStore:
     def init_db(self) -> None:
         """Create schema tables and indexes if they do not exist."""
         with self._immediate_tx() as conn:
+            migrate_user_presets(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS assets (

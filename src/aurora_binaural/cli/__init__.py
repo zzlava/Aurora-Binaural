@@ -155,9 +155,20 @@ def _build_aurora_params_from_args(
     tail: str = "trim",
     fade_out_ms: float = 10.0,
     controls: dict[str, float] | None = None,
+    user_preset: str | None = None,
 ) -> AuroraParams:
     """Construct and validate `AuroraParams` from CLI arguments, raising `ParameterValidationError` on failure."""
     try:
+        if user_preset:
+            from aurora_binaural.config import ServiceConfig
+            from aurora_binaural.storage import TaskStore
+            from aurora_binaural.user_presets import UserPresetStore
+
+            saved = UserPresetStore(TaskStore(ServiceConfig.for_local_gui().db_path)).get(user_preset)
+            preset, preset_version = str(saved.preset.id), saved.preset.version
+            controls = {**saved.controls.model_dump(exclude_none=True), **(controls or {})}
+            if strength is not None:
+                controls.pop("strength", None)
         preset_spec = PresetSpec(
             id=PresetId(preset),
             version=preset_version,
@@ -273,6 +284,7 @@ def _cmd_convert(args: argparse.Namespace) -> int:
         preset_version=args.preset_version,
         strength=args.strength,
         controls=_cli_controls(args),
+        user_preset=args.user_preset,
         seed=args.seed,
         fmt=fmt,
         sample_rate=args.sample_rate,
@@ -327,7 +339,7 @@ def _cmd_preview(args: argparse.Namespace) -> int:
 
     params = _build_aurora_params_from_args(
         preset=args.preset, preset_version=args.preset_version,
-        strength=args.strength, controls=_cli_controls(args), seed=args.seed, bit_depth=32,
+        strength=args.strength, controls=_cli_controls(args), user_preset=args.user_preset, seed=args.seed, bit_depth=32,
     )
     params.preview = PreviewSpec(start_seconds=args.start, duration_seconds=args.duration)
     output_dir = Path(args.output_dir)
@@ -409,6 +421,7 @@ def _cmd_batch(args: argparse.Namespace) -> int:
 
     params_template = _build_aurora_params_from_args(
         preset=args.preset,
+        user_preset=args.user_preset,
         strength=args.strength,
         seed=args.seed,
         fmt=fmt,
@@ -449,6 +462,7 @@ def _cmd_batch(args: argparse.Namespace) -> int:
                         "sha256": rep.output.sha256,
                         "sync_within_tolerance": rep.timeline.sync_within_tolerance,
                         "sync_warning": rep.timeline.sync_warning,
+                        "report": rep.model_dump(mode="json"),
                     }
                 )
             except AuroraError as exc:
@@ -799,6 +813,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reject M4A/AAC processing with exit code 4 if FFmpeg version is older than 7.0",
     )
     p_batch.set_defaults(func=_cmd_batch)
+    for preset_parser in (p_convert, p_preview, p_batch):
+        preset_parser.add_argument("--user-preset", default=None, help="Saved local preset name or ID (uses AURORA_DB_PATH)")
 
     # aurora job
     p_job = subparsers.add_parser(

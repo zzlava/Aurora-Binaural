@@ -10,6 +10,12 @@ export interface Preset {
   description: string;
   route: string;
 }
+export interface UserPreset {
+  user_preset_id: string;
+  name: string;
+  preset: { id: string; version: string };
+  controls: Controls;
+}
 export interface EngineStatus {
   is_stub: boolean;
   available: boolean;

@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Api, ApiError, serverAddress } from "./api";
 import { ABPlayer } from "./player";
-import type { Asset, ControlKey, Controls, EngineStatus, Job, Preset, QueueEntry, Report } from "./types";
+import type { Asset, ControlKey, Controls, EngineStatus, Job, Preset, QueueEntry, Report, UserPreset } from "./types";
 import "./style.css";
 
 const statuses: Record<Job["status"], string> = {
@@ -55,6 +55,7 @@ function App() {
   );
   const [key, setKey] = useState(readSession("aurora.key"));
   const [api, setApi] = useState<Api | null>(null);
+  const [presetApi, setPresetApi] = useState<Api | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -62,6 +63,9 @@ function App() {
   const [controls, setControls] = useState<Controls>({});
   const strength = controls.strength ?? 0;
   const [controlRelease, setControlRelease] = useState(0);
+  const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
+  const [userPresetId, setUserPresetId] = useState("");
+  const [presetName, setPresetName] = useState("");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [queue, setQueue] = useState<QueueEntry[]>([]);
@@ -88,6 +92,7 @@ function App() {
   const currentPreview = useRef<{ asset: Asset; start: number; duration: number } | null>(null);
   const previewLoads = useRef(new Map<string, { generation: number; preserve: boolean }>());
   const fileInput = useRef<HTMLInputElement>(null);
+  const presetInput = useRef<HTMLInputElement>(null);
   const active = assets.find((asset) => asset.asset_id === selectedId);
   const selectedPreset = presets.find((item) => item.id === preset);
   const pending = busy.length > 0;
@@ -122,11 +127,15 @@ function App() {
     currentPreview.current = null;
     previewLoads.current.clear();
     setApi(null);
+    setPresetApi(null);
     setEngine(null);
     setAssets([]);
     setSelectedId("");
     setQueue([]);
     setPresets([]);
+    setUserPresets([]);
+    setUserPresetId("");
+    setPresetName("");
     player.current.dispose();
     setLoaded(null);
     setPlaying(false);
@@ -175,7 +184,18 @@ function App() {
         setPreset(chosen.id);
         setControls(chosen.default_controls);
       }
+      // A locally launched GUI keeps personal presets in its own SQLite,
+      // even when audio rendering is delegated to a remote service.
+      let presetClient = client;
+      if (nextMode === "remote") {
+        const session = await fetch("/gui/session", { headers: { "X-Aurora-GUI": "1" }, cache: "no-store" });
+        if (session.ok) presetClient = new Api("", (await session.json()).api_key, log);
+      }
+      const savedPresets = await presetClient.request<UserPreset[]>("/v1/user-presets");
+      if (epoch.current !== connectionEpoch) return;
       setApi(client);
+      setPresetApi(presetClient);
+      setUserPresets(savedPresets);
       setNotice("连接成功，可以导入音频。");
       log("连接成功");
     } catch (failure) {
@@ -285,13 +305,62 @@ function App() {
     previewGeneration.current++;
     setAutoLoadId("");
     setControls((previous) => ({ ...previous, [control]: value }));
+    setUserPresetId("");
   }
   function choosePreset(item: Preset) {
     previewGeneration.current++;
     setAutoLoadId("");
     setPreset(item.id);
     setControls(item.default_controls);
+    setUserPresetId("");
     setControlRelease((value) => value + 1);
+  }
+
+  function chooseUserPreset(identity: string) {
+    const item = userPresets.find((row) => row.user_preset_id === identity);
+    if (!item) { setUserPresetId(""); return; }
+    previewGeneration.current++;
+    setAutoLoadId("");
+    setPreset(item.preset.id);
+    setControls(item.controls);
+    setUserPresetId(identity);
+    setPresetName(item.name);
+    setControlRelease((value) => value + 1);
+    setNotice(`已应用“${item.name}”，试听、导出和批量处理将使用这组控件。`);
+  }
+  async function saveUserPreset() {
+    if (!presetApi || !selectedPreset || !presetName.trim()) return;
+    await perform("preset-save", async () => {
+      const saved = await presetApi.json<UserPreset>("/v1/user-presets", {
+        name: presetName.trim(), preset: { id: preset, version: selectedPreset.version }, controls,
+      });
+      setUserPresets(await presetApi.request<UserPreset[]>("/v1/user-presets"));
+      setUserPresetId(saved.user_preset_id);
+      setNotice(`“${saved.name}”已保存到 SQLite。`);
+    });
+  }
+  async function manageUserPreset(action: "rename" | "delete") {
+    if (!presetApi || !userPresetId) return;
+    await perform(`preset-${action}`, async () => {
+      await presetApi.request(`/v1/user-presets/${userPresetId}`, {
+        method: action === "rename" ? "PATCH" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        ...(action === "rename" ? { body: JSON.stringify({ name: presetName.trim() }) } : {}),
+      });
+      setUserPresets(await presetApi.request<UserPreset[]>("/v1/user-presets"));
+      if (action === "delete") { setUserPresetId(""); setPresetName(""); }
+      setNotice(action === "rename" ? "预设已重命名。" : "预设已删除，当前控件仍保留，可另存。" );
+    });
+  }
+  async function importUserPresets(file: File) {
+    if (!presetApi) return;
+    await perform("preset-import", async () => {
+      if (file.size > 256 * 1024) throw new Error("预设 JSON 不能超过 256 KB。请拆分后导入。");
+      const bundle = JSON.parse(await file.text());
+      const imported = await presetApi.json<UserPreset[]>("/v1/user-presets/import", bundle);
+      setUserPresets(await presetApi.request<UserPreset[]>("/v1/user-presets"));
+      setNotice(`已导入 ${imported.length} 个预设。可在“我的预设”中选择。`);
+    });
   }
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -848,6 +917,34 @@ function App() {
                 <p class="helper" role="status">{engine?.is_stub ? "桩引擎忽略全部空间控件。" : selectedPreset?.route === "B" ? "经典路线仅支持空间强度，其余四项忽略。" : "松开滑块后自动更新当前试听，保留 A/B 进度。"}</p>
               </div>
             </details>
+            <section class="user-presets" aria-labelledby="user-presets-title">
+              <div class="section-heading">
+                <h3 id="user-presets-title">我的预设</h3>
+                <span>{userPresets.length} 个已保存</span>
+              </div>
+              <label>
+                选用我的预设
+                <select value={userPresetId} disabled={!api || pending || !userPresets.length}
+                  onChange={(event) => chooseUserPreset(event.currentTarget.value)}>
+                  <option value="">{userPresets.length ? "当前自定义设置" : "还没有保存的预设"}</option>
+                  {userPresets.map((item) => <option key={item.user_preset_id} value={item.user_preset_id}>{item.name} · {item.preset.id}</option>)}
+                </select>
+              </label>
+              <div class="preset-name-row">
+                <label>预设名称<input type="text" maxLength={80} value={presetName} placeholder="例如：宽声场 · 近人声"
+                  disabled={!api || pending} onInput={(event) => setPresetName(event.currentTarget.value)} /></label>
+                <button disabled={!api || pending || !presetName.trim() || selectedPreset?.route !== "V"} onClick={() => void saveUserPreset()}>保存为新预设</button>
+              </div>
+              <div class="preset-actions">
+                <button class="quiet" disabled={!userPresetId || pending || !presetName.trim()} onClick={() => void manageUserPreset("rename")}>重命名</button>
+                <button class="quiet" disabled={!userPresetId || pending} onClick={() => void manageUserPreset("delete")}>删除预设</button>
+                <button class="quiet" disabled={!presetApi || pending || !userPresets.length} onClick={() => void perform("preset-export", async () => { await presetApi?.download("/v1/user-presets/export", "aurora-user-presets.json"); })}>导出预设 JSON</button>
+                <button class="quiet" disabled={!api || pending} onClick={() => presetInput.current?.click()}>导入预设 JSON</button>
+                <input ref={presetInput} type="file" accept=".json,application/json" aria-label="导入预设 JSON 文件" hidden
+                  onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importUserPresets(file); event.currentTarget.value = ""; }} />
+              </div>
+              <p class="helper">保存基础预设和五个控件；选用后同时用于试听、完整导出与全部素材的批量处理。</p>
+            </section>
             <div class="preview-settings">
               <label>
                 起始位置（秒）

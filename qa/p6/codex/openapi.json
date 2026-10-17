@@ -112,6 +112,262 @@
         ]
       }
     },
+    "/v1/user-presets": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "List User Presets",
+        "operationId": "list_user_presets_v1_user_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserPreset"
+                  },
+                  "type": "array",
+                  "title": "Response List User Presets V1 User Presets Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Save User Preset",
+        "operationId": "save_user_preset_v1_user_presets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPresetSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/user-presets/export": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Export User Presets",
+        "operationId": "export_user_presets_v1_user_presets_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPresetBundle"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/user-presets/import": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Import User Presets",
+        "operationId": "import_user_presets_v1_user_presets_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPresetBundle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserPreset"
+                  },
+                  "type": "array",
+                  "title": "Response Import User Presets V1 User Presets Import Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/user-presets/{identity}": {
+      "patch": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Rename User Preset",
+        "operationId": "rename_user_preset_v1_user_presets__identity__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identity"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPresetName"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Delete User Preset",
+        "operationId": "delete_user_preset_v1_user_presets__identity__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Delete User Preset V1 User Presets  Identity  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/assets": {
       "post": {
         "tags": [
@@ -2726,6 +2982,109 @@
         "type": "object",
         "title": "TimingSpec",
         "description": "Timeline synchronization and reverb tail policy (docs/plan.md Section 8 & 10)."
+      },
+      "UserPreset": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/PresetSpec"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          },
+          "user_preset_id": {
+            "type": "string",
+            "title": "User Preset Id"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "preset",
+          "controls",
+          "user_preset_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserPreset"
+      },
+      "UserPresetBundle": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/UserPresetSpec"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Presets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "presets"
+        ],
+        "title": "UserPresetBundle"
+      },
+      "UserPresetName": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "UserPresetName"
+      },
+      "UserPresetSpec": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/PresetSpec"
+          },
+          "controls": {
+            "$ref": "#/components/schemas/SpatialControls"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "preset",
+          "controls"
+        ],
+        "title": "UserPresetSpec"
       },
       "ValidationError": {
         "properties": {

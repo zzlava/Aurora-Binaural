@@ -58,6 +58,7 @@ from aurora_binaural.storage import (
     TaskStore,
     UnauthorizedError,
 )
+from aurora_binaural.user_presets import UserPreset, UserPresetBundle, UserPresetName, UserPresetSpec, UserPresetStore
 
 API_VERSION = "v1"
 
@@ -248,6 +249,7 @@ def create_app(
     cfg = config or ServiceConfig.from_env()
     cfg.ensure_directories()
     task_store = store or TaskStore(cfg.db_path)
+    user_presets = UserPresetStore(task_store)
 
     app = FastAPI(
         title="Aurora Binaural API",
@@ -265,7 +267,7 @@ def create_app(
 
         app.add_middleware(
             CORSMiddleware, allow_origins=list(cfg.cors_origins),
-            allow_methods=["GET", "POST"],
+            allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Asset-Filename"],
             expose_headers=["Content-Disposition"],
         )
@@ -401,6 +403,35 @@ def create_app(
                 "lossy_bitrate_kbps": {"min": 64, "max": 512, "default": 256},
             },
         )
+
+    @app.get("/v1/user-presets", response_model=list[UserPreset], dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def list_user_presets() -> list[UserPreset]:
+        return user_presets.list_presets()
+
+    @app.post("/v1/user-presets", status_code=201, response_model=UserPreset,
+              dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def save_user_preset(spec: UserPresetSpec) -> UserPreset:
+        return user_presets.create(spec)
+
+    @app.get("/v1/user-presets/export", response_model=UserPresetBundle,
+             dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def export_user_presets() -> UserPresetBundle:
+        return user_presets.export_bundle()
+
+    @app.post("/v1/user-presets/import", status_code=201, response_model=list[UserPreset],
+              dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def import_user_presets(bundle: UserPresetBundle) -> list[UserPreset]:
+        return user_presets.import_bundle(bundle)
+
+    @app.patch("/v1/user-presets/{identity}", response_model=UserPreset,
+               dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def rename_user_preset(identity: str, name: UserPresetName) -> UserPreset:
+        return user_presets.rename(identity, name)
+
+    @app.delete("/v1/user-presets/{identity}", dependencies=[Depends(require_api_key)], tags=["v1"])
+    async def delete_user_preset(identity: str) -> dict[str, bool]:
+        user_presets.delete(identity)
+        return {"deleted": True}
 
     @app.post(
         "/v1/assets",
