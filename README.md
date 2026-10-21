@@ -1,73 +1,95 @@
 # Aurora Binaural
 
-把普通立体声音乐处理成**耳机可听的双耳空间音频**：声场更宽、有头顶感、人声仍贴近听者。提供 Web GUI、CLI 与 HTTP API；核心为实时安全的 Rust 引擎，为将来的实时处理预留了路线。
+**English** | [中文](README.zh-CN.md)
 
-## 现在能做什么
+Aurora Binaural turns ordinary stereo music into **binaural spatial audio for headphones**. You get a wider sound field and a sense of height above you, while vocals stay close. It ships with a web GUI, a CLI and an HTTP API. The core is a real-time-safe Rust engine, designed so a real-time processing mode can be added later.
 
-- **真实空间引擎（路线 V）**：多只虚拟扬声器（前方 ±45°、两侧 ±90°、后方 ±130°、4 只 45° 仰角的头顶扬声器）加上 shoebox 房间、天花板与地面反射和 FDN 混响；人声与中央声像保持在近处。默认 HRTF 为 SADIE II D1（Apache-2.0）。
-- **三种预设**（默认 V3）：
-  - V1 开阔·人声稍远
-  - V2 沉浸·人声贴近
-  - V3 沉浸·头顶环绕（推荐）
-  - 另保留经典 room（路线 B）。
-- **5 个空间宏控件**：空间强度、宽度、头顶感、房间感、人声距离，可在 GUI“高级”面板、CLI、API 中调节，播放中途调整不会产生爆音；可以保存为“我的预设”（支持导入／导出 JSON）。
-- **高解析度输入输出**：FLAC、WAV（含 RF64）、ALAC、AIFF、AAC、MP3；支持 44.1–192 kHz 输入，导出默认与源文件同采样率；保留标签与封面；16 bit 输出加 TPDF 抖动。内部以 48 kHz float32 处理（ADR 0006）。
-- **等响度 A/B 试听**：BS.1770 对齐，切换版本时保持播放进度。
-- **低频保真**：
-  - 处理前自动预留余量，响度很高的母带也不会被限幅器压扁低频（P1c）。
-  - 左右不相关的厅堂录音低频不再被合成单声道而抵消（P1d）。
-  - 已修正 700 Hz 着色。
+## Features
 
-## 快速开始（macOS）
+- **Spatial engine (route V)**:
+  - Virtual speakers: front ±45°, sides ±90°, rear ±130°, plus four height speakers at 45° elevation.
+  - Room: shoebox room model with ceiling and floor reflections, and an FDN reverb.
+  - Vocals and the center image stay close to the listener.
+  - Default HRTF: SADIE II D1 (Apache-2.0).
+- **Three presets** (V3 is the default):
+  - V1: open, vocals slightly farther
+  - V2: immersive, vocals close
+  - V3: immersive with overhead surround (recommended)
+  - A classic "room" mode (route B) is also kept.
+- **Five spatial controls**: strength, width, height, room and voice distance.
+  - Adjustable from the GUI's Advanced panel, the CLI and the API.
+  - You can change them during playback without clicks.
+  - Save combinations as "My presets", with JSON import and export.
+- **Hi-res input and output**:
+  - Formats: FLAC, WAV (including RF64), ALAC, AIFF, AAC and MP3.
+  - Input from 44.1 to 192 kHz. Exports default to the source sample rate.
+  - Tags and cover art are preserved. 16-bit output gets TPDF dither.
+  - Processing runs internally at 48 kHz float32 (ADR 0006).
+- **Loudness-matched A/B listening**: versions are aligned with BS.1770, and switching between them keeps the playback position.
+- **Low-frequency fidelity**:
+  - Headroom is reserved automatically before processing, so the limiter no longer flattens the bass of loud masters (P1c).
+  - Bass that is uncorrelated between channels, typical of spaced-microphone hall recordings, is no longer cancelled by a mono sum (P1d).
+  - A coloration around 700 Hz has been fixed.
+
+## Quick start (macOS)
 
 ```bash
 cd ~/Desktop/leo/"Aurora Binaural"
-bash scripts/setup.sh      # 检查 Rust/uv/Node 与带 soxr 的 ffmpeg（推荐 brew install ffmpeg-full），构建核心与前端
-uv run aurora gui          # 打开 Web GUI
+bash scripts/setup.sh      # checks Rust, uv, Node and an ffmpeg with soxr (brew install ffmpeg-full is recommended), then builds the core and the web UI
+uv run aurora gui          # opens the web GUI
 ```
 
-CLI 示例：`uv run aurora convert 输入.flac --preset V3 --format flac --sample-rate source`。详见 [docs/user/quickstart.md](docs/user/quickstart.md)、[cli.md](docs/user/cli.md)、[api.md](docs/user/api.md)、[troubleshooting.md](docs/user/troubleshooting.md)、[deploy.md](docs/user/deploy.md)。
+CLI example: `uv run aurora convert input.flac --preset V3 --format flac --sample-rate source`. User docs are currently in Chinese: [quickstart](docs/user/quickstart.md), [CLI](docs/user/cli.md), [API](docs/user/api.md), [troubleshooting](docs/user/troubleshooting.md) and [deployment](docs/user/deploy.md).
 
-## 进度（2026-10-21）
+## Status (2026-10-21)
 
-| 阶段 | 内容 | 状态 |
+| Phase | Scope | Status |
 |---|---|---|
-| P0 | 算法路线与听感校准（路线 B → 校准锚点 → 路线 V，用户选定 V3） | ✅ 已验收（`p0-accepted`） |
-| P1a | Rust 核心：实时安全、零分配、可变块长 fuzz、真峰值 −1 dBTP 限幅 | ✅ |
-| P1b | 5 个宏控件（默认值展开后与原预设逐位一致） | ✅ |
-| P1c | 输入余量与低频平衡（响度母带的限幅从约 9 dB 降到 ≤1.6 dB） | ✅ |
-| P1d | 保留不相关低频的能量，修正 700 Hz 凸起（《卡门》低频偏差从 −5.2 dB 降到 −1.1 dB） | ✅ |
-| P3–P6 | 应用层：CLI、FastAPI、SQLite Worker、Web GUI、Docker、高解析度格式、setup.sh、高级面板与我的预设 | ✅ |
-| P6-05 | 导出响度：默认“智能音量”（纯增益归一化到 −1 dBTP），另有匹配原曲、−14 LUFS、不调整；合并重复的强度滑块 | ⏳ 已写任务书，待派发 |
+| P0 | Algorithm route and listening calibration (route B → calibration anchors → route V; the user chose V3) | ✅ accepted (`p0-accepted`) |
+| P1a | Rust core: real-time safe, zero allocation, variable-block fuzzing, −1 dBTP true-peak limiter | ✅ |
+| P1b | Five macro controls (default values reproduce the original presets bit for bit) | ✅ |
+| P1c | Input headroom and bass balance (limiting on loud masters dropped from about 9 dB to at most 1.6 dB) | ✅ |
+| P1d | Energy-preserving uncorrelated bass and a 700 Hz fix (Carmen bass deviation reduced from −5.2 dB to −1.1 dB) | ✅ |
+| P3–P6 | App layer: CLI, FastAPI, SQLite worker, web GUI, Docker, hi-res formats, setup.sh, Advanced panel and My presets | ✅ |
+| P6-05 | Export loudness: default "smart volume" (a fixed gain that brings the true peak to −1 dBTP, with no limiting), plus match-source, −14 LUFS and off; merge the duplicate strength slider | ⏳ specified, not yet dispatched |
 
-待用户决定的事项见 [docs/DECISIONS-PENDING.md](docs/DECISIONS-PENDING.md)（例如 U6：用 force push 清理 Git 历史中误提交的约 130 MB 音频）。
+## Documentation
 
-## 文档
+These documents are written in Chinese.
 
-- 方案：[docs/plan.md](docs/plan.md)
-- 决策记录：[docs/adr/](docs/adr/)（0001 架构 … 0006 高解析度）
-- 任务书：[docs/tasks/](docs/tasks/)
-- 验收记录：`qa/p0` … `qa/p6`（每单都有 ACCEPTANCE 文件）
-- 代理协作与派单器：[docs/agents.md](docs/agents.md)
+- Plan: [docs/plan.md](docs/plan.md)
+- Architecture decisions: [docs/adr/](docs/adr/)
+- Task specs: [docs/tasks/](docs/tasks/)
+- Acceptance records: `qa/p0` … `qa/p6`
+- Agent workflow and dispatcher: [docs/agents.md](docs/agents.md)
 
-## 协作方式与目录所有权
+## How it is built
 
-Claude 负责方案、任务协调、独立验收与 Git；编码由本机的 Cursor（核心）与 Codex（应用层）完成，通过 `tools/dispatch.sh` 派单器在 macOS 终端执行（`bash tools/dispatch.sh`）。
+Claude handles planning, task coordination, independent acceptance and Git. The code is written by Cursor (DSP core) and Codex (application layer). Tasks reach them through the `tools/dispatch.sh` dispatcher, which runs in a macOS terminal.
 
-| 目录 | 负责方 |
+| Path | Owner |
 |---|---|
 | `core/` `prototypes/` `presets/` | Cursor |
-| `src/` `tests/app/` `web/` `deploy/` `scripts/` | Codex（2026-10-17 起接替 Antigravity，ADR 0004） |
-| `qa/` `docs/` 与 Git 操作 | Claude |
-| `data/` | Cursor 提交数据，Claude 核验来源、授权与哈希 |
+| `src/` `tests/app/` `web/` `deploy/` `scripts/` | Codex |
+| `qa/` `docs/` and Git operations | Claude |
+| `data/` | Cursor adds data; Claude verifies source, license and hash |
 
-## 分支规则
+Branch rules:
 
-- `main`：只合并经 Claude 验收的内容，禁止 force push。
-- `agent/<代理>/<任务编号>`：代理工作分支，各用独立克隆（`.agents/`）。
-- 阶段验收通过后打标签 `pN-accepted`。
+- Only work accepted by Claude is merged into `main`.
+- Agent work happens on `agent/<agent>/<task>` branches.
+- Each accepted phase is tagged `pN-accepted`.
 
-## 注意
+## License
 
-- 本地文件夹名包含空格（`Aurora Binaural`），所有脚本与命令都要给路径加引号。
-- `qa/listen/` 与仓库根目录的音频文件为用户本机的版权试听素材，已列入 `.gitignore`，不得提交。
+- The code is released under the [MIT License](LICENSE).
+- Third-party data keeps its original license:
+  - SADIE II HRTF: Apache-2.0.
+  - TH Köln KU100 HRIR: CC BY-SA 3.0. It is used for local research only; see [data/hrtf/SOURCES.md](data/hrtf/SOURCES.md).
+  - Test audio: CC0 or CC BY 3.0. Authors and sources are listed in [data/assets/registry.json](data/assets/registry.json).
+- Full notices: [deploy/THIRD_PARTY_NOTICES.md](deploy/THIRD_PARTY_NOTICES.md).
+
+## Notes
+
+- The local folder name contains a space (`Aurora Binaural`), so always quote paths in scripts and commands.
+- Audio under `qa/listen/` and in the repository root is the user's private, copyrighted listening material. It is git-ignored and must never be committed.
